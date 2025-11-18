@@ -374,9 +374,9 @@ func processPendingTaskFeeEvents(ctx context.Context, db *gorm.DB, events []mode
 	defer cancel()
 
 	appConfig := config.GetConfig()
-	eventMACs := make(map[string]string)
+	eventMACs := make(map[uint]string)
 	for _, event := range validEvents {
-		eventMACs[event.Address] = utils.GenerateMAC([]byte(event.Reason), appConfig.MAC.SecretKey)
+		eventMACs[event.ID] = utils.GenerateMAC([]byte(event.Reason), appConfig.MAC.SecretKey)
 	}
 
 	return db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
@@ -419,8 +419,8 @@ func processPendingTaskFeeEvents(ctx context.Context, db *gorm.DB, events []mode
 		}
 
 		var macCases string
-		for address, mac := range eventMACs {
-			macCases += fmt.Sprintf(" WHEN address = '%s' THEN '%s'", address, mac)
+		for id, mac := range eventMACs {
+			macCases += fmt.Sprintf(" WHEN id = '%d' THEN '%s'", id, mac)
 		}
 		updates := map[string]interface{}{
 			"mac":    gorm.Expr("CASE" + macCases + " END"),
@@ -467,9 +467,9 @@ func processPendingWithdrawEvents(ctx context.Context, db *gorm.DB, events []mod
 	}
 
 	appConfig := config.GetConfig()
-	eventMACs := make(map[string]string)
+	eventMACs := make(map[uint]string)
 	for _, event := range validEvents {
-		eventMACs[event.Address] = utils.GenerateMAC([]byte(event.MACString()), appConfig.MAC.SecretKey)
+		eventMACs[event.ID] = utils.GenerateMAC([]byte(event.MACString()), appConfig.MAC.SecretKey)
 	}
 
 	return db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
@@ -501,8 +501,8 @@ func processPendingWithdrawEvents(ctx context.Context, db *gorm.DB, events []mod
 		}
 
 		var macCases string
-		for address, mac := range eventMACs {
-			macCases += fmt.Sprintf(" WHEN address = '%s' THEN '%s'", address, mac)
+		for id, mac := range eventMACs {
+			macCases += fmt.Sprintf(" WHEN id = '%d' THEN '%s'", id, mac)
 		}
 		updates := map[string]interface{}{
 			"mac":          gorm.Expr("CASE" + macCases + " END"),
