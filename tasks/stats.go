@@ -4,7 +4,9 @@ import (
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"database/sql"
+	"math/big"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -151,7 +153,7 @@ func getTaskExecutionTimeCount(ctx context.Context, start, end time.Time) ([]*mo
 			rows, err := func() (*sql.Rows, error) {
 				dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
-	
+
 				subQuery := config.GetDB().Table("inference_tasks").
 					Select("id, CAST(TIMESTAMPDIFF(SECOND, start_time, score_ready_time) / ? AS SIGNED) AS time", binSize).
 					Where("created_at >= ?", start).Where("created_at < ?", end).
@@ -164,7 +166,7 @@ func getTaskExecutionTimeCount(ctx context.Context, start, end time.Time) ([]*mo
 					Where("s.time >= 0").
 					Group("T").Order("T").Rows()
 			}()
-	
+
 			if err != nil {
 				log.Errorf("Stats: get %d type task execution time error: %v", taskType, err)
 				return nil, err
@@ -174,11 +176,11 @@ func getTaskExecutionTimeCount(ctx context.Context, start, end time.Time) ([]*mo
 			for rows.Next() {
 				rows.Scan(&seconds, &count)
 				results = append(results, &models.TaskExecutionTimeCount{
-					Start:    start,
-					End:      end,
-					TaskType: taskType,
-					Seconds:  seconds,
-					Count:    count,
+					Start:         start,
+					End:           end,
+					TaskType:      taskType,
+					Seconds:       seconds,
+					Count:         count,
 					ModelSwitched: modelSwitched,
 				})
 			}
@@ -466,6 +468,205 @@ func StartStatsTaskWaitingTimeCount(ctx context.Context) {
 				defer cancel()
 				if err := statsTaskWaitingTimeCount(ctx1); err != nil {
 					log.Errorf("Stats: stats task waiting time count error %v", err)
+				}
+			}()
+		}
+	}
+}
+
+func getAllNodes(ctx context.Context, db *gorm.DB) ([]models.Node, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var allNodes []models.Node
+	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		limit := 1000
+		offset := 0
+		for {
+			var nodes []models.Node
+			if err := tx.Model(&models.Node{}).Order("id").Limit(limit).Offset(offset).Find(&nodes).Error; err != nil {
+				return err
+			}
+			if len(nodes) == 0 {
+				break
+			}
+			allNodes = append(allNodes, nodes...)
+			offset += len(nodes)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return allNodes, nil
+}
+
+func batchCreateNodeScores(ctx context.Context, db *gorm.DB, nodes []models.Node, t time.Time) error {
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var nodeScores []models.NodeScore
+	for _, node := range nodes {
+		totalStakeAmount := big.NewInt(0)
+		if node.Status != models.NodeStatusQuit {
+			totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))
+		}
+		stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore, service.GetMaxQosScore())
+		nodeScore := models.NodeScore{
+			NodeAddress:  node.Address,
+			Time:         t,
+			StakingScore: stakingScore,
+			QOSScore:     qosScore,
+			ProbWeight:   probWeight,
+		}
+		nodeScores = append(nodeScores, nodeScore)
+	}
+
+	if err := db.WithContext(dbCtx).CreateInBatches(nodeScores, 100).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func statsNodeScores(ctx context.Context) error {
+	t := time.Now().UTC().Truncate(4 * time.Hour)
+	nodes, err := getAllNodes(ctx, config.GetDB())
+	if err != nil {
+		return err
+	}
+	if err := batchCreateNodeScores(ctx, config.GetDB(), nodes, t); err != nil {
+		return err
+	}
+	return nil
+}
+
+func StartStatsNodeScores(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+
+	for {
+		select {
+		case <-ctx.Done():
+			err := ctx.Err()
+			log.Errorf("Stats: stop counting node scores due to %v", err)
+			ticker.Stop()
+		case <-ticker.C:
+			func() {
+				ctx1, cancel := context.WithTimeout(ctx, 5*time.Minute)
+				defer cancel()
+				if err := statsNodeScores(ctx1); err != nil {
+					log.Errorf("Stats: stats node scores error %v", err)
+				}
+			}()
+		}
+	}
+}
+
+func batchCreateNodeStakings(ctx context.Context, db *gorm.DB, nodes []models.Node, t time.Time) error {
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var nodeStakings []models.NodeStaking
+	for _, node := range nodes {
+		nodeStaking := models.NodeStaking{
+			NodeAddress:      node.Address,
+			Time:             t,
+			OperatorStaking:  models.BigInt{Int: *big.NewInt(0)},
+			DelegatorStaking: models.BigInt{Int: *big.NewInt(0)},
+		}
+		if node.Status != models.NodeStatusQuit {
+			nodeStaking.OperatorStaking = node.StakeAmount
+			delegatorStaking := service.GetUserStakeAmountOfNode(node.Address, node.Network)
+			nodeStaking.DelegatorStaking = models.BigInt{Int: *delegatorStaking}
+		}
+		nodeStakings = append(nodeStakings, nodeStaking)
+	}
+
+	if err := db.WithContext(dbCtx).CreateInBatches(nodeStakings, 100).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func statsNodeStakings(ctx context.Context) error {
+	t := time.Now().UTC().Truncate(4 * time.Hour)
+	nodes, err := getAllNodes(ctx, config.GetDB())
+	if err != nil {
+		return err
+	}
+	if err := batchCreateNodeStakings(ctx, config.GetDB(), nodes, t); err != nil {
+		return err
+	}
+	return nil
+}
+
+func StartStatsNodeStakings(ctx context.Context) {
+	ticker := time.NewTicker(4 * time.Hour)
+
+	for {
+		select {
+		case <-ctx.Done():
+			err := ctx.Err()
+			log.Errorf("Stats: stop counting node stakings due to %v", err)
+			ticker.Stop()
+		case <-ticker.C:
+			func() {
+				ctx1, cancel := context.WithTimeout(ctx, 5*time.Minute)
+				defer cancel()
+				if err := statsNodeStakings(ctx1); err != nil {
+					log.Errorf("Stats: stats node stakings error %v", err)
+				}
+			}()
+		}
+	}
+}
+
+func batchCreateNodeDelegatorCount(ctx context.Context, db *gorm.DB, nodes []models.Node, t time.Time) error {
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var nodeDelegatorCounts []models.NodeDelegatorCount
+	for _, node := range nodes {
+		delegatorCount := service.GetDelegatorCountOfNode(node.Address, node.Network)
+		nodeDelegatorCount := models.NodeDelegatorCount{
+			NodeAddress: node.Address,
+			Time:        t,
+			Count:       uint64(delegatorCount),
+		}
+		nodeDelegatorCounts = append(nodeDelegatorCounts, nodeDelegatorCount)
+	}
+
+	if err := db.WithContext(dbCtx).CreateInBatches(nodeDelegatorCounts, 100).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func statsNodeDelegatorCount(ctx context.Context) error {
+	t := time.Now().UTC().Truncate(24 * time.Hour)
+	nodes, err := getAllNodes(ctx, config.GetDB())
+	if err != nil {
+		return err
+	}
+	if err := batchCreateNodeDelegatorCount(ctx, config.GetDB(), nodes, t); err != nil {
+		return err
+	}
+	return nil
+}
+
+func StartStatsNodeDelegatorCount(ctx context.Context) {
+	ticker := time.NewTicker(24 * time.Hour)
+
+	for {
+		select {
+		case <-ctx.Done():
+			err := ctx.Err()
+			log.Errorf("Stats: stop counting node delegator count due to %v", err)
+			ticker.Stop()
+		case <-ticker.C:
+			func() {
+				ctx1, cancel := context.WithTimeout(ctx, 5*time.Minute)
+				defer cancel()
+				if err := statsNodeDelegatorCount(ctx1); err != nil {
+					log.Errorf("Stats: stats node delegator count error %v", err)
 				}
 			}()
 		}

@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"math/big"
 	"sync"
 	"time"
 
@@ -51,7 +52,7 @@ func getNodeData(ctx context.Context, db *gorm.DB, offset, limit int) ([]models.
 	for _, nodeData := range nodesData {
 		nodeAddresses = append(nodeAddresses, nodeData.Address)
 	}
-	if err := db.WithContext(dbCtx).Model(&models.Node{}).Where("address IN (?)", nodeAddresses).Find(&nodes).Error; err != nil {
+	if err := db.WithContext(dbCtx).Model(&models.Node{}).Where("address IN (?)", nodeAddresses).Where("status != ?", models.NodeStatusQuit).Find(&nodes).Error; err != nil {
 		return nil, err
 	}
 
@@ -61,16 +62,16 @@ func getNodeData(ctx context.Context, db *gorm.DB, offset, limit int) ([]models.
 	}
 
 	for i, nodeData := range nodesData {
+		taskFee, err := service.GetTaskFee(ctx, db, nodeData.Address)
+		if err != nil {
+			log.Errorf("SyncNetwork: error getting task fee %v", err)
+			return nil, err
+		}
+		nodesData[i].Balance = models.BigInt{Int: *taskFee}
 		node, ok := nodesMap[nodeData.Address]
 		if ok {
-			taskFee, err := service.GetTaskFee(ctx, db, nodeData.Address)
-			if err != nil {
-				log.Errorf("SyncNetwork: error getting task fee %v", err)
-				return nil, err
-			}
-			nodesData[i].Balance = models.BigInt{Int: *taskFee}
 			nodesData[i].QoS = node.QOSScore
-			nodesData[i].Staking = models.BigInt{Int: node.StakeAmount.Int}
+			nodesData[i].Staking = models.BigInt{Int: *new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))}
 		}
 	}
 	return nodesData, nil

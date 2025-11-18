@@ -30,6 +30,7 @@ const (
 	TaskFeeEventTypeDraw
 	TaskFeeEventTypeWithdrawalFee
 	TaskFeeEventTypeBought
+	TaskFeeEventTypeUserCommission
 )
 
 type TaskFeeEvent struct {

@@ -109,7 +109,7 @@ func validatePendingTaskFeeEvents(ctx context.Context, db *gorm.DB, events []mod
 			invalidEvents = append(invalidEvents, event)
 			continue
 		}
-		if event.Type == models.TaskFeeEventTypeTask || event.Type == models.TaskFeeEventTypeDraw {
+		if event.Type == models.TaskFeeEventTypeTask || event.Type == models.TaskFeeEventTypeDraw || event.Type == models.TaskFeeEventTypeUserCommission {
 			taskIDCommitment := reasons[1]
 			if _, ok := taskIDCommitmentMap[taskIDCommitment]; !ok {
 				taskIDCommitmentMap[taskIDCommitment] = struct{}{}
@@ -192,7 +192,7 @@ func validatePendingTaskFeeEvents(ctx context.Context, db *gorm.DB, events []mod
 	validEvents := make([]models.TaskFeeEvent, 0)
 	for _, event := range candidateEvents {
 		reasons := strings.Split(event.Reason, "-")
-		if event.Type == models.TaskFeeEventTypeTask || event.Type == models.TaskFeeEventTypeDraw {
+		if event.Type == models.TaskFeeEventTypeTask || event.Type == models.TaskFeeEventTypeDraw || event.Type == models.TaskFeeEventTypeUserCommission {
 			taskIDCommitment := reasons[1]
 			if task, exists := taskMap[taskIDCommitment]; exists {
 				if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
@@ -423,7 +423,7 @@ func processPendingTaskFeeEvents(ctx context.Context, db *gorm.DB, events []mode
 			macCases += fmt.Sprintf(" WHEN address = '%s' THEN '%s'", address, mac)
 		}
 		updates := map[string]interface{}{
-			"mac": gorm.Expr("CASE" + macCases + " END"),
+			"mac":    gorm.Expr("CASE" + macCases + " END"),
 			"status": models.TaskFeeEventStatusProcessed,
 		}
 
@@ -505,7 +505,7 @@ func processPendingWithdrawEvents(ctx context.Context, db *gorm.DB, events []mod
 			macCases += fmt.Sprintf(" WHEN address = '%s' THEN '%s'", address, mac)
 		}
 		updates := map[string]interface{}{
-			"mac": gorm.Expr("CASE" + macCases + " END"),
+			"mac":          gorm.Expr("CASE" + macCases + " END"),
 			"local_status": models.WithdrawLocalStatusProcessed,
 		}
 
@@ -622,12 +622,19 @@ func buyTaskFee(ctx context.Context, db *gorm.DB, txHash, address string, amount
 	return commitFunc, nil
 }
 
-func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address string, amount *big.Int, taskType models.TaskType) (func() error, error) {
+func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address string, amount *big.Int, taskType models.TaskType, network string) (func() error, error) {
 	appConfig := config.GetConfig()
 	daoFee := big.NewInt(0).Mul(amount, big.NewInt(0).SetUint64(appConfig.Dao.Percent))
 	daoFee.Div(daoFee, big.NewInt(100))
 
 	reward := big.NewInt(0).Sub(amount, daoFee)
+	totalDelegatorFee := big.NewInt(0)
+	delegatorShare := GetDelegatorShare(address)
+	if delegatorShare > 0 {
+		totalCommissionFee := totalDelegatorFee.Mul(reward, big.NewInt(int64(delegatorShare)))
+		totalCommissionFee.Div(totalCommissionFee, big.NewInt(100))
+		reward = reward.Sub(reward, totalCommissionFee)
+	}
 
 	rewardEvent := &models.TaskFeeEvent{
 		Address:   address,
@@ -647,7 +654,47 @@ func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address str
 	}
 	events := []*models.TaskFeeEvent{rewardEvent, daoEvent}
 
+	if totalDelegatorFee.Sign() > 0 {
+		userStakings := GetUserStakingsOfNode(address, network)
+		totalUserStakeAmount := big.NewInt(0)
+		for _, amount := range userStakings {
+			totalUserStakeAmount = totalUserStakeAmount.Add(totalUserStakeAmount, amount)
+		}
+		userAddresses := make([]string, 0, len(userStakings))
+		userDelegatorFees := make([]*big.Int, 0, len(userStakings))
+		dispatchedCommissionFee := big.NewInt(0)
+		for userAddress, userStakingAmount := range userStakings {
+			userAddresses = append(userAddresses, userAddress)
+			delegatorFee := big.NewInt(0).Mul(totalDelegatorFee, userStakingAmount)
+			delegatorFee = delegatorFee.Div(delegatorFee, totalUserStakeAmount)
+			userDelegatorFees = append(userDelegatorFees, delegatorFee)
+			dispatchedCommissionFee = dispatchedCommissionFee.Add(dispatchedCommissionFee, delegatorFee)
+		}
+		userDelegatorFees[0].Add(userDelegatorFees[0], big.NewInt(0).Sub(totalDelegatorFee, dispatchedCommissionFee))
+
+		for i := range len(userStakings) {
+			events = append(events, &models.TaskFeeEvent{
+				Address:   userAddresses[i],
+				TaskFee:   models.BigInt{Int: *userDelegatorFees[i]},
+				CreatedAt: time.Now(),
+				Status:    models.TaskFeeEventStatusPending,
+				Type:      models.TaskFeeEventTypeUserCommission,
+				Reason:    fmt.Sprintf("%d-%s", models.TaskFeeEventTypeUserCommission, taskIDCommitment),
+			})
+			if err := addUserStakingEarning(ctx, db, userAddresses[i], address, network, userDelegatorFees[i]); err != nil {
+				return nil, err
+			}
+			if err := addUserEarning(ctx, db, userAddresses[i], userDelegatorFees[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if err := db.Create(events).Error; err != nil {
+		return nil, err
+	}
+
+	if err := addNodeEarning(ctx, db, address, reward, totalDelegatorFee); err != nil {
 		return nil, err
 	}
 
@@ -656,19 +703,20 @@ func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address str
 		return nil, err
 	}
 
-	nodeTaskFee, err := getTaskFeeFromCache(ctx, db, address)
-	if err != nil {
-		return nil, err
-	}
-	daoTaskFee, err := getTaskFeeFromCache(ctx, db, appConfig.Dao.Address)
-	if err != nil {
-		return nil, err
+	taskFees := make([]*big.Int, 0, len(events))
+	for _, event := range events {
+		fee, err := getTaskFeeFromCache(ctx, db, event.Address)
+		if err != nil {
+			return nil, err
+		}
+		taskFees = append(taskFees, fee)
 	}
 	commitFunc := func() error {
 		taskFeeCache.mu.Lock()
 		defer taskFeeCache.mu.Unlock()
-		nodeTaskFee.Add(nodeTaskFee, reward)
-		daoTaskFee.Add(daoTaskFee, daoFee)
+		for i := range len(events) {
+			taskFees[i].Add(taskFees[i], &events[i].TaskFee.Int)
+		}
 		return nil
 	}
 

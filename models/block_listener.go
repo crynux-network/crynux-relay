@@ -9,14 +9,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type NativeTokenListener struct {
+type BlockListener struct {
 	gorm.Model
 	Network        string    `json:"network" gorm:"not null"`
 	LastBlockNum   uint64    `json:"last_block_num" gorm:"not null;default:0"`
 	LastUpdateTime time.Time `json:"last_update_time" gorm:"not null"`
 }
 
-func GetNativeTokenListener(ctx context.Context, db *gorm.DB, network string) (*NativeTokenListener, error) {
+func GetBlockListener(ctx context.Context, db *gorm.DB, network string) (*BlockListener, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -25,11 +25,11 @@ func GetNativeTokenListener(ctx context.Context, db *gorm.DB, network string) (*
 	if !exists {
 		return nil, errors.New("blockchain not found")
 	}
-	var listener NativeTokenListener
-	err := db.WithContext(dbCtx).Model(&NativeTokenListener{}).Where("network = ?", network).Attrs(&NativeTokenListener{
+	var listener BlockListener
+	err := db.WithContext(dbCtx).Model(&BlockListener{}).Where("network = ?", network).Attrs(&BlockListener{
 		LastBlockNum:   blockchain.StartBlockNum,
 		LastUpdateTime: time.Now(),
-		Network: network,
+		Network:        network,
 	}).FirstOrCreate(&listener).Error
 
 	if err != nil {

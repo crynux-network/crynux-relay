@@ -23,10 +23,17 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if stakingAmount.Cmp(&node.StakeAmount.Int) != 0 {
 		return errors.New("staking amount mismatch")
 	}
+	userStakingAmount := GetUserStakeAmountOfNode(node.Address, node.Network)
+	totalStakingAmount := big.NewInt(0).Add(stakingAmount, userStakingAmount)
+	delegatorShare, err := blockchain.GetNodeDelegatorShare(ctx, common.HexToAddress(node.Address), node.Network)
+	if err != nil {
+		return err
+	}
 
 	err = db.Transaction(func(tx *gorm.DB) error {
 		node.Status = models.NodeStatusAvailable
 		node.JoinTime = time.Now()
+		node.DelegatorShare = delegatorShare
 		if err := node.Save(ctx, tx); err != nil {
 			return err
 		}
@@ -43,7 +50,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 			CardModel: node.GPUName,
 			VRam:      int(node.GPUVram),
 			QoS:       node.QOSScore,
-			Staking:   node.StakeAmount,
+			Staking:   models.BigInt{Int: *totalStakingAmount},
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "address"}},
@@ -54,15 +61,12 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		if err := emitEvent(ctx, tx, &models.NodeJoinEvent{NodeAddress: node.Address}); err != nil {
 			return err
 		}
-		if err := emitEvent(ctx, tx, &models.NodeStakingEvent{NodeAddress: node.Address, StakingAmount: node.StakeAmount}); err != nil {
-			return err
-		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	UpdateMaxStaking(&node.StakeAmount.Int)
+	UpdateMaxStaking(node.Address, &node.StakeAmount.Int)
 	return nil
 }
 
@@ -81,9 +85,7 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 		}); err != nil {
 			return err
 		}
-		if err := RefreshMaxStaking(ctx, tx); err != nil {
-			return err
-		}
+		UpdateMaxStaking(node.Address, big.NewInt(0))
 		var blockchainTransaction *models.BlockchainTransaction
 		if slashed {
 			blockchainTransaction, err = blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)

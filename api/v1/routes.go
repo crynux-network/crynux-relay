@@ -3,6 +3,7 @@ package v1
 import (
 	"crynux_relay/api/v1/client"
 	"crynux_relay/api/v1/credits"
+	"crynux_relay/api/v1/delegator"
 	"crynux_relay/api/v1/event"
 	"crynux_relay/api/v1/incentive"
 	"crynux_relay/api/v1/inference_tasks"
@@ -126,6 +127,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(staking.GetStaking, 200))
 
+	userStakingGroup := v1g.Group("user_staking", "user_staking", "user staking related APIs")
+	userStakingGroup.GET("/node/:address", []fizz.OperationOption{
+		fizz.Summary("Get user staking of node"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(staking.GetUserStakingOfNode, 200))
+
 	eventsGroup := v1g.Group("events", "events", "events related APIs")
 	eventsGroup.GET("", []fizz.OperationOption{
 		fizz.Summary("Get events"),
@@ -186,6 +193,31 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get line chart data of task success rate"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(stats.GetTaskSuccessRateLineChart, 200))
+
+	statsGroup.GET("/line_chart/node/:address/earnings", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of node's earnings"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetNodeEarningsLineChart, 200))
+	statsGroup.GET("/line_chart/node/:address/staking", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of node's staking"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetNodeStakingsLineChart, 200))
+	statsGroup.GET("/line_chart/node/:address/scores", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of node's scores"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetNodeScoresLineChart, 200))
+	statsGroup.GET("/line_chart/node/:address/delegator_num", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of node's delegator number"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetNodeDelegatorNumLineChart, 200))
+	statsGroup.GET("/line_chart/delegator/:address/earnings", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of a delegator's earnings"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetDelegatorEarningsLineChart, 200))
+	statsGroup.GET("/line_chart/delegation/:user_address/:node_address/earnings", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of a delegation's earnings"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetDelegationEarningsLineChart, 200))
 
 	statsGroup.GET("/histogram/task_execution_time", []fizz.OperationOption{
 		fizz.Summary("Get histogram data of task execution time"),
@@ -287,4 +319,19 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get deposit records"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, middleware.JWTAuthMiddleware(), tonic.Handler(client.GetDepositRecords, 200))
+
+	delegatorGroup := v1g.Group("delegator", "delegator", "delegator related APIs")
+	delegatorGroup.GET("/:user_address/delegation", []fizz.OperationOption{
+		fizz.Summary("Get delegation info"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(delegator.GetDelegation, 200))
+	delegatorGroup.GET("/:user_address", []fizz.OperationOption{
+		fizz.Summary("Get delegator info"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(delegator.GetDelegatorInfo, 200))
+	delegatorGroup.GET("/:user_address/delegations", []fizz.OperationOption{
+		fizz.ID("get_user_delegations"),
+		fizz.Summary("Get all delegations of the user"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(delegator.GetDelegations, 200))
 }

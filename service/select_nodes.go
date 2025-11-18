@@ -4,6 +4,7 @@ import (
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"math/big"
 	"strings"
 	"time"
 
@@ -160,7 +161,8 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 	maxQosScore := GetMaxQosScore()
 	scores := make([]float64, len(nodes))
 	for i, node := range nodes {
-		_, _, prob := CalculateSelectingProb(&node.StakeAmount.Int, maxStaking, node.QOSScore, maxQosScore)
+		totalStakeAmount := new(big.Int).Add(&node.StakeAmount.Int, GetUserStakeAmountOfNode(node.Address, node.Network))
+		_, _, prob := CalculateSelectingProb(totalStakeAmount, maxStaking, node.QOSScore, maxQosScore)
 		scores[i] = prob
 	}
 
@@ -184,7 +186,7 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 			if isSameModels(inUseModelIDs, task.ModelIDs) {
 				changedScore *= 2
 			} else {
-				changedScore *= (1 + float64(cnt) / float64(len(task.ModelIDs)))
+				changedScore *= (1 + float64(cnt)/float64(len(task.ModelIDs)))
 			}
 			changedScores = append(changedScores, changedScore)
 		}
@@ -239,7 +241,8 @@ func selectNodesForDownloadTask(ctx context.Context, task *models.InferenceTask,
 	maxQosScore := GetMaxQosScore()
 	scores := make([]float64, len(validNodes))
 	for i, node := range validNodes {
-		_, _, prob := CalculateSelectingProb(&node.StakeAmount.Int, maxStaking, node.QOSScore, maxQosScore)
+		totalStakeAmount := new(big.Int).Add(&node.StakeAmount.Int, GetUserStakeAmountOfNode(node.Address, node.Network))
+		_, _, prob := CalculateSelectingProb(totalStakeAmount, maxStaking, node.QOSScore, maxQosScore)
 		scores[i] = prob
 	}
 

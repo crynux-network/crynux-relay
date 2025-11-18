@@ -13,12 +13,28 @@ import (
 )
 
 var (
-	globalMaxStaking  = &MaxStaking{staking: big.NewInt(0)}
+	globalMaxStaking  = newMaxStaking()
 	globalMaxQosScore = float64(TASK_SCORE_REWARDS[0])
 )
 
 func InitSelectingProb(ctx context.Context, db *gorm.DB) error {
-	return RefreshMaxStaking(ctx, db)
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var nodes []models.Node
+	if err := db.WithContext(dbCtx).Model(&models.Node{}).Where("status != ?", models.NodeStatusQuit).Find(&nodes).Error; err != nil {
+		return err
+	}
+
+	stakingMap := make(map[string]*big.Int)
+	for _, node := range nodes {
+		addr := node.Address
+		amount := big.NewInt(0).Add(&node.StakeAmount.Int, GetUserStakeAmountOfNode(addr, node.Network))
+		stakingMap[addr] = amount
+	}
+
+	globalMaxStaking.init(stakingMap)
+	return nil
 }
 
 func CalculateSelectingProb(staking, maxStaking *big.Int, qosScore, maxQosScore float64) (float64, float64, float64) {
@@ -61,53 +77,67 @@ func GetMaxQosScore() float64 {
 	return globalMaxQosScore
 }
 
-func UpdateMaxStaking(staking *big.Int) {
-	globalMaxStaking.update(staking)
+func UpdateMaxStaking(address string, staking *big.Int) {
+	globalMaxStaking.update(address, staking)
 }
 
-func RefreshMaxStaking(ctx context.Context, db *gorm.DB) error {
-	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	
-	type result struct {
-		StakeAmount models.BigInt `json:"stake_amount"`
-	}
-
-	var res result
-	if err := db.WithContext(dbCtx).Model(&models.Node{}).Select("MAX(CAST(stake_amount as DECIMAL(65,0))) as stake_amount").First(&res).Error; err != nil {
-		return err
-	}
-
-	if res.StakeAmount.Int.Sign() > 0 {
-		globalMaxStaking.update(&res.StakeAmount.Int)
-	} else {
-		appConfig := config.GetConfig()
-		globalMaxStaking.update(utils.EtherToWei(big.NewInt(int64(appConfig.Task.StakeAmount))))
-	}
-
-	return nil
-}
-
-
-type MaxStaking struct {
+type maxStaking struct {
 	sync.RWMutex
-	staking *big.Int
+	maxStaking *big.Int
+	maxAddress string
+	stakingMap map[string]*big.Int
 }
 
-func (g *MaxStaking) update(staking *big.Int) {
-	g.RLock()
-	if staking.Cmp(g.staking) > 0 {
-		g.RUnlock()
-		g.Lock()
-		g.staking.Set(staking)
-		g.Unlock()
-	} else {
-		g.RUnlock()
+func newMaxStaking() *maxStaking {
+	return &maxStaking{
+		maxStaking: big.NewInt(0),
+		maxAddress: "",
+		stakingMap: make(map[string]*big.Int),
 	}
 }
 
-func (g *MaxStaking) get() *big.Int {
+func (g *maxStaking) init(stakingMap map[string]*big.Int) {
+	g.Lock()
+	defer g.Unlock()
+
+	for addr, amount := range stakingMap {
+		amount = big.NewInt(0).Set(amount)
+		g.stakingMap[addr] = amount
+		if amount.Cmp(g.maxStaking) > 0 {
+			g.maxAddress = addr
+			g.maxStaking = amount
+		}
+	}
+}
+
+func (g *maxStaking) update(address string, staking *big.Int) {
+	g.Lock()
+	defer g.Unlock()
+
+	copyStaking := big.NewInt(0).Set(staking)
+	g.stakingMap[address] = copyStaking
+	if staking.Cmp(g.maxStaking) > 0 {
+		g.maxStaking = copyStaking
+		g.maxAddress = address
+	} else if address == g.maxAddress && staking.Cmp(g.maxStaking) < 0 {
+		g.maxAddress = ""
+		g.maxStaking = big.NewInt(0)
+		for addr, amount := range g.stakingMap {
+			if amount.Cmp(g.maxStaking) > 0 {
+				g.maxAddress = addr
+				g.maxStaking = amount
+			}
+		}
+	}
+}
+
+func (g *maxStaking) get() *big.Int {
 	g.RLock()
 	defer g.RUnlock()
-	return g.staking
+	amount := g.maxStaking
+	if amount.Sign() == 0 {
+		appConfig := config.GetConfig()
+		amount = utils.EtherToWei(big.NewInt(int64(appConfig.Task.StakeAmount)))
+	}
+	return amount
 }

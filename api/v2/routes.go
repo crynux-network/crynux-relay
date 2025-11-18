@@ -47,5 +47,16 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Node join"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.NodeJoin, 200))
-
+	nodeGroup.GET("/:address/delegations", []fizz.OperationOption{
+		fizz.ID("get_node_delegations"),
+		fizz.Summary("Get delegations of the node"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.GetDelegations, 200))
+	
+	nodesGroup := v2g.Group("nodes", "nodes", "Nodes APIs")
+	nodesGroup.GET("/delegated", []fizz.OperationOption{
+		fizz.ID("delegated_nodes_v2"),
+		fizz.Summary("Get delegated nodes"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.GetDelegatedNodes, 200))
 }
