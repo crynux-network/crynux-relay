@@ -6,7 +6,9 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"database/sql"
+	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -504,31 +506,84 @@ func batchCreateNodeScores(ctx context.Context, db *gorm.DB, nodes []models.Node
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	var nodeScores []models.NodeScore
+	var nodeAddresses []string
 	for _, node := range nodes {
-		totalStakeAmount := big.NewInt(0)
-		if node.Status != models.NodeStatusQuit {
-			totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))
-		}
-		stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore, service.GetMaxQosScore())
-		nodeScore := models.NodeScore{
-			NodeAddress:  node.Address,
-			Time:         t,
-			StakingScore: stakingScore,
-			QOSScore:     qosScore,
-			ProbWeight:   probWeight,
-		}
-		nodeScores = append(nodeScores, nodeScore)
+		nodeAddresses = append(nodeAddresses, node.Address)
 	}
 
-	if err := db.WithContext(dbCtx).CreateInBatches(nodeScores, 100).Error; err != nil {
+	var existedNodeScores []models.NodeScore
+	var newNodeScores []models.NodeScore
+
+	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.NodeScore{}).Where("node_address in (?)", nodeAddresses).Where("time = ?", t).Find(&existedNodeScores).Error; err != nil {
+			return err
+		}
+
+		existedNodeScoreMap := make(map[string]models.NodeScore)
+		for _, ns := range existedNodeScores {
+			existedNodeScoreMap[ns.NodeAddress] = ns
+		}
+
+		var stakingScoreCase, qosScoreCase, probWeightCase strings.Builder
+		stakingScoreCase.WriteString("CASE ")
+		qosScoreCase.WriteString("CASE ")
+		probWeightCase.WriteString("CASE ")
+
+		for _, node := range nodes {
+			totalStakeAmount := big.NewInt(0)
+			if node.Status != models.NodeStatusQuit {
+				totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))
+			}
+			stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore, service.GetMaxQosScore())
+			if _, ok := existedNodeScoreMap[node.Address]; ok {
+				stakingScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), stakingScore))
+				qosScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), qosScore))
+				probWeightCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), probWeight))
+			} else {
+				nodeScore := models.NodeScore{
+					NodeAddress:  node.Address,
+					Time:         t,
+					StakingScore: stakingScore,
+					QOSScore:     qosScore,
+					ProbWeight:   probWeight,
+				}
+				newNodeScores = append(newNodeScores, nodeScore)
+			}
+		}
+
+		stakingScoreCase.WriteString("END")
+		qosScoreCase.WriteString("END")
+		probWeightCase.WriteString("END")
+
+		if len(existedNodeScores) > 0 {
+			if err := tx.Model(&models.NodeScore{}).
+				Where("node_address in (?)", nodeAddresses).
+				Where("time = ?", t).
+				Updates(map[string]interface{}{
+					"staking_score": gorm.Expr(stakingScoreCase.String()),
+					"qos_score":     gorm.Expr(qosScoreCase.String()),
+					"prob_weight":   gorm.Expr(probWeightCase.String()),
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(newNodeScores) > 0 {
+			if err := tx.CreateInBatches(newNodeScores, 100).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+
+	}); err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func statsNodeScores(ctx context.Context) error {
-	t := time.Now().UTC().Truncate(4 * time.Hour)
+func statsNodeScores(ctx context.Context, interval time.Duration) error {
+	t := time.Now().UTC().Truncate(interval)
 	nodes, err := getAllNodes(ctx, config.GetDB())
 	if err != nil {
 		return err
@@ -540,7 +595,12 @@ func statsNodeScores(ctx context.Context) error {
 }
 
 func StartStatsNodeScores(ctx context.Context) {
-	ticker := time.NewTicker(time.Hour)
+	interval := 4 * time.Hour
+	if err := statsNodeScores(ctx, interval); err != nil {
+		log.Errorf("Stats: initial stats node scores error %v", err)
+	}
+
+	ticker := time.NewTicker(interval)
 
 	for {
 		select {
@@ -552,7 +612,7 @@ func StartStatsNodeScores(ctx context.Context) {
 			func() {
 				ctx1, cancel := context.WithTimeout(ctx, 5*time.Minute)
 				defer cancel()
-				if err := statsNodeScores(ctx1); err != nil {
+				if err := statsNodeScores(ctx1, interval); err != nil {
 					log.Errorf("Stats: stats node scores error %v", err)
 				}
 			}()
@@ -564,30 +624,77 @@ func batchCreateNodeStakings(ctx context.Context, db *gorm.DB, nodes []models.No
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	var nodeStakings []models.NodeStaking
-	for _, node := range nodes {
-		nodeStaking := models.NodeStaking{
-			NodeAddress:      node.Address,
-			Time:             t,
-			OperatorStaking:  models.BigInt{Int: *big.NewInt(0)},
-			DelegatorStaking: models.BigInt{Int: *big.NewInt(0)},
-		}
-		if node.Status != models.NodeStatusQuit {
-			nodeStaking.OperatorStaking = node.StakeAmount
-			delegatorStaking := service.GetUserStakeAmountOfNode(node.Address, node.Network)
-			nodeStaking.DelegatorStaking = models.BigInt{Int: *delegatorStaking}
-		}
-		nodeStakings = append(nodeStakings, nodeStaking)
-	}
+	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		var existedNodeStakings []models.NodeStaking
+		var newNodeStakings []models.NodeStaking
 
-	if err := db.WithContext(dbCtx).CreateInBatches(nodeStakings, 100).Error; err != nil {
+		var nodeAddresses []string
+		for _, node := range nodes {
+			nodeAddresses = append(nodeAddresses, node.Address)
+		}
+
+		if err := tx.Model(&models.NodeStaking{}).Where("node_address in (?)", nodeAddresses).Where("time = ?", t).Find(&existedNodeStakings).Error; err != nil {
+			return err
+		}
+
+		existedNodeStakingMap := make(map[string]models.NodeStaking)
+		for _, ns := range existedNodeStakings {
+			existedNodeStakingMap[ns.NodeAddress] = ns
+		}
+
+		var operatorStakingCase, delegatorStakingCase strings.Builder
+		operatorStakingCase.WriteString("CASE ")
+		delegatorStakingCase.WriteString("CASE ")
+
+		for _, node := range nodes {
+			nodeStaking := models.NodeStaking{
+				NodeAddress:      node.Address,
+				Time:             t,
+				OperatorStaking:  models.BigInt{Int: *big.NewInt(0)},
+				DelegatorStaking: models.BigInt{Int: *big.NewInt(0)},
+			}
+			if node.Status != models.NodeStatusQuit {
+				nodeStaking.OperatorStaking = node.StakeAmount
+				delegatorStaking := service.GetUserStakeAmountOfNode(node.Address, node.Network)
+				nodeStaking.DelegatorStaking = models.BigInt{Int: *delegatorStaking}
+			}
+			if _, ok := existedNodeStakingMap[node.Address]; ok {
+				operatorStakingCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN '%s' ", node.Address, t.Format("2006-01-02 15:04:05.000"), nodeStaking.OperatorStaking.String()))
+				delegatorStakingCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN '%s' ", node.Address, t.Format("2006-01-02 15:04:05.000"), nodeStaking.DelegatorStaking.String()))
+			} else {
+				newNodeStakings = append(newNodeStakings, nodeStaking)
+			}
+		}
+
+		operatorStakingCase.WriteString("END")
+		delegatorStakingCase.WriteString("END")
+
+		if len(existedNodeStakings) > 0 {
+			if err := tx.Model(&models.NodeStaking{}).
+				Where("node_address in (?)", nodeAddresses).
+				Where("time = ?", t).
+				Updates(map[string]interface{}{
+					"operator_staking":  gorm.Expr(operatorStakingCase.String()),
+					"delegator_staking": gorm.Expr(delegatorStakingCase.String()),
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(newNodeStakings) > 0 {
+			if err := tx.CreateInBatches(newNodeStakings, 100).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
 }
 
-func statsNodeStakings(ctx context.Context) error {
-	t := time.Now().UTC().Truncate(4 * time.Hour)
+func statsNodeStakings(ctx context.Context, interval time.Duration) error {
+	t := time.Now().UTC().Truncate(interval)
 	nodes, err := getAllNodes(ctx, config.GetDB())
 	if err != nil {
 		return err
@@ -599,7 +706,11 @@ func statsNodeStakings(ctx context.Context) error {
 }
 
 func StartStatsNodeStakings(ctx context.Context) {
-	ticker := time.NewTicker(4 * time.Hour)
+	interval := 4 * time.Hour
+	if err := statsNodeStakings(ctx, interval); err != nil {
+		log.Errorf("Stats: initial stats node stakings error %v", err)
+	}
+	ticker := time.NewTicker(interval)
 
 	for {
 		select {
@@ -611,7 +722,7 @@ func StartStatsNodeStakings(ctx context.Context) {
 			func() {
 				ctx1, cancel := context.WithTimeout(ctx, 5*time.Minute)
 				defer cancel()
-				if err := statsNodeStakings(ctx1); err != nil {
+				if err := statsNodeStakings(ctx1, interval); err != nil {
 					log.Errorf("Stats: stats node stakings error %v", err)
 				}
 			}()
@@ -623,25 +734,69 @@ func batchCreateNodeDelegatorCount(ctx context.Context, db *gorm.DB, nodes []mod
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	var nodeDelegatorCounts []models.NodeDelegatorCount
-	for _, node := range nodes {
-		delegatorCount := service.GetDelegatorCountOfNode(node.Address, node.Network)
-		nodeDelegatorCount := models.NodeDelegatorCount{
-			NodeAddress: node.Address,
-			Time:        t,
-			Count:       uint64(delegatorCount),
-		}
-		nodeDelegatorCounts = append(nodeDelegatorCounts, nodeDelegatorCount)
-	}
+	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		var existedNodeDelegatorCounts []models.NodeDelegatorCount
+		var newNodeDelegatorCounts []models.NodeDelegatorCount
 
-	if err := db.WithContext(dbCtx).CreateInBatches(nodeDelegatorCounts, 100).Error; err != nil {
+		var nodeAddresses []string
+		for _, node := range nodes {
+			nodeAddresses = append(nodeAddresses, node.Address)
+		}
+
+		if err := tx.Model(&models.NodeDelegatorCount{}).Where("node_address in (?)", nodeAddresses).Where("time = ?", t).Find(&existedNodeDelegatorCounts).Error; err != nil {
+			return err
+		}
+
+		existedNodeDelegatorCountMap := make(map[string]models.NodeDelegatorCount)
+		for _, ndc := range existedNodeDelegatorCounts {
+			existedNodeDelegatorCountMap[ndc.NodeAddress] = ndc
+		}
+
+		var cases strings.Builder
+		cases.WriteString("CASE ")
+
+		for _, node := range nodes {
+			delegatorCount := service.GetDelegatorCountOfNode(node.Address, node.Network)
+			if _, ok := existedNodeDelegatorCountMap[node.Address]; ok {
+				cases.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %d ", node.Address, t.Format("2006-01-02 15:04:05.000"), delegatorCount))
+			} else {
+				nodeDelegatorCount := models.NodeDelegatorCount{
+					NodeAddress: node.Address,
+					Time:        t,
+					Count:       uint64(delegatorCount),
+				}
+				newNodeDelegatorCounts = append(newNodeDelegatorCounts, nodeDelegatorCount)
+			}
+		}
+
+		cases.WriteString("END")
+
+		if len(existedNodeDelegatorCounts) > 0 {
+			if err := tx.Model(&models.NodeDelegatorCount{}).
+				Where("node_address in (?)", nodeAddresses).
+				Where("time = ?", t).
+				Updates(map[string]interface{}{
+					"count": gorm.Expr(cases.String()),
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(newNodeDelegatorCounts) > 0 {
+			if err := tx.CreateInBatches(newNodeDelegatorCounts, 100).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func statsNodeDelegatorCount(ctx context.Context) error {
-	t := time.Now().UTC().Truncate(24 * time.Hour)
+func statsNodeDelegatorCount(ctx context.Context, interval time.Duration) error {
+	t := time.Now().UTC().Truncate(interval)
 	nodes, err := getAllNodes(ctx, config.GetDB())
 	if err != nil {
 		return err
@@ -653,7 +808,11 @@ func statsNodeDelegatorCount(ctx context.Context) error {
 }
 
 func StartStatsNodeDelegatorCount(ctx context.Context) {
-	ticker := time.NewTicker(24 * time.Hour)
+	interval := 24 * time.Hour
+	if err := statsNodeDelegatorCount(ctx, interval); err != nil {
+		log.Errorf("Stats: initial stats node delegator count error %v", err)
+	}
+	ticker := time.NewTicker(interval)
 
 	for {
 		select {
@@ -665,7 +824,7 @@ func StartStatsNodeDelegatorCount(ctx context.Context) {
 			func() {
 				ctx1, cancel := context.WithTimeout(ctx, 5*time.Minute)
 				defer cancel()
-				if err := statsNodeDelegatorCount(ctx1); err != nil {
+				if err := statsNodeDelegatorCount(ctx1, interval); err != nil {
 					log.Errorf("Stats: stats node delegator count error %v", err)
 				}
 			}()
