@@ -300,39 +300,39 @@ func (e *NodeStakingEvent) ToEvent() (*Event, error) {
 	}, nil
 }
 
-type UserStakingEvent struct {
-	UserAddress string `json:"user_address"`
-	NodeAddress string `json:"node_address"`
-	Amount      BigInt `json:"amount"`
-	Network     string `json:"network"`
+type DelegatorStakingEvent struct {
+	DelegatorAddress string `json:"delegator_address"`
+	NodeAddress      string `json:"node_address"`
+	Amount           BigInt `json:"amount"`
+	Network          string `json:"network"`
 }
 
-func (e *UserStakingEvent) ToEvent() (*Event, error) {
+func (e *DelegatorStakingEvent) ToEvent() (*Event, error) {
 	bs, err := json.Marshal(e)
 	if err != nil {
 		return nil, err
 	}
 	return &Event{
-		Type:        "UserStaking",
+		Type:        "DelegatorStaking",
 		NodeAddress: e.NodeAddress,
 		Args:        string(bs),
 	}, nil
 }
 
-type UserUnstakingEvent struct {
-	UserAddress string `json:"user_address"`
-	NodeAddress string `json:"node_address"`
-	Amount      BigInt `json:"amount"`
-	Network     string `json:"network"`
+type DelegatorUnstakingEvent struct {
+	DelegatorAddress string `json:"delegator_address"`
+	NodeAddress      string `json:"node_address"`
+	Amount           BigInt `json:"amount"`
+	Network          string `json:"network"`
 }
 
-func (e *UserUnstakingEvent) ToEvent() (*Event, error) {
+func (e *DelegatorUnstakingEvent) ToEvent() (*Event, error) {
 	bs, err := json.Marshal(e)
 	if err != nil {
 		return nil, err
 	}
 	return &Event{
-		Type:        "UserUnstaking",
+		Type:        "DelegatorUnstaking",
 		NodeAddress: e.NodeAddress,
 		Args:        string(bs),
 	}, nil

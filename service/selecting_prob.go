@@ -29,7 +29,7 @@ func InitSelectingProb(ctx context.Context, db *gorm.DB) error {
 	stakingMap := make(map[string]*big.Int)
 	for _, node := range nodes {
 		addr := node.Address
-		amount := big.NewInt(0).Add(&node.StakeAmount.Int, GetUserStakeAmountOfNode(addr, node.Network))
+		amount := big.NewInt(0).Add(&node.StakeAmount.Int, GetNodeTotalStakeAmount(addr, node.Network))
 		stakingMap[addr] = amount
 	}
 

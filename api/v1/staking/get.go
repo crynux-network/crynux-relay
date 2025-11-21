@@ -47,7 +47,7 @@ func GetUserStakingOfNode(c *gin.Context, in *GetStakingInput) (*GetStakingOutpu
 		}
 		return nil, response.NewExceptionResponse(err)
 	}
-	amount := service.GetUserStakeAmountOfNode(in.Address, node.Network)
+	amount := service.GetNodeTotalStakeAmount(in.Address, node.Network)
 	return &GetStakingOutput{
 		Data: models.BigInt{Int: *amount},
 	}, nil

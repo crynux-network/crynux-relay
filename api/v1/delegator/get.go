@@ -32,8 +32,8 @@ func GetDelegatorInfo(c *gin.Context, input *GetDelegatorInput) (*GetDelegatorOu
 	delegationNum := 0
 	totalStakingAmount := big.NewInt(0)
 	for network := range appConfig.Blockchains {
-		delegationNum += service.GetDelegationCountOfUser(input.UserAddress, network)
-		totalStakingAmount.Add(totalStakingAmount, service.GetUserStakeAmountOfUser(input.UserAddress, network))
+		delegationNum += service.GetDelegationCountOfDelegator(input.UserAddress, network)
+		totalStakingAmount.Add(totalStakingAmount, service.GetDelegatorTotalStakeAmount(input.UserAddress, network))
 	}
 
 	totalDelegationEarnings := big.NewInt(0)

@@ -532,7 +532,7 @@ func batchCreateNodeScores(ctx context.Context, db *gorm.DB, nodes []models.Node
 		for _, node := range nodes {
 			totalStakeAmount := big.NewInt(0)
 			if node.Status != models.NodeStatusQuit {
-				totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))
+				totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetNodeTotalStakeAmount(node.Address, node.Network))
 			}
 			stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore, service.GetMaxQosScore())
 			if _, ok := existedNodeScoreMap[node.Address]; ok {
@@ -655,7 +655,7 @@ func batchCreateNodeStakings(ctx context.Context, db *gorm.DB, nodes []models.No
 			}
 			if node.Status != models.NodeStatusQuit {
 				nodeStaking.OperatorStaking = node.StakeAmount
-				delegatorStaking := service.GetUserStakeAmountOfNode(node.Address, node.Network)
+				delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
 				nodeStaking.DelegatorStaking = models.BigInt{Int: *delegatorStaking}
 			}
 			if _, ok := existedNodeStakingMap[node.Address]; ok {

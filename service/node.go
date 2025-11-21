@@ -23,7 +23,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if stakingAmount.Cmp(&node.StakeAmount.Int) != 0 {
 		return errors.New("staking amount mismatch")
 	}
-	userStakingAmount := GetUserStakeAmountOfNode(node.Address, node.Network)
+	userStakingAmount := GetNodeTotalStakeAmount(node.Address, node.Network)
 	totalStakingAmount := big.NewInt(0).Add(stakingAmount, userStakingAmount)
 	delegatorShare, err := blockchain.GetNodeDelegatorShare(ctx, common.HexToAddress(node.Address), node.Network)
 	if err != nil {

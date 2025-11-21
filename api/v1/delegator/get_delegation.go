@@ -24,7 +24,7 @@ type GetDelegationOutput struct {
 }
 
 func GetDelegation(c *gin.Context, input *GetDelegationInput) (*GetDelegationOutput, error) {
-	userStaking, err := models.GetUserStaking(c.Request.Context(), config.GetDB(), input.UserAddress, input.NodeAddress, input.Network)
+	userStaking, err := models.GetDelegation(c.Request.Context(), config.GetDB(), input.UserAddress, input.NodeAddress, input.Network)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
@@ -52,7 +52,7 @@ func GetDelegation(c *gin.Context, input *GetDelegationInput) (*GetDelegationOut
 
 	return &GetDelegationOutput{
 		Data: &DelegationInfo{
-			UserAddress:   userStaking.UserAddress,
+			UserAddress:   userStaking.DelegatorAddress,
 			NodeAddress:   userStaking.NodeAddress,
 			Network:       userStaking.Network,
 			StakingAmount: userStaking.Amount.String(),

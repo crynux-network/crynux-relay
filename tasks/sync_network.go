@@ -71,7 +71,7 @@ func getNodeData(ctx context.Context, db *gorm.DB, offset, limit int) ([]models.
 		node, ok := nodesMap[nodeData.Address]
 		if ok {
 			nodesData[i].QoS = node.QOSScore
-			nodesData[i].Staking = models.BigInt{Int: *new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))}
+			nodesData[i].Staking = models.BigInt{Int: *new(big.Int).Add(&node.StakeAmount.Int, service.GetNodeTotalStakeAmount(node.Address, node.Network))}
 		}
 	}
 	return nodesData, nil

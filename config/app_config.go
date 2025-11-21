@@ -59,10 +59,10 @@ type AppConfig struct {
 			GenesisTokenAmount uint64 `mapstructure:"genesis_token_amount" description:"genesis token amount, in ether unit"`
 		} `mapstructure:"account"`
 		Contracts struct {
-			BenefitAddress string `mapstructure:"benefit_address"`
-			NodeStaking    string `mapstructure:"node_staking"`
-			Credits        string `mapstructure:"credits"`
-			UserStaking    string `mapstructure:"user_staking"`
+			BenefitAddress   string `mapstructure:"benefit_address"`
+			NodeStaking      string `mapstructure:"node_staking"`
+			Credits          string `mapstructure:"credits"`
+			DelegatedStaking string `mapstructure:"delegated_staking"`
 		} `mapstructure:"contracts"`
 		MaxRetries                uint8  `mapstructure:"max_retries"`
 		RetryInterval             uint64 `mapstructure:"retry_interval"`

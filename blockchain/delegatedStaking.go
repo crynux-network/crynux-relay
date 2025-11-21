@@ -22,7 +22,7 @@ func GetNodeDelegatorShare(ctx context.Context, nodeAddress common.Address, netw
 		Pending: false,
 		Context: callCtx,
 	}
-	return client.UserStakingContractInstance.GetNodeDelegatorShare(opts, nodeAddress)
+	return client.DelegatedStakingContractInstance.GetNodeDelegatorShare(opts, nodeAddress)
 }
 
 func GetUserStakeAmountOfNode(ctx context.Context, nodeAddress common.Address, network string) (*big.Int, error) {
@@ -38,5 +38,5 @@ func GetUserStakeAmountOfNode(ctx context.Context, nodeAddress common.Address, n
 		Pending: false,
 		Context: callCtx,
 	}
-	return client.UserStakingContractInstance.GetNodeStakeAmount(opts, nodeAddress)
+	return client.DelegatedStakingContractInstance.GetNodeTotalStakeAmount(opts, nodeAddress)
 }

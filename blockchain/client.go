@@ -28,21 +28,21 @@ import (
 )
 
 type BlockchainClient struct {
-	Network                        string
-	RpcClient                      *ethclient.Client
-	BenefitAddressContractInstance *bindings.BenefitAddress
-	NodeStakingContractInstance    *bindings.NodeStaking
-	CreditsContractInstance        *bindings.Credits
-	UserStakingContractInstance    *bindings.UserStaking
-	ChainID                        *big.Int
-	GasPrice                       *big.Int
-	GasLimit                       uint64
-	Address                        string
-	PrivateKey                     string
-	Nonce                          *uint64
-	NonceMu                        sync.Mutex
-	Limiter                        *rate.Limiter
-	SentTransactionCountLimit      uint64
+	Network                          string
+	RpcClient                        *ethclient.Client
+	BenefitAddressContractInstance   *bindings.BenefitAddress
+	NodeStakingContractInstance      *bindings.NodeStaking
+	CreditsContractInstance          *bindings.Credits
+	DelegatedStakingContractInstance *bindings.DelegatedStaking
+	ChainID                          *big.Int
+	GasPrice                         *big.Int
+	GasLimit                         uint64
+	Address                          string
+	PrivateKey                       string
+	Nonce                            *uint64
+	NonceMu                          sync.Mutex
+	Limiter                          *rate.Limiter
+	SentTransactionCountLimit        uint64
 }
 
 var blockchainClients = make(map[string]*BlockchainClient)
@@ -84,7 +84,7 @@ func initBlockchainClient(ctx context.Context, network string) error {
 		return err
 	}
 
-	userStakingInstance, err := bindings.NewUserStaking(common.HexToAddress(blockchain.Contracts.UserStaking), client)
+	userStakingInstance, err := bindings.NewDelegatedStaking(common.HexToAddress(blockchain.Contracts.DelegatedStaking), client)
 	if err != nil {
 		return err
 	}
@@ -107,21 +107,21 @@ func initBlockchainClient(ctx context.Context, network string) error {
 	limiter := rate.NewLimiter(rate.Limit(blockchain.RPS), int(blockchain.RPS))
 
 	blockchainClients[network] = &BlockchainClient{
-		Network:                        network,
-		RpcClient:                      client,
-		BenefitAddressContractInstance: benefitAddressInstance,
-		NodeStakingContractInstance:    nodeStakingInstance,
-		CreditsContractInstance:        creditsInstance,
-		UserStakingContractInstance:    userStakingInstance,
-		ChainID:                        chainID,
-		GasPrice:                       gasPrice,
-		GasLimit:                       blockchain.GasLimit,
-		Address:                        blockchain.Account.Address,
-		PrivateKey:                     blockchain.Account.PrivateKey,
-		Nonce:                          &nonce,
-		NonceMu:                        sync.Mutex{},
-		Limiter:                        limiter,
-		SentTransactionCountLimit:      blockchain.SentTransactionCountLimit,
+		Network:                          network,
+		RpcClient:                        client,
+		BenefitAddressContractInstance:   benefitAddressInstance,
+		NodeStakingContractInstance:      nodeStakingInstance,
+		CreditsContractInstance:          creditsInstance,
+		DelegatedStakingContractInstance: userStakingInstance,
+		ChainID:                          chainID,
+		GasPrice:                         gasPrice,
+		GasLimit:                         blockchain.GasLimit,
+		Address:                          blockchain.Account.Address,
+		PrivateKey:                       blockchain.Account.PrivateKey,
+		Nonce:                            &nonce,
+		NonceMu:                          sync.Mutex{},
+		Limiter:                          limiter,
+		SentTransactionCountLimit:        blockchain.SentTransactionCountLimit,
 	}
 	return nil
 }

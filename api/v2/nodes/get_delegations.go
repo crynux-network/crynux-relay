@@ -34,7 +34,7 @@ type GetDelegationsOutput struct {
 }
 
 func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegationsOutput, error) {
-	userStakings, err := models.GetUserStakingsOfNode(c.Request.Context(), config.GetDB(), input.Address, &input.Network)
+	userStakings, err := models.GetDelegationsOfNode(c.Request.Context(), config.GetDB(), input.Address, &input.Network)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
@@ -76,7 +76,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 				todayEarningsMap[userAddress] = models.BigInt{Int: *big.NewInt(0)}
 			}
 			errCh <- nil
-		}(userStaking.UserAddress)
+		}(userStaking.DelegatorAddress)
 	}
 	for i := 0; i < len(userStakings); i++ {
 		if err := <-errCh; err != nil {
@@ -87,13 +87,13 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	res := make([]DelegationInfo, 0)
 	for _, userStaking := range userStakings {
 		res = append(res, DelegationInfo{
-			UserAddress:   userStaking.UserAddress,
+			UserAddress:   userStaking.DelegatorAddress,
 			NodeAddress:   userStaking.NodeAddress,
 			Network:       userStaking.Network,
 			StakingAmount: userStaking.Amount.Int.String(),
 			StakedAt:      userStaking.UpdatedAt.Unix(),
-			TotalEarnings: totalEarningsMap[userStaking.UserAddress],
-			TodayEarnings: todayEarningsMap[userStaking.UserAddress],
+			TotalEarnings: totalEarningsMap[userStaking.DelegatorAddress],
+			TodayEarnings: todayEarningsMap[userStaking.DelegatorAddress],
 		})
 	}
 

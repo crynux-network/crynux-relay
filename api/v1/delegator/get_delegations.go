@@ -34,7 +34,7 @@ type GetDelegationsOutput struct {
 }
 
 func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegationsOutput, error) {
-	userStakings, err := models.GetUserStakingsOfUser(c.Request.Context(), config.GetDB(), input.UserAddress, &input.Network)
+	userStakings, err := models.GetDelegationsOfUser(c.Request.Context(), config.GetDB(), input.UserAddress, &input.Network)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
@@ -48,13 +48,13 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	start := time.Now().UTC().Truncate(24 * time.Hour)
 	end := start.Add(24 * time.Hour)
 	for _, userStaking := range userStakings {
-		go func (nodeAddress string)  {
+		go func(nodeAddress string) {
 			semaphore <- struct{}{}
 			defer func() {
 				<-semaphore
 			}()
 			totalEarningAmount := big.NewInt(0)
-			totalEarning, err := models.GetTotalUserStakingEarning(c.Request.Context(), config.GetDB(), input.UserAddress, nodeAddress, input.Network)	
+			totalEarning, err := models.GetTotalUserStakingEarning(c.Request.Context(), config.GetDB(), input.UserAddress, nodeAddress, input.Network)
 			if err != nil {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
 					errCh <- err
@@ -64,7 +64,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 				totalEarningAmount.Set(&totalEarning.Earning.Int)
 			}
 			totalEarningsMap[nodeAddress] = models.BigInt{Int: *totalEarningAmount}
-			
+
 			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), input.UserAddress, nodeAddress, input.Network, start, end)
 			if err != nil {
 				errCh <- err
@@ -79,7 +79,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 		}(userStaking.NodeAddress)
 	}
 	for i := 0; i < len(userStakings); i++ {
-		if err := <- errCh; err != nil {
+		if err := <-errCh; err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
 	}
@@ -87,7 +87,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	var res []DelegationInfo
 	for _, userStaking := range userStakings {
 		res = append(res, DelegationInfo{
-			UserAddress:   userStaking.UserAddress,
+			UserAddress:   userStaking.DelegatorAddress,
 			NodeAddress:   userStaking.NodeAddress,
 			Network:       userStaking.Network,
 			StakingAmount: userStaking.Amount.Int.String(),

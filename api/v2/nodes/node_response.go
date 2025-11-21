@@ -54,11 +54,11 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 
 	totalStakeAmount := big.NewInt(0)
 	if node.Status != models.NodeStatusQuit {
-		totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetUserStakeAmountOfNode(node.Address, node.Network))
+		totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetNodeTotalStakeAmount(node.Address, node.Network))
 	}
 	stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore, service.GetMaxQosScore())
 
-	delegatorStaking := service.GetUserStakeAmountOfNode(node.Address, node.Network)
+	delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
 	delegatorsNum := service.GetDelegatorCountOfNode(node.Address, node.Network)
 
 	totalOperatorEarnings := big.NewInt(0)

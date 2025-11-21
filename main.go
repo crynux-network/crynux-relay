@@ -48,7 +48,7 @@ func main() {
 	if err := service.InitDelegatorShareCache(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
-	if err := service.InitUserStakingCache(context.Background(), config.GetDB()); err != nil {
+	if err := service.InitDelegationCaches(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
 	if err := service.InitSelectingProb(context.Background(), config.GetDB()); err != nil {
