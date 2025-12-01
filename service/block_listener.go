@@ -267,7 +267,7 @@ func updateNodeStaking(ctx context.Context, db *gorm.DB, event *bindings.NodeSta
 	return nil
 }
 
-func processUserStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient) error {
+func processDelegatedStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient) error {
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
 		return fmt.Errorf("failed to get transaction receipt of %s, network: %s, error: %w", tx.Hash().Hex(), client.Network, err)
@@ -297,7 +297,7 @@ func processUserStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.T
 			continue
 		}
 		if event, err := client.DelegatedStakingContractInstance.ParseNodeSlashed(*log); err == nil {
-			if err := slashUserStakingOfNode(ctx, db, event, client.Network); err != nil {
+			if err := slashDelegatedStakingOfNode(ctx, db, event, client.Network); err != nil {
 				return err
 			}
 			continue
@@ -469,7 +469,7 @@ func changeNodeDelegatorShare(ctx context.Context, db *gorm.DB, event *bindings.
 	return nil
 }
 
-func slashUserStakingOfNode(ctx context.Context, db *gorm.DB, event *bindings.DelegatedStakingNodeSlashed, network string) error {
+func slashDelegatedStakingOfNode(ctx context.Context, db *gorm.DB, event *bindings.DelegatedStakingNodeSlashed, network string) error {
 	dbCtx, dbCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dbCancel()
 
@@ -478,14 +478,27 @@ func slashUserStakingOfNode(ctx context.Context, db *gorm.DB, event *bindings.De
 		if err := tx.Model(&models.Delegation{}).Where("node_address = ?", nodeAddress).Where("network = ?", network).Update("valid", false).Error; err != nil {
 			return err
 		}
+		delegations := GetDelegationsOfNode(nodeAddress, network)
+		events := make([]*models.DelegatedStakingSlashedEvent, 0)
+		for address, amount := range delegations {
+			events = append(events, &models.DelegatedStakingSlashedEvent{
+				NodeAddress:      nodeAddress,
+				DelegatorAddress: address,
+				Amount:           models.BigInt{Int: *amount},
+				Network:          network,
+			})
+		}
+		if err := tx.CreateInBatches(events, 100).Error; err != nil {
+			return err
+		}
 		RemoveNodeDelegations(nodeAddress, network)
 		return nil
 	}); err != nil {
-		log.Errorf("SlashUserStakingOfNode: failed to slash user staking of node %s: %v", nodeAddress, err)
+		log.Errorf("SlashDelegatedStakingOfNode: failed to slash delegated staking of node %s: %v", nodeAddress, err)
 		return err
 	}
 
-	log.Infof("SlashUserStakingOfNode: successfully slash user staking of node: %s", nodeAddress)
+	log.Infof("SlashDelegatedStakingOfNode: successfully slash delegated staking of node: %s", nodeAddress)
 	return nil
 }
 
@@ -511,7 +524,7 @@ func processTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction,
 	} else if strings.EqualFold(toAddress, blockchainCfg.Contracts.NodeStaking) {
 		return processNodeStakingTransaction(ctx, db, tx, client)
 	} else if strings.EqualFold(toAddress, blockchainCfg.Contracts.DelegatedStaking) {
-		return processUserStakingTransaction(ctx, db, tx, client)
+		return processDelegatedStakingTransaction(ctx, db, tx, client)
 	}
 
 	return nil

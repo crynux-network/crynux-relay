@@ -204,6 +204,12 @@ func (client *BlockchainClient) processSendingTxError(err error) error {
 	return err
 }
 
+func (client *BlockchainClient) resetNonce() {
+	client.NonceMu.Lock()
+	defer client.NonceMu.Unlock()
+	client.Nonce = nil
+}
+
 func (client *BlockchainClient) BalanceAt(ctx context.Context, address common.Address) (*big.Int, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

@@ -217,6 +217,7 @@ func (e *TaskEndGroupSuccessEvent) ToEvent() (*Event, error) {
 type NodeKickedOutEvent struct {
 	NodeAddress      string `json:"node_address"`
 	TaskIDCommitment string `json:"task_id_commitment"`
+	Network          string `json:"network"`
 }
 
 func (e *NodeKickedOutEvent) ToEvent() (*Event, error) {
@@ -235,6 +236,8 @@ func (e *NodeKickedOutEvent) ToEvent() (*Event, error) {
 type NodeSlashedEvent struct {
 	NodeAddress      string `json:"node_address"`
 	TaskIDCommitment string `json:"task_id_commitment"`
+	Amount           BigInt `json:"amount"`
+	Network          string `json:"network"`
 }
 
 func (e *NodeSlashedEvent) ToEvent() (*Event, error) {
@@ -252,6 +255,7 @@ func (e *NodeSlashedEvent) ToEvent() (*Event, error) {
 
 type NodeJoinEvent struct {
 	NodeAddress string `json:"node_address"`
+	Network     string `json:"network"`
 }
 
 func (e *NodeJoinEvent) ToEvent() (*Event, error) {
@@ -269,6 +273,7 @@ func (e *NodeJoinEvent) ToEvent() (*Event, error) {
 type NodeQuitEvent struct {
 	NodeAddress             string `json:"node_address"`
 	BlockchainTransactionID uint   `json:"blockchain_transaction_id"`
+	Network                 string `json:"network"`
 }
 
 func (e *NodeQuitEvent) ToEvent() (*Event, error) {
@@ -351,6 +356,25 @@ func (e *NodeDelegatorShareChangedEvent) ToEvent() (*Event, error) {
 	}
 	return &Event{
 		Type:        "NodeDelegatorShareChanged",
+		NodeAddress: e.NodeAddress,
+		Args:        string(bs),
+	}, nil
+}
+
+type DelegatedStakingSlashedEvent struct {
+	DelegatorAddress string `json:"delegator_address"`
+	NodeAddress      string `json:"node_address"`
+	Amount           BigInt `json:"amount"`
+	Network          string `json:"network"`
+}
+
+func (e *DelegatedStakingSlashedEvent) ToEvent() (*Event, error) {
+	bs, err := json.Marshal(e)
+	if err != nil {
+		return nil, err
+	}
+	return &Event{
+		Type:        "DelegatedStakingSlashed",
 		NodeAddress: e.NodeAddress,
 		Args:        string(bs),
 	}, nil

@@ -25,7 +25,7 @@ type TransactionConfirmer struct {
 	isRunning     bool
 	batchSize     int
 	pollInterval  time.Duration
-	limiter chan struct{}
+	limiter       chan struct{}
 }
 
 // NewTransactionConfirmer creates a new transaction confirmer instance
@@ -100,7 +100,7 @@ func (tc *TransactionConfirmer) getSentTransactions(ctx context.Context) {
 					if err != nil {
 						return nil, err
 					}
-				
+
 					if len(transactions) == 0 {
 						break
 					}
@@ -167,25 +167,25 @@ func (tc *TransactionConfirmer) confirmTransaction(ctx context.Context, transact
 	if !ok {
 		return fmt.Errorf("network %s not found", transaction.Network)
 	}
-
-	waitDeadline := transaction.SentAt.Time.Add(time.Duration(blockchain.ReceiptWaitTime) * time.Second)
-	if time.Now().After(waitDeadline) {
-		log.Warnf("Transaction %d has waited too long for receipt", transaction.ID)
-		if err := tc.handleTimedOutTransaction(ctx, transaction); err != nil {
-			log.Errorf("Failed to handle timed out transaction: %v", err)
-			return err
-		}
-		return nil
-	}
-
-	txHash := common.HexToHash(transaction.TxHash.String)
-
-	// Get transaction receipt
 	client, err := GetBlockchainClient(transaction.Network)
 	if err != nil {
 		log.Errorf("Error getting blockchain client: %v", err)
 		return err
 	}
+	
+	waitDeadline := transaction.SentAt.Time.Add(time.Duration(blockchain.ReceiptWaitTime) * time.Second)
+	if time.Now().After(waitDeadline) {
+		log.Warnf("Transaction %d has waited too long for receipt", transaction.ID)
+		if err := tc.handleTimedOutTransaction(ctx, client, transaction); err != nil {
+			log.Errorf("Failed to handle timed out transaction: %v", err)
+			return err
+		}
+		return nil
+	}
+	
+	txHash := common.HexToHash(transaction.TxHash.String)
+	
+	// Get transaction receipt
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, txHash)
 	if err != nil {
 		// If transaction is not found, it might still be pending
@@ -255,7 +255,7 @@ func (tc *TransactionConfirmer) handleFailedTransaction(ctx context.Context, cli
 	return nil
 }
 
-func (tc *TransactionConfirmer) handleTimedOutTransaction(ctx context.Context, transaction *models.BlockchainTransaction) error {
+func (tc *TransactionConfirmer) handleTimedOutTransaction(ctx context.Context, client *BlockchainClient, transaction *models.BlockchainTransaction) error {
 	if err := tc.db.Transaction(func(tx *gorm.DB) error {
 		if err := transaction.MarkFailed(ctx, tx, 0, 0, "", "Transaction timed out"); err != nil {
 			return err
@@ -269,6 +269,7 @@ func (tc *TransactionConfirmer) handleTimedOutTransaction(ctx context.Context, t
 	}); err != nil {
 		return err
 	}
+	client.resetNonce()
 	log.Infof("Transaction %d timed out, will retry (attempt %d/%d)", transaction.ID, transaction.RetryCount+1, transaction.MaxRetries)
 
 	return nil
