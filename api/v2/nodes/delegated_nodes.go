@@ -1,25 +1,64 @@
 package nodes
 
 import (
+	"context"
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
-	"math/big"
-	"sort"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type GetDelegatedNodesInput struct {
+	Page     int `json:"page" query:"page" description:"The page" default:"1"`
+	PageSize int `json:"page_size" query:"page_size" description:"The page size" default:"30"`
+}
+
+type DelegatedNodesResult struct {
+	Nodes []*Node `json:"nodes"`
+	Total int64   `json:"total"`
 }
 
 type GetDelegatedNodesOutput struct {
 	response.Response
-	Data []*Node `json:"data"`
+	Data DelegatedNodesResult `json:"data"`
+}
+
+func getDelegatedNodes(ctx context.Context, db *gorm.DB, offset, limit int) ([]*models.Node, int64, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	dbi := db.WithContext(dbCtx).Model(&models.Node{}).Where("delegator_share > ?", 0)
+	var total int64
+	if err := dbi.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var nodes []*models.Node
+	if err := dbi.Joins("left join node_earnings on node_earnings.node_address=nodes.address and time is NULL").
+		Order("(CAST(node_earnings.operator_earning AS DECIMAL(65,0))+CAST(node_earnings.delegator_earning AS DECIMAL(65,0))) DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&nodes).Error; err != nil {
+		return nil, 0, err
+	}
+	return nodes, total, nil
 }
 
 func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDelegatedNodesOutput, error) {
-	nodes, err := models.GetDelegatedNodes(c.Request.Context(), config.GetDB())
+	page := 1
+	if input.Page > 0 {
+		page = input.Page
+	}
+	pageSize := 30
+	if input.PageSize > 0 {
+		pageSize = input.PageSize
+	}
+	offset := (page - 1) * pageSize
+	limit := pageSize
+	nodes, total, err := getDelegatedNodes(c.Request.Context(), config.GetDB(), offset, limit)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
@@ -48,13 +87,10 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 		}
 	}
 
-	sort.Slice(nodeDatas, func(i, j int) bool {
-		earningI := new(big.Int).Add(&nodeDatas[i].TodayOperatorEarnings.Int, &nodeDatas[i].TodayDelegatorEarnings.Int)
-		earningJ := new(big.Int).Add(&nodeDatas[j].TodayOperatorEarnings.Int, &nodeDatas[j].TodayDelegatorEarnings.Int)
-		return earningI.Cmp(earningJ) > 0
-	})
-
 	return &GetDelegatedNodesOutput{
-		Data: nodeDatas,
+		Data: DelegatedNodesResult{
+			Nodes: nodeDatas,
+			Total: total,
+		},
 	}, nil
 }
