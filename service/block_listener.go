@@ -316,7 +316,7 @@ func updateDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.De
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 		var userStaking models.Delegation
 		oldStakeAmount := big.NewInt(0)
-		if err := tx.Model(&models.Delegation{}).Where("user_address = ? AND node_address = ?", delegatorAddress, nodeAddress).First(&userStaking).Error; err != nil {
+		if err := tx.Model(&models.Delegation{}).Where("delegator_address = ? AND node_address = ?", delegatorAddress, nodeAddress).First(&userStaking).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				userStaking = models.Delegation{
 					DelegatorAddress: delegatorAddress,
@@ -379,7 +379,7 @@ func unstakeDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.D
 
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 		var userStaking models.Delegation
-		if err := tx.Model(&models.Delegation{}).Where("user_address = ? AND node_address = ? AND network = ?", delegatorAddress, nodeAddress, network).First(&userStaking).Error; err != nil {
+		if err := tx.Model(&models.Delegation{}).Where("delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress, nodeAddress, network).First(&userStaking).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return nil
 			}

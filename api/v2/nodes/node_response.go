@@ -16,6 +16,7 @@ import (
 
 type Node struct {
 	Address                string            `json:"address" gorm:"index"`
+	Network                string            `json:"network" gorm:"index"`
 	Status                 models.NodeStatus `json:"status" gorm:"index"`
 	GPUName                string            `json:"gpu_name" gorm:"index"`
 	GPUVram                uint64            `json:"gpu_vram" gorm:"index"`
@@ -87,6 +88,7 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 	}
 	return &Node{
 		Address:                node.Address,
+		Network:                node.Network,
 		Status:                 node.Status,
 		GPUName:                node.GPUName,
 		GPUVram:                node.GPUVram,
