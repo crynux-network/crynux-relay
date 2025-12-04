@@ -16,8 +16,8 @@ import (
 type GetDelegationsInput struct {
 	UserAddress string `json:"user_address" path:"user_address" description:"address of the delegator" validate:"required"`
 	Network     string `json:"network" query:"network" description:"network of the delegator" validate:"required"`
-	Page        int    `json:"page" query:"page" description:"The page" default:"1"`
-	PageSize    int    `json:"page_size" query:"page_size" description:"The page size" default:"30"`
+	Page        int    `json:"page" query:"page" description:"The page" default:"1" validate:"min=1"`
+	PageSize    int    `json:"page_size" query:"page_size" description:"The page size" default:"30" validate:"max=100,min=1"`
 }
 
 type DelegationInfo struct {
