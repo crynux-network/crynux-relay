@@ -13,7 +13,7 @@
       },
       {
         "internalType": "address",
-        "name": "userStakingContract",
+        "name": "delegatedStakingContract",
         "type": "address"
       }
     ],

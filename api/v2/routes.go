@@ -42,6 +42,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get node info"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetNode, 200))
+	nodeGroup.GET("/public/:address", []fizz.OperationOption{
+		fizz.ID("node_public_get_v2"),
+		fizz.Summary("Get public node info"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("404", "Not found", response.NotFoundErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.GetPublicNode, 200))
 	nodeGroup.POST("/:address/join", []fizz.OperationOption{
 		fizz.ID("node_join_v2"),
 		fizz.Summary("Node join"),
@@ -52,7 +58,7 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get delegations of the node"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetDelegations, 200))
-	
+
 	nodesGroup := v2g.Group("nodes", "nodes", "Nodes APIs")
 	nodesGroup.GET("/delegated", []fizz.OperationOption{
 		fizz.ID("delegated_nodes_v2"),

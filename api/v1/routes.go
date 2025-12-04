@@ -58,6 +58,10 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get the result checkpoint of the task by node address"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(inference_tasks.GetResultCheckpoint, 200))
+	tasksGroup.GET("/:task_id_commitment/selected_node", []fizz.OperationOption{
+		fizz.Summary("Get selected node info of this task"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(inference_tasks.GetSelectedNodeInfo, 200))
 
 	tasksGroup.GET("/:task_id_commitment/checkpoint", []fizz.OperationOption{
 		fizz.Summary("Get the input checkpoint of the task"),

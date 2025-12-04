@@ -4,6 +4,7 @@ import (
 	v1 "crynux_relay/api/v1"
 	"crynux_relay/api/tools"
 	responseV1 "crynux_relay/api/v1/response"
+	responseV2 "crynux_relay/api/v2/response"
 	v2 "crynux_relay/api/v2"
 	"crynux_relay/config"
 	"reflect"
@@ -110,6 +111,8 @@ func TonicResponseErrorHook(ctx *gin.Context, err error) (int, interface{}) {
 	switch apiVersion {
 	case "1":
 		return responseV1.TonicErrorResponse(ctx, err)
+	case "2":
+		return responseV2.TonicErrorResponse(ctx, err)
 	default:
 		return tonic.DefaultErrorHook(ctx, err)
 	}
@@ -120,6 +123,8 @@ func TonicRenderHook(ctx *gin.Context, statusCode int, payload interface{}) {
 	switch apiVersion {
 	case "1":
 		responseV1.TonicRenderResponse(ctx, statusCode, payload)
+	case "2":
+		responseV2.TonicRenderResponse(ctx, statusCode, payload)
 	default:
 		tonic.DefaultRenderHook(ctx, statusCode, payload)
 	}
