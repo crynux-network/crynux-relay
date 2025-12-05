@@ -4,6 +4,7 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,9 @@ type GetNodeDelegatorNumOutput struct {
 }
 
 func GetNodeDelegatorNumLineChart(c *gin.Context, input *GetNodeDelegatorNumInput) (*GetNodeDelegatorNumOutput, error) {
+	if service.GetDelegatorShare(input.Address) == 0 {
+		return nil, response.NewNotFoundErrorResponse()
+	}
 	end := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
 	if input.End != nil {
 		end = time.Unix(*input.End, 0).Truncate(24 * time.Hour).Add(24 * time.Hour)
