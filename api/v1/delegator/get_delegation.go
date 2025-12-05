@@ -26,6 +26,9 @@ type GetDelegationOutput struct {
 func GetDelegation(c *gin.Context, input *GetDelegationInput) (*GetDelegationOutput, error) {
 	userStaking, err := models.GetDelegation(c.Request.Context(), config.GetDB(), input.UserAddress, input.NodeAddress, input.Network)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, response.NewNotFoundErrorResponse()
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 
