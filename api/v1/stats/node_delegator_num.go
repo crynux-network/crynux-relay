@@ -48,11 +48,9 @@ func GetNodeDelegatorNumLineChart(c *gin.Context, input *GetNodeDelegatorNumInpu
 	nodeDelegatorCountsMap := make(map[int64]models.NodeDelegatorCount)
 	for _, ndc := range nodeDelegatorCounts {
 		t := ndc.Time.UTC().Truncate(24 * time.Hour).Unix()
-		if _, ok := nodeDelegatorCountsMap[t]; ok {
-			if ndc.Count > nodeDelegatorCountsMap[t].Count {
-				nodeDelegatorCountsMap[t] = ndc
-			}
-		} else {
+		if oldNdc, ok := nodeDelegatorCountsMap[t]; !ok {
+			nodeDelegatorCountsMap[t] = ndc
+		} else if oldNdc.Time.Before(ndc.Time) {
 			nodeDelegatorCountsMap[t] = ndc
 		}
 	}

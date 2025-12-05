@@ -53,12 +53,8 @@ func GetNodeStakingsLineChart(c *gin.Context, input *GetNodeStakingsInput) (*Get
 		t := ns.Time.UTC().Truncate(24 * time.Hour).Unix()
 		if oldNs, ok := nodeStakingsMap[t]; !ok {
 			nodeStakingsMap[t] = ns
-		} else {
-			oldTotalStaking := big.NewInt(0).Add(&oldNs.OperatorStaking.Int, &oldNs.DelegatorStaking.Int)
-			totalStaking := big.NewInt(0).Add(&ns.OperatorStaking.Int, &ns.DelegatorStaking.Int)
-			if totalStaking.Cmp(oldTotalStaking) > 0 {
-				nodeStakingsMap[t] = ns
-			}
+		} else if oldNs.Time.Before(ns.Time) {
+			nodeStakingsMap[t] = ns
 		}
 	}
 
