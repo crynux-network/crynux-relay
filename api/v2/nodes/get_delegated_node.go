@@ -9,7 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
-func GetPublicNode(c *gin.Context, input *GetNodeInput) (*NodeResponse, error) {
+
+func GetDelegatedNode(c *gin.Context, input *GetNodeInput) (*NodeResponse, error) {
 	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), input.Address)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, response.NewNotFoundErrorResponse()

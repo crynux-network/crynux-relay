@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"math/big"
 	"time"
 
@@ -84,6 +85,10 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	}
 	offset := (page - 1) * pageSize
 	limit := pageSize
+
+	if service.GetDelegatorShare(input.Address) == 0 {
+		return nil, response.NewNotFoundErrorResponse()
+	}
 
 	userStakings, total, err := getDelegationsOfNode(c.Request.Context(), config.GetDB(), input.Address, &input.Network, offset, limit)
 	if err != nil {
