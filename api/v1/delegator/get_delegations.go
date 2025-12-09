@@ -14,10 +14,10 @@ import (
 )
 
 type GetDelegationsInput struct {
-	UserAddress string `json:"user_address" path:"user_address" description:"address of the delegator" validate:"required"`
-	Network     string `json:"network" query:"network" description:"network of the delegator" validate:"required"`
-	Page        int    `json:"page" query:"page" description:"The page" default:"1" validate:"min=1"`
-	PageSize    int    `json:"page_size" query:"page_size" description:"The page size" default:"30" validate:"max=100,min=1"`
+	UserAddress string  `json:"user_address" path:"user_address" description:"address of the delegator" validate:"required"`
+	Network     *string `json:"network" query:"network" description:"network of the delegator"`
+	Page        int     `json:"page" query:"page" description:"The page" default:"1" validate:"min=1"`
+	PageSize    int     `json:"page_size" query:"page_size" description:"The page size" default:"30" validate:"max=100,min=1"`
 }
 
 type DelegationInfo struct {
@@ -72,7 +72,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	}
 	offset := (page - 1) * pageSize
 	limit := pageSize
-	userStakings, total, err := getDelegationsOfUser(c.Request.Context(), config.GetDB(), input.UserAddress, &input.Network, offset, limit)
+	userStakings, total, err := getDelegationsOfUser(c.Request.Context(), config.GetDB(), input.UserAddress, input.Network, offset, limit)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
@@ -86,13 +86,13 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	start := time.Now().UTC().Truncate(24 * time.Hour)
 	end := start.Add(24 * time.Hour)
 	for _, userStaking := range userStakings {
-		go func(nodeAddress string) {
+		go func(ue *models.Delegation) {
 			semaphore <- struct{}{}
 			defer func() {
 				<-semaphore
 			}()
 			totalEarningAmount := big.NewInt(0)
-			totalEarning, err := models.GetTotalUserStakingEarning(c.Request.Context(), config.GetDB(), input.UserAddress, nodeAddress, input.Network)
+			totalEarning, err := models.GetTotalUserStakingEarning(c.Request.Context(), config.GetDB(), input.UserAddress, ue.NodeAddress, ue.Network)
 			if err != nil {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
 					errCh <- err
@@ -101,20 +101,20 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 			} else {
 				totalEarningAmount.Set(&totalEarning.Earning.Int)
 			}
-			totalEarningsMap[nodeAddress] = models.BigInt{Int: *totalEarningAmount}
+			totalEarningsMap[ue.NodeAddress] = models.BigInt{Int: *totalEarningAmount}
 
-			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), input.UserAddress, nodeAddress, input.Network, start, end)
+			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), input.UserAddress, ue.NodeAddress, ue.Network, start, end)
 			if err != nil {
 				errCh <- err
 				return
 			}
 			if len(todayEarnings) > 0 {
-				todayEarningsMap[nodeAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
+				todayEarningsMap[ue.NodeAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
 			} else {
-				todayEarningsMap[nodeAddress] = models.BigInt{Int: *big.NewInt(0)}
+				todayEarningsMap[ue.NodeAddress] = models.BigInt{Int: *big.NewInt(0)}
 			}
 			errCh <- nil
-		}(userStaking.NodeAddress)
+		}(&userStaking)
 	}
 	for i := 0; i < len(userStakings); i++ {
 		if err := <-errCh; err != nil {
