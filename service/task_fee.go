@@ -628,13 +628,7 @@ func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address str
 	daoFee.Div(daoFee, big.NewInt(100))
 
 	reward := big.NewInt(0).Sub(amount, daoFee)
-	totalDelegatorFee := big.NewInt(0)
 	delegatorShare := GetDelegatorShare(address)
-	if delegatorShare > 0 {
-		totalDelegatorFee.Mul(reward, big.NewInt(int64(delegatorShare)))
-		totalDelegatorFee.Div(totalDelegatorFee, big.NewInt(100))
-		reward = reward.Sub(reward, totalDelegatorFee)
-	}
 
 	rewardEvent := &models.TaskFeeEvent{
 		Address:   address,
@@ -654,38 +648,45 @@ func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address str
 	}
 	events := []*models.TaskFeeEvent{rewardEvent, daoEvent}
 
-	if totalDelegatorFee.Sign() > 0 {
+	totalDelegatorFee := big.NewInt(0)
+	if delegatorShare > 0 {
 		userStakings := GetDelegationsOfNode(address, network)
-		totalUserStakeAmount := big.NewInt(0)
-		for _, amount := range userStakings {
-			totalUserStakeAmount = totalUserStakeAmount.Add(totalUserStakeAmount, amount)
-		}
-		userAddresses := make([]string, 0, len(userStakings))
-		userDelegatorFees := make([]*big.Int, 0, len(userStakings))
-		dispatchedCommissionFee := big.NewInt(0)
-		for userAddress, userStakingAmount := range userStakings {
-			userAddresses = append(userAddresses, userAddress)
-			delegatorFee := big.NewInt(0).Mul(totalDelegatorFee, userStakingAmount)
-			delegatorFee = delegatorFee.Div(delegatorFee, totalUserStakeAmount)
-			userDelegatorFees = append(userDelegatorFees, delegatorFee)
-			dispatchedCommissionFee = dispatchedCommissionFee.Add(dispatchedCommissionFee, delegatorFee)
-		}
-		userDelegatorFees[0].Add(userDelegatorFees[0], big.NewInt(0).Sub(totalDelegatorFee, dispatchedCommissionFee))
+		if len(userStakings) > 0 {
+			totalDelegatorFee.Mul(reward, big.NewInt(int64(delegatorShare)))
+			totalDelegatorFee.Div(totalDelegatorFee, big.NewInt(100))
+			reward = reward.Sub(reward, totalDelegatorFee)
 
-		for i := range len(userStakings) {
-			events = append(events, &models.TaskFeeEvent{
-				Address:   userAddresses[i],
-				TaskFee:   models.BigInt{Int: *userDelegatorFees[i]},
-				CreatedAt: time.Now(),
-				Status:    models.TaskFeeEventStatusPending,
-				Type:      models.TaskFeeEventTypeUserCommission,
-				Reason:    fmt.Sprintf("%d-%s", models.TaskFeeEventTypeUserCommission, taskIDCommitment),
-			})
-			if err := addUserStakingEarning(ctx, db, userAddresses[i], address, network, userDelegatorFees[i]); err != nil {
-				return nil, err
+			totalUserStakeAmount := big.NewInt(0)
+			for _, amount := range userStakings {
+				totalUserStakeAmount = totalUserStakeAmount.Add(totalUserStakeAmount, amount)
 			}
-			if err := addUserEarning(ctx, db, userAddresses[i], userDelegatorFees[i]); err != nil {
-				return nil, err
+			userAddresses := make([]string, 0, len(userStakings))
+			userDelegatorFees := make([]*big.Int, 0, len(userStakings))
+			dispatchedCommissionFee := big.NewInt(0)
+			for userAddress, userStakingAmount := range userStakings {
+				userAddresses = append(userAddresses, userAddress)
+				delegatorFee := big.NewInt(0).Mul(totalDelegatorFee, userStakingAmount)
+				delegatorFee = delegatorFee.Div(delegatorFee, totalUserStakeAmount)
+				userDelegatorFees = append(userDelegatorFees, delegatorFee)
+				dispatchedCommissionFee = dispatchedCommissionFee.Add(dispatchedCommissionFee, delegatorFee)
+			}
+			userDelegatorFees[0].Add(userDelegatorFees[0], big.NewInt(0).Sub(totalDelegatorFee, dispatchedCommissionFee))
+
+			for i := range len(userStakings) {
+				events = append(events, &models.TaskFeeEvent{
+					Address:   userAddresses[i],
+					TaskFee:   models.BigInt{Int: *userDelegatorFees[i]},
+					CreatedAt: time.Now(),
+					Status:    models.TaskFeeEventStatusPending,
+					Type:      models.TaskFeeEventTypeUserCommission,
+					Reason:    fmt.Sprintf("%d-%s", models.TaskFeeEventTypeUserCommission, taskIDCommitment),
+				})
+				if err := addUserStakingEarning(ctx, db, userAddresses[i], address, network, userDelegatorFees[i]); err != nil {
+					return nil, err
+				}
+				if err := addUserEarning(ctx, db, userAddresses[i], userDelegatorFees[i]); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
