@@ -679,7 +679,7 @@ func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address str
 					CreatedAt: time.Now(),
 					Status:    models.TaskFeeEventStatusPending,
 					Type:      models.TaskFeeEventTypeUserCommission,
-					Reason:    fmt.Sprintf("%d-%s", models.TaskFeeEventTypeUserCommission, taskIDCommitment),
+					Reason:    fmt.Sprintf("%d-%s-%s", models.TaskFeeEventTypeUserCommission, taskIDCommitment, userAddresses[i]),
 				})
 				if err := addUserStakingEarning(ctx, db, userAddresses[i], address, network, userDelegatorFees[i]); err != nil {
 					return nil, err
