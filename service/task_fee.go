@@ -631,9 +631,9 @@ func sendTaskFee(ctx context.Context, db *gorm.DB, taskIDCommitment, address str
 	totalDelegatorFee := big.NewInt(0)
 	delegatorShare := GetDelegatorShare(address)
 	if delegatorShare > 0 {
-		totalCommissionFee := totalDelegatorFee.Mul(reward, big.NewInt(int64(delegatorShare)))
-		totalCommissionFee.Div(totalCommissionFee, big.NewInt(100))
-		reward = reward.Sub(reward, totalCommissionFee)
+		totalDelegatorFee.Mul(reward, big.NewInt(int64(delegatorShare)))
+		totalDelegatorFee.Div(totalDelegatorFee, big.NewInt(100))
+		reward = reward.Sub(reward, totalDelegatorFee)
 	}
 
 	rewardEvent := &models.TaskFeeEvent{
