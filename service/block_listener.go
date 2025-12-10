@@ -315,8 +315,7 @@ func updateDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.De
 	nodeAddress := event.NodeAddress.Hex()
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 		var userStaking models.Delegation
-		oldStakeAmount := big.NewInt(0)
-		if err := tx.Model(&models.Delegation{}).Where("delegator_address = ? AND node_address = ?", delegatorAddress, nodeAddress).First(&userStaking).Error; err != nil {
+		if err := tx.Model(&models.Delegation{}).Where("delegator_address = ?", delegatorAddress).Where("node_address = ?", nodeAddress).Where("network = ?", network).First(&userStaking).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				userStaking = models.Delegation{
 					DelegatorAddress: delegatorAddress,
@@ -329,9 +328,6 @@ func updateDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.De
 				return err
 			}
 		} else {
-			if userStaking.Valid {
-				oldStakeAmount.Set(&userStaking.Amount.Int)
-			}
 			userStaking.Amount = models.BigInt{Int: *event.Amount}
 			userStaking.Valid = true
 		}
