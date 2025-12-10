@@ -100,6 +100,19 @@
         "internalType": "address",
         "name": "nodeAddress",
         "type": "address"
+      }
+    ],
+    "name": "NodeTryUnstaked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "nodeAddress",
+        "type": "address"
       },
       {
         "indexed": false,

@@ -224,8 +224,8 @@ func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.T
 			}
 			continue
 		}
-		if event, err := client.NodeStakingContractInstance.ParseNodeUnstaked(*log); err == nil {
-			if err := nodeUnstaked(ctx, db, event, client.Network); err != nil {
+		if event, err := client.NodeStakingContractInstance.ParseNodeTryUnstaked(*log); err == nil {
+			if err := nodeTryUnstaked(ctx, db, event, client.Network); err != nil {
 				return err
 			}
 			continue
@@ -273,7 +273,7 @@ func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNod
 	return nil
 }
 
-func nodeUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeUnstaked, network string) error {
+func nodeTryUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeTryUnstaked, network string) error {
 	dbCtx, dbCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer dbCancel()
 
