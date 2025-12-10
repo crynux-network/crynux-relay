@@ -64,7 +64,7 @@ func getDelegationsOfNode(ctx context.Context, db *gorm.DB, nodeAddress string, 
 	}
 	var result []DBDelegationResult
 	if err := dbi.Select("delegations.delegator_address as user_address, delegations.node_address as node_address, delegations.network as network, delegations.amount as staking_amount, delegations.updated_at as staked_at, user_staking_earnings.earning as total_earnings").
-		Joins("left join user_staking_earnings on user_staking_earnings.user_address=delegations.delegator_address and user_staking_earnings.node_address=delegations.node_address and user_staking_earnings.time is NULL").
+		Joins("left join user_staking_earnings on user_staking_earnings.user_address=delegations.delegator_address and user_staking_earnings.node_address=delegations.node_address and user_staking_earnings.network=delegations.network and user_staking_earnings.time is NULL").
 		Order("CAST(total_earnings AS DECIMAL(65,0)) DESC").
 		Offset(offset).
 		Limit(limit).
@@ -103,23 +103,23 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	start := time.Now().UTC().Truncate(24 * time.Hour)
 	end := start.Add(24 * time.Hour)
 	for _, userStaking := range userStakings {
-		go func(userAddress string) {
+		go func(ue *DBDelegationResult) {
 			semaphore <- struct{}{}
 			defer func() {
 				<-semaphore
 			}()
-			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), userAddress, input.Address, input.Network, start, end)
+			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), ue.UserAddress, ue.NodeAddress, ue.Network, start, end)
 			if err != nil {
 				errCh <- err
 				return
 			}
 			if len(todayEarnings) > 0 {
-				todayEarningsMap[userAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
+				todayEarningsMap[ue.UserAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
 			} else {
-				todayEarningsMap[userAddress] = models.BigInt{Int: *big.NewInt(0)}
+				todayEarningsMap[ue.UserAddress] = models.BigInt{Int: *big.NewInt(0)}
 			}
 			errCh <- nil
-		}(userStaking.UserAddress)
+		}(&userStaking)
 	}
 	for i := 0; i < len(userStakings); i++ {
 		if err := <-errCh; err != nil {
