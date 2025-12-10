@@ -6,6 +6,7 @@ import (
 	"crynux_relay/blockchain/bindings"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -217,19 +218,24 @@ func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.T
 	}
 
 	for _, log := range receipt.Logs {
-		event, err := client.NodeStakingContractInstance.ParseNodeStaked(*log)
-		if err != nil {
+		if event, err := client.NodeStakingContractInstance.ParseNodeStaked(*log); err == nil {
+			if err := nodeStaked(ctx, db, event, client.Network); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := updateNodeStaking(ctx, db, event, client.Network); err != nil {
-			return err
+		if event, err := client.NodeStakingContractInstance.ParseNodeUnstaked(*log); err == nil {
+			if err := nodeUnstaked(ctx, db, event, client.Network); err != nil {
+				return err
+			}
+			continue
 		}
 	}
 
 	return nil
 }
 
-func updateNodeStaking(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeStaked, network string) error {
+func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeStaked, network string) error {
 	dbCtx, dbCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dbCancel()
 
@@ -251,7 +257,7 @@ func updateNodeStaking(ctx context.Context, db *gorm.DB, event *bindings.NodeSta
 		}
 		return nil
 	}); err != nil {
-		log.Errorf("UpdateNodeStaking: failed to update node staking for node %s: %v", address, err)
+		log.Errorf("NodeStaked: failed to update node staking for node %s: %v", address, err)
 		return err
 	}
 
@@ -261,9 +267,63 @@ func updateNodeStaking(ctx context.Context, db *gorm.DB, event *bindings.NodeSta
 		UpdateMaxStaking(address, totalStakeAmount)
 	}
 
-	log.Infof("UpdateNodeStaking: successfully updated node %s stake amount to %s",
+	log.Infof("NodeStaked: successfully updated node %s stake amount to %s",
 		address, stakingAmount.String())
 
+	return nil
+}
+
+func nodeUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeUnstaked, network string) error {
+	dbCtx, dbCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer dbCancel()
+
+	address := event.NodeAddress.Hex()
+	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		node, err := models.GetNodeByAddress(dbCtx, tx, address)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if node.Network != network {
+			return nil
+		}
+
+	retryLoop:
+		for range 3 {
+			switch node.Status {
+			case models.NodeStatusAvailable, models.NodeStatusPaused:
+				err = SetNodeStatusQuit(dbCtx, config.GetDB(), node, false)
+				if err == nil {
+					break retryLoop
+				} else if errors.Is(err, models.ErrNodeStatusChanged) {
+					if err := node.SyncStatus(dbCtx, config.GetDB()); err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			case models.NodeStatusBusy:
+				err = node.Update(dbCtx, config.GetDB(), map[string]interface{}{"status": models.NodeStatusPendingQuit})
+				if err == nil {
+					break retryLoop
+				} else if errors.Is(err, models.ErrNodeStatusChanged) {
+					if err := node.SyncStatus(dbCtx, config.GetDB()); err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			default:
+				break retryLoop
+			}
+		}
+		return err
+	}); err != nil {
+		log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
+		return err
+	}
 	return nil
 }
 

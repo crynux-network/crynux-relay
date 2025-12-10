@@ -31,14 +31,16 @@ var (
 
 // NodeStakingStakingInfo is an auto generated low-level Go binding around an user-defined struct.
 type NodeStakingStakingInfo struct {
-	NodeAddress   common.Address
-	StakedBalance *big.Int
-	StakedCredits *big.Int
+	NodeAddress      common.Address
+	StakedBalance    *big.Int
+	StakedCredits    *big.Int
+	Status           uint8
+	UnstakeTimestamp *big.Int
 }
 
 // NodeStakingMetaData contains all meta data concerning the NodeStaking contract.
 var NodeStakingMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"creditsContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"benefitAddressContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"delegatedStakingContract\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"getAllNodeAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getStakingInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"internalType\":\"structNodeStaking.StakingInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakeAmount\",\"type\":\"uint256\"}],\"name\":\"setMinStakeAmount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"slashStaking\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakedAmount\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"unstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"creditsContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"benefitAddressContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"delegatedStakingContract\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"forceUnstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllNodeAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getStakingInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"},{\"internalType\":\"enumNodeStaking.StakingStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"unstakeTimestamp\",\"type\":\"uint256\"}],\"internalType\":\"structNodeStaking.StakingInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"delay\",\"type\":\"uint256\"}],\"name\":\"setForceUnstakeDelay\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakeAmount\",\"type\":\"uint256\"}],\"name\":\"setMinStakeAmount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"slashStaking\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakedAmount\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tryUnstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"unstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // NodeStakingABI is the input ABI used to generate the binding from.
@@ -251,7 +253,7 @@ func (_NodeStaking *NodeStakingCallerSession) GetMinStakeAmount() (*big.Int, err
 
 // GetStakingInfo is a free data retrieval call binding the contract method 0xaa4704f3.
 //
-// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256))
+// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256,uint8,uint256))
 func (_NodeStaking *NodeStakingCaller) GetStakingInfo(opts *bind.CallOpts, nodeAddress common.Address) (NodeStakingStakingInfo, error) {
 	var out []interface{}
 	err := _NodeStaking.contract.Call(opts, &out, "getStakingInfo", nodeAddress)
@@ -268,14 +270,14 @@ func (_NodeStaking *NodeStakingCaller) GetStakingInfo(opts *bind.CallOpts, nodeA
 
 // GetStakingInfo is a free data retrieval call binding the contract method 0xaa4704f3.
 //
-// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256))
+// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256,uint8,uint256))
 func (_NodeStaking *NodeStakingSession) GetStakingInfo(nodeAddress common.Address) (NodeStakingStakingInfo, error) {
 	return _NodeStaking.Contract.GetStakingInfo(&_NodeStaking.CallOpts, nodeAddress)
 }
 
 // GetStakingInfo is a free data retrieval call binding the contract method 0xaa4704f3.
 //
-// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256))
+// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256,uint8,uint256))
 func (_NodeStaking *NodeStakingCallerSession) GetStakingInfo(nodeAddress common.Address) (NodeStakingStakingInfo, error) {
 	return _NodeStaking.Contract.GetStakingInfo(&_NodeStaking.CallOpts, nodeAddress)
 }
@@ -309,6 +311,27 @@ func (_NodeStaking *NodeStakingSession) Owner() (common.Address, error) {
 // Solidity: function owner() view returns(address)
 func (_NodeStaking *NodeStakingCallerSession) Owner() (common.Address, error) {
 	return _NodeStaking.Contract.Owner(&_NodeStaking.CallOpts)
+}
+
+// ForceUnstake is a paid mutator transaction binding the contract method 0xdf4bbd22.
+//
+// Solidity: function forceUnstake() returns()
+func (_NodeStaking *NodeStakingTransactor) ForceUnstake(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _NodeStaking.contract.Transact(opts, "forceUnstake")
+}
+
+// ForceUnstake is a paid mutator transaction binding the contract method 0xdf4bbd22.
+//
+// Solidity: function forceUnstake() returns()
+func (_NodeStaking *NodeStakingSession) ForceUnstake() (*types.Transaction, error) {
+	return _NodeStaking.Contract.ForceUnstake(&_NodeStaking.TransactOpts)
+}
+
+// ForceUnstake is a paid mutator transaction binding the contract method 0xdf4bbd22.
+//
+// Solidity: function forceUnstake() returns()
+func (_NodeStaking *NodeStakingTransactorSession) ForceUnstake() (*types.Transaction, error) {
+	return _NodeStaking.Contract.ForceUnstake(&_NodeStaking.TransactOpts)
 }
 
 // RenounceOwnership is a paid mutator transaction binding the contract method 0x715018a6.
@@ -351,6 +374,27 @@ func (_NodeStaking *NodeStakingSession) SetAdminAddress(addr common.Address) (*t
 // Solidity: function setAdminAddress(address addr) returns()
 func (_NodeStaking *NodeStakingTransactorSession) SetAdminAddress(addr common.Address) (*types.Transaction, error) {
 	return _NodeStaking.Contract.SetAdminAddress(&_NodeStaking.TransactOpts, addr)
+}
+
+// SetForceUnstakeDelay is a paid mutator transaction binding the contract method 0x560dc313.
+//
+// Solidity: function setForceUnstakeDelay(uint256 delay) returns()
+func (_NodeStaking *NodeStakingTransactor) SetForceUnstakeDelay(opts *bind.TransactOpts, delay *big.Int) (*types.Transaction, error) {
+	return _NodeStaking.contract.Transact(opts, "setForceUnstakeDelay", delay)
+}
+
+// SetForceUnstakeDelay is a paid mutator transaction binding the contract method 0x560dc313.
+//
+// Solidity: function setForceUnstakeDelay(uint256 delay) returns()
+func (_NodeStaking *NodeStakingSession) SetForceUnstakeDelay(delay *big.Int) (*types.Transaction, error) {
+	return _NodeStaking.Contract.SetForceUnstakeDelay(&_NodeStaking.TransactOpts, delay)
+}
+
+// SetForceUnstakeDelay is a paid mutator transaction binding the contract method 0x560dc313.
+//
+// Solidity: function setForceUnstakeDelay(uint256 delay) returns()
+func (_NodeStaking *NodeStakingTransactorSession) SetForceUnstakeDelay(delay *big.Int) (*types.Transaction, error) {
+	return _NodeStaking.Contract.SetForceUnstakeDelay(&_NodeStaking.TransactOpts, delay)
 }
 
 // SetMinStakeAmount is a paid mutator transaction binding the contract method 0xeb4af045.
@@ -435,6 +479,27 @@ func (_NodeStaking *NodeStakingSession) TransferOwnership(newOwner common.Addres
 // Solidity: function transferOwnership(address newOwner) returns()
 func (_NodeStaking *NodeStakingTransactorSession) TransferOwnership(newOwner common.Address) (*types.Transaction, error) {
 	return _NodeStaking.Contract.TransferOwnership(&_NodeStaking.TransactOpts, newOwner)
+}
+
+// TryUnstake is a paid mutator transaction binding the contract method 0x91a018ce.
+//
+// Solidity: function tryUnstake() returns()
+func (_NodeStaking *NodeStakingTransactor) TryUnstake(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _NodeStaking.contract.Transact(opts, "tryUnstake")
+}
+
+// TryUnstake is a paid mutator transaction binding the contract method 0x91a018ce.
+//
+// Solidity: function tryUnstake() returns()
+func (_NodeStaking *NodeStakingSession) TryUnstake() (*types.Transaction, error) {
+	return _NodeStaking.Contract.TryUnstake(&_NodeStaking.TransactOpts)
+}
+
+// TryUnstake is a paid mutator transaction binding the contract method 0x91a018ce.
+//
+// Solidity: function tryUnstake() returns()
+func (_NodeStaking *NodeStakingTransactorSession) TryUnstake() (*types.Transaction, error) {
+	return _NodeStaking.Contract.TryUnstake(&_NodeStaking.TransactOpts)
 }
 
 // Unstake is a paid mutator transaction binding the contract method 0xf2888dbb.
