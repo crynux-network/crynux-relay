@@ -94,6 +94,10 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Node join"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.NodeJoin, 200))
+	nodeGroup.POST("/:address/quit", []fizz.OperationOption{
+		fizz.Summary("Node quit"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.NodeQuit, 200))
 	nodeGroup.POST("/:address/pause", []fizz.OperationOption{
 		fizz.Summary("Node pause"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
