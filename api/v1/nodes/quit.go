@@ -55,8 +55,8 @@ func NodeQuit(c *gin.Context, in *QuitInputWithSignature) (*response.Response, e
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	if stakingInfo.Status != 2 {
-		return nil, response.NewValidationErrorResponse("staking_status", "Staking status is not pending unstaked")
+	if stakingInfo.Status == 1 { // staked
+		return nil, response.NewValidationErrorResponse("staking_status", "Staking status is staked")
 	}
 retryLoop:
 	for range 3 {

@@ -86,16 +86,22 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 			return err
 		}
 		UpdateMaxStaking(node.Address, big.NewInt(0))
+		stakingInfo, err := blockchain.GetStakingInfo(ctx, common.HexToAddress(node.Address), node.Network)
+		if err != nil {
+			return err
+		}
 		var blockchainTransaction *models.BlockchainTransaction
-		if slashed {
-			blockchainTransaction, err = blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
-			if err != nil {
-				return err
-			}
-		} else {
-			blockchainTransaction, err = blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
-			if err != nil {
-				return err
+		if stakingInfo.Status != 0 { // not unstaked
+			if slashed {
+				blockchainTransaction, err = blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
+				if err != nil {
+					return err
+				}
+			} else {
+				blockchainTransaction, err = blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: blockchainTransaction.ID, Network: node.Network}); err != nil {
