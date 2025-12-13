@@ -90,21 +90,23 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 		if err != nil {
 			return err
 		}
-		var blockchainTransaction *models.BlockchainTransaction
+		var txID uint
 		if stakingInfo.Status != 0 { // not unstaked
 			if slashed {
-				blockchainTransaction, err = blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
+				blockchainTransaction, err := blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
 				if err != nil {
 					return err
 				}
+				txID = blockchainTransaction.ID
 			} else {
-				blockchainTransaction, err = blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
+				blockchainTransaction, err := blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
 				if err != nil {
 					return err
 				}
+				txID = blockchainTransaction.ID
 			}
 		}
-		if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: blockchainTransaction.ID, Network: node.Network}); err != nil {
+		if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: txID, Network: node.Network}); err != nil {
 			return err
 		}
 		return nil
