@@ -83,6 +83,9 @@ retryLoop:
 			} else {
 				return nil, response.NewExceptionResponse(err)
 			}
+		case models.NodeStatusQuit, models.NodeStatusPendingQuit:
+			err = nil
+			break retryLoop
 		default:
 			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
 		}

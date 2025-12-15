@@ -6,6 +6,7 @@ import (
 	"crynux_relay/blockchain/bindings"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -223,6 +224,13 @@ func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.T
 			}
 			continue
 		}
+		if event, err := client.NodeStakingContractInstance.ParseNodeTryUnstaked(*log); err == nil {
+			if err := nodeTryUnstaked(ctx, db, event, client.Network); err != nil {
+				return err
+			}
+			continue
+		}
+
 	}
 
 	return nil
@@ -263,6 +271,60 @@ func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNod
 	log.Infof("NodeStaked: successfully updated node %s stake amount to %s",
 		address, stakingAmount.String())
 
+	return nil
+}
+
+func nodeTryUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeTryUnstaked, network string) error {
+	dbCtx, dbCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer dbCancel()
+
+	address := event.NodeAddress.Hex()
+	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		node, err := models.GetNodeByAddress(dbCtx, tx, address)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if node.Network != network {
+			return nil
+		}
+
+	retryLoop:
+		for range 3 {
+			switch node.Status {
+			case models.NodeStatusAvailable, models.NodeStatusPaused:
+				err = SetNodeStatusQuit(dbCtx, config.GetDB(), node, false)
+				if err == nil {
+					break retryLoop
+				} else if errors.Is(err, models.ErrNodeStatusChanged) {
+					if err := node.SyncStatus(dbCtx, config.GetDB()); err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			case models.NodeStatusBusy:
+				err = node.Update(dbCtx, config.GetDB(), map[string]interface{}{"status": models.NodeStatusPendingQuit})
+				if err == nil {
+					break retryLoop
+				} else if errors.Is(err, models.ErrNodeStatusChanged) {
+					if err := node.SyncStatus(dbCtx, config.GetDB()); err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			default:
+				break retryLoop
+			}
+		}
+		return err
+	}); err != nil {
+		log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
+		return err
+	}
 	return nil
 }
 
