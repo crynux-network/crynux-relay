@@ -113,9 +113,11 @@ func processBlock(ctx context.Context, db *gorm.DB, client *blockchain.Blockchai
 		return fmt.Errorf("failed to get block %d: %w", blockNum, err)
 	}
 
+	blockTime := time.Unix(int64(block.Time()), 0)
+
 	// Check transactions in the block
 	for _, tx := range block.Transactions() {
-		if err := processTransaction(ctx, db, tx, client); err != nil {
+		if err := processTransaction(ctx, db, tx, client, blockTime); err != nil {
 			log.Errorf("Failed to process transaction %s: %v", tx.Hash().Hex(), err)
 			return err
 		}
@@ -207,7 +209,7 @@ func processBuyTaskFeeTransaction(ctx context.Context, db *gorm.DB, tx *types.Tr
 	return nil
 }
 
-func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient) error {
+func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient, blockTime time.Time) error {
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
 		return fmt.Errorf("failed to get transaction receipt of %s, network: %s, error: %w", tx.Hash().Hex(), client.Network, err)
@@ -225,7 +227,7 @@ func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.T
 			continue
 		}
 		if event, err := client.NodeStakingContractInstance.ParseNodeTryUnstaked(*log); err == nil {
-			if err := nodeTryUnstaked(ctx, db, event, client.Network); err != nil {
+			if err := nodeTryUnstaked(ctx, db, event, client.Network, blockTime); err != nil {
 				return err
 			}
 			continue
@@ -274,7 +276,7 @@ func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNod
 	return nil
 }
 
-func nodeTryUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeTryUnstaked, network string) error {
+func nodeTryUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNodeTryUnstaked, network string, blockTime time.Time) error {
 	dbCtx, dbCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer dbCancel()
 
@@ -288,6 +290,10 @@ func nodeTryUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStaki
 			return err
 		}
 		if node.Network != network {
+			return nil
+		}
+
+		if blockTime.Before(node.JoinTime) {
 			return nil
 		}
 
@@ -560,7 +566,7 @@ func slashDelegatedStakingOfNode(ctx context.Context, db *gorm.DB, event *bindin
 }
 
 // processTransaction processes a single transaction
-func processTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient) error {
+func processTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient, blockTime time.Time) error {
 	// Only process native token transfers (to field is not empty and data field is empty)
 	if tx.To() == nil || len(tx.Data()) == 0 {
 		return nil
@@ -579,7 +585,7 @@ func processTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction,
 	} else if strings.EqualFold(toAddress, appConfig.BuyTaskFee.Address) {
 		return processBuyTaskFeeTransaction(ctx, db, tx, client)
 	} else if strings.EqualFold(toAddress, blockchainCfg.Contracts.NodeStaking) {
-		return processNodeStakingTransaction(ctx, db, tx, client)
+		return processNodeStakingTransaction(ctx, db, tx, client, blockTime)
 	} else if strings.EqualFold(toAddress, blockchainCfg.Contracts.DelegatedStaking) {
 		return processDelegatedStakingTransaction(ctx, db, tx, client)
 	}
