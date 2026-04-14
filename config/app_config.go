@@ -68,9 +68,10 @@ type AppConfig struct {
 			PrivateKeyFile string `mapstructure:"private_key_file"`
 		} `mapstructure:"account"`
 		Contracts struct {
-			BenefitAddress string `mapstructure:"benefit_address"`
-			NodeStaking    string `mapstructure:"node_staking"`
-			Credits        string `mapstructure:"credits"`
+			BenefitAddress   string `mapstructure:"benefit_address"`
+			NodeStaking      string `mapstructure:"node_staking"`
+			Credits          string `mapstructure:"credits"`
+			DelegatedStaking string `mapstructure:"delegated_staking"`
 		} `mapstructure:"contracts"`
 		MaxRetries                uint8  `mapstructure:"max_retries"`
 		RetryInterval             uint64 `mapstructure:"retry_interval"`

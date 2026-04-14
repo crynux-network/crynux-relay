@@ -81,7 +81,11 @@ func TonicErrorResponse(ctx *gin.Context, err error) (int, interface{}) {
 		validationErrorResponse.SetFieldMessage(e.GetMessage())
 		return 400, validationErrorResponse
 	}
-
+	
+	notFoundError := &NotFoundErrorResponse{}
+	if errors.As(err, &notFoundError) {
+		return 404, notFoundError
+	}
 	if err, ok := err.(ErrorResponseMessage); ok {
 		return 400, err
 	}

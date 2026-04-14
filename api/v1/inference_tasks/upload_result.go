@@ -56,7 +56,7 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 		return nil, response.NewValidationErrorResponse("Signature", "Signer not allowed")
 	}
 
-	if task.Status != models.TaskValidated && task.Status != models.TaskGroupValidated {
+	if task.Status != models.TaskValidated && task.Status != models.TaskGroupValidated && task.Status != models.TaskEndInvalidated {
 		validationErr := response.NewValidationErrorResponse("task_id_commitment", "Task not validated")
 		return nil, validationErr
 	}
@@ -113,8 +113,8 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
-	isSlashed := false
-	if len(taskGroup) > 1 {
+	isSlashed := task.Status == models.TaskEndInvalidated
+	if !isSlashed && len(taskGroup) > 1 {
 		for _, t := range taskGroup {
 			if t.Status == models.TaskEndInvalidated {
 				isSlashed = true
@@ -126,8 +126,10 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	appConfig := config.GetConfig()
 
 	taskDir := filepath.Join(appConfig.DataDir.InferenceTasks, task.TaskIDCommitment, "results")
-	if err = os.MkdirAll(taskDir, 0o711); err != nil {
-		return nil, response.NewExceptionResponse(err)
+	if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
+		if err = os.MkdirAll(taskDir, 0o711); err != nil {
+			return nil, response.NewExceptionResponse(err)
+		}
 	}
 	slashedTaskDir := filepath.Join(appConfig.DataDir.SlashedTasks, task.TaskIDCommitment, "results")
 	if isSlashed {
@@ -144,9 +146,11 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	}
 
 	for i, file := range files {
-		filename := filepath.Join(taskDir, strconv.Itoa(i)+fileExt)
-		if err := c.SaveUploadedFile(file, filename); err != nil {
-			return nil, response.NewExceptionResponse(err)
+		if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
+			filename := filepath.Join(taskDir, strconv.Itoa(i)+fileExt)
+			if err := c.SaveUploadedFile(file, filename); err != nil {
+				return nil, response.NewExceptionResponse(err)
+			}
 		}
 		if isSlashed {
 			slashedFilename := filepath.Join(slashedTaskDir, strconv.Itoa(i)+fileExt)
@@ -167,9 +171,11 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 			}
 			checkpoint = checkpoints[0]
 		}
-		checkpointFilename := filepath.Join(taskDir, "checkpoint.zip")
-		if err := c.SaveUploadedFile(checkpoint, checkpointFilename); err != nil {
-			return nil, response.NewExceptionResponse(err)
+		if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
+			checkpointFilename := filepath.Join(taskDir, "checkpoint.zip")
+			if err := c.SaveUploadedFile(checkpoint, checkpointFilename); err != nil {
+				return nil, response.NewExceptionResponse(err)
+			}
 		}
 		if isSlashed {
 			slashedCheckpointFilename := filepath.Join(slashedTaskDir, "checkpoint.zip")
@@ -178,20 +184,22 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 			}
 		}
 	}
-	for range 3 {
-		err = service.SetTaskStatusEndSuccess(c.Request.Context(), config.GetDB(), task)
-		if err == nil {
-			break
-		} else if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {
-			if err := task.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
+	if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
+		for range 3 {
+			err = service.SetTaskStatusEndSuccess(c.Request.Context(), config.GetDB(), task)
+			if err == nil {
+				break
+			} else if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {
+				if err := task.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
+					return nil, response.NewExceptionResponse(err)
+				}
+			} else {
 				return nil, response.NewExceptionResponse(err)
 			}
-		} else {
+		}
+		if err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
-	}
-	if err != nil {
-		return nil, response.NewExceptionResponse(err)
 	}
 	return &response.Response{}, nil
 }

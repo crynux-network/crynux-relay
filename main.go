@@ -42,6 +42,12 @@ func main() {
 	if err := service.InitRelayAccountCache(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
+	if err := service.InitDelegatorShareCache(context.Background(), config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
+	if err := service.InitDelegationCaches(context.Background(), config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
 	if err := service.InitSelectingProb(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
@@ -49,10 +55,7 @@ func main() {
 	tm := blockchain.NewTransactionManager(config.GetDB())
 	tm.Start(context.Background())
 
-	stakingUpdater := service.NewStakeAmountUpdater(config.GetDB())
-	stakingUpdater.Start(context.Background())
-
-	service.StartNativeTokenListener(context.Background())
+	service.StartBlockListener(context.Background())
 	go service.StartTaskProcesser(context.Background())
 	go service.StartRelayAccountSync(context.Background(), config.GetDB())
 	// go tasks.ProcessTasks(context.Background())
@@ -61,6 +64,9 @@ func main() {
 	go tasks.StartStatsTaskExecutionTimeCount(context.Background())
 	go tasks.StartStatsTaskUploadResultTimeCount(context.Background())
 	go tasks.StartStatsTaskWaitingTimeCount(context.Background())
+	go tasks.StartStatsNodeScores(context.Background())
+	go tasks.StartStatsNodeStakings(context.Background())
+	go tasks.StartStatsNodeDelegatorCount(context.Background())
 
 	startServer()
 }

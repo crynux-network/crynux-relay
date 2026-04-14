@@ -3,11 +3,13 @@ package nodes
 import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/api/v1/validate"
+	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"errors"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -48,6 +50,14 @@ func NodeQuit(c *gin.Context, in *QuitInputWithSignature) (*response.Response, e
 		}
 		return nil, response.NewExceptionResponse(err)
 	}
+	stakingInfo, err := blockchain.GetStakingInfo(c.Request.Context(), common.HexToAddress(in.Address), node.Network)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
+
+	if stakingInfo.Status == 1 { // staked
+		return nil, response.NewValidationErrorResponse("staking_status", "Staking status is staked")
+	}
 retryLoop:
 	for range 3 {
 		switch node.Status {
@@ -74,6 +84,9 @@ retryLoop:
 			} else {
 				return nil, response.NewExceptionResponse(err)
 			}
+		case models.NodeStatusQuit, models.NodeStatusPendingQuit:
+			err = nil
+			break retryLoop
 		default:
 			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
 		}

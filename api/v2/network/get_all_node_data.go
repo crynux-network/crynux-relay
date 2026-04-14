@@ -10,8 +10,8 @@ import (
 )
 
 type GetAllNodesDataParams struct {
-	Start int `query:"start" json:"start" validate:"min=0"`
-	Total int `query:"total" json:"total" validate:"required,max=100,min=1"`
+	Page     int    `json:"page" query:"page" description:"The page" default:"1" validate:"min=1"`
+	PageSize int    `json:"page_size" query:"page_size" description:"The page size" default:"30" validate:"max=100,min=1"`
 }
 
 type NetworkNodeData struct {
@@ -31,9 +31,19 @@ type GetAllNodesDataResponse struct {
 }
 
 func GetAllNodeData(_ *gin.Context, in *GetAllNodesDataParams) (*GetAllNodesDataResponse, error) {
+	page := 1
+	if in.Page > 0 {
+		page = in.Page
+	}
+	pageSize := 30
+	if in.PageSize > 0 {
+		pageSize = in.PageSize
+	}
+	offset := (page - 1) * pageSize
+	limit := pageSize
 
 	var allNodeData []models.NetworkNodeData
-	if err := config.GetDB().Model(&models.NetworkNodeData{}).Order("id ASC").Limit(in.Total).Offset(in.Start).Find(&allNodeData).Error; err != nil {
+	if err := config.GetDB().Model(&models.NetworkNodeData{}).Order("id ASC").Limit(limit).Offset(offset).Find(&allNodeData).Error; err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 	var data []NetworkNodeData

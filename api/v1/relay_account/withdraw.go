@@ -4,14 +4,12 @@ import (
 	"crynux_relay/api/tools"
 	"crynux_relay/api/v1/middleware"
 	"crynux_relay/api/v1/response"
-	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/service"
 	"crynux_relay/utils"
 	"errors"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
 
 	log "github.com/sirupsen/logrus"
@@ -53,16 +51,6 @@ func CreateWithdrawRequest(c *gin.Context, in *CreateWithdrawInput) (*CreateWith
 
 	if signerAddress != in.Address {
 		validationErr := response.NewValidationErrorResponse("address", "Signature address mismatch")
-		return nil, validationErr
-	}
-
-	ba, err := blockchain.GetBenefitAddress(c.Request.Context(), common.HexToAddress(in.Address), in.Network)
-	if err != nil {
-		log.Errorf("Error getting benefit address: %v", err)
-		return nil, response.NewExceptionResponse(err)
-	}
-	if in.BenefitAddress != ba.Hex() {
-		validationErr := response.NewValidationErrorResponse("benefit_address", "Benefit address mismatch")
 		return nil, validationErr
 	}
 

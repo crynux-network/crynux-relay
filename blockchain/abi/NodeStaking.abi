@@ -10,6 +10,11 @@
         "internalType": "address",
         "name": "benefitAddressContract",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "delegatedStakingContract",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -95,6 +100,19 @@
         "internalType": "address",
         "name": "nodeAddress",
         "type": "address"
+      }
+    ],
+    "name": "NodeTryUnstaked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "nodeAddress",
+        "type": "address"
       },
       {
         "indexed": false,
@@ -130,6 +148,13 @@
     ],
     "name": "OwnershipTransferred",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "forceUnstake",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
     "inputs": [],
@@ -183,6 +208,16 @@
             "internalType": "uint256",
             "name": "stakedCredits",
             "type": "uint256"
+          },
+          {
+            "internalType": "enum NodeStaking.StakingStatus",
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "unstakeTimestamp",
+            "type": "uint256"
           }
         ],
         "internalType": "struct NodeStaking.StakingInfo",
@@ -229,6 +264,32 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "delay",
+        "type": "uint256"
+      }
+    ],
+    "name": "setForceUnstakeDelay",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "stakeAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "setMinStakeAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "nodeAddress",
         "type": "address"
@@ -261,6 +322,13 @@
       }
     ],
     "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "tryUnstake",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
