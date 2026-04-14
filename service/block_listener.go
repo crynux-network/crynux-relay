@@ -377,12 +377,6 @@ func processDelegatedStakingTransaction(ctx context.Context, db *gorm.DB, tx *ty
 			}
 			continue
 		}
-		if event, err := client.DelegatedStakingContractInstance.ParseNodeSlashed(*log); err == nil {
-			if err := slashDelegatedStakingOfNode(ctx, db, event, client.Network); err != nil {
-				return err
-			}
-			continue
-		}
 	}
 
 	return nil
@@ -544,13 +538,6 @@ func changeNodeDelegatorShare(ctx context.Context, db *gorm.DB, event *bindings.
 	log.Infof("ChangeNodeDelegatorShare: successfully change delegator share of node %s to %d",
 		nodeAddress, share)
 	return nil
-}
-
-func slashDelegatedStakingOfNode(ctx context.Context, db *gorm.DB, event *bindings.DelegatedStakingNodeSlashed, network string) error {
-	dbCtx, dbCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer dbCancel()
-
-	return slashDelegatedStakingOfNodeAddressWithContext(dbCtx, db, event.NodeAddress.Hex(), network)
 }
 
 func slashDelegatedStakingOfNodeAddress(ctx context.Context, db *gorm.DB, nodeAddress, network string) error {
