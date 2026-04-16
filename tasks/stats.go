@@ -537,7 +537,7 @@ func batchCreateNodeScores(ctx context.Context, db *gorm.DB, nodes []models.Node
 			if node.Status != models.NodeStatusQuit {
 				totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetNodeTotalStakeAmount(node.Address, node.Network))
 			}
-			stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore, service.GetMaxQosScore())
+			stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore)
 			if _, ok := existedNodeScoreMap[node.Address]; ok {
 				stakingScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), stakingScore))
 				qosScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), qosScore))
