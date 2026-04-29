@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -64,26 +65,38 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 	}
 
 	nodeDatas := make([]*Node, 0)
+	results := make([]*Node, len(nodes))
+	semaphore := make(chan struct{}, 10)
 	errCh := make(chan error, len(nodes))
-	semaphone := make(chan struct{}, 10)
-	for _, node := range nodes {
-		go func(n *models.Node) {
-			semaphone <- struct{}{}
+	var wg sync.WaitGroup
+	for i, node := range nodes {
+		idx := i
+		n := node
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			semaphore <- struct{}{}
 			defer func() {
-				<-semaphone
+				<-semaphore
 			}()
 			nodeData, err := getNodeData(c.Request.Context(), n)
 			if err != nil {
 				errCh <- err
 				return
 			}
-			nodeDatas = append(nodeDatas, nodeData)
-			errCh <- nil
-		}(node)
+			results[idx] = nodeData
+		}()
 	}
-	for i := 0; i < len(nodes); i++ {
-		if err := <-errCh; err != nil {
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
 			return nil, response.NewExceptionResponse(err)
+		}
+	}
+	for _, nodeData := range results {
+		if nodeData != nil {
+			nodeDatas = append(nodeDatas, nodeData)
 		}
 	}
 

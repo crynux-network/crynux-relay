@@ -7,6 +7,7 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -99,30 +100,37 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 
 	semaphore := make(chan struct{}, 10)
 	errCh := make(chan error, len(userStakings))
-
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	start := time.Now().UTC().Truncate(24 * time.Hour)
 	end := start.Add(24 * time.Hour)
 	for _, userStaking := range userStakings {
-		go func(ue *DBDelegationResult) {
+		us := userStaking
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() {
 				<-semaphore
 			}()
-			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), ue.UserAddress, ue.NodeAddress, ue.Network, start, end)
+			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), us.UserAddress, us.NodeAddress, us.Network, start, end)
 			if err != nil {
 				errCh <- err
 				return
 			}
+			mu.Lock()
 			if len(todayEarnings) > 0 {
-				todayEarningsMap[ue.UserAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
+				todayEarningsMap[us.UserAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
 			} else {
-				todayEarningsMap[ue.UserAddress] = models.BigInt{Int: *big.NewInt(0)}
+				todayEarningsMap[us.UserAddress] = models.BigInt{Int: *big.NewInt(0)}
 			}
-			errCh <- nil
-		}(&userStaking)
+			mu.Unlock()
+		}()
 	}
-	for i := 0; i < len(userStakings); i++ {
-		if err := <-errCh; err != nil {
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
 	}
