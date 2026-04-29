@@ -7,6 +7,7 @@ import (
 	"crynux_relay/models"
 	"errors"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -79,20 +80,25 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 
 	totalEarningsMap := make(map[string]models.BigInt)
 	todayEarningsMap := make(map[string]models.BigInt)
+	var mu sync.Mutex
 
 	semaphore := make(chan struct{}, 10)
 	errCh := make(chan error, len(userStakings))
-
+	var wg sync.WaitGroup
 	start := time.Now().UTC().Truncate(24 * time.Hour)
 	end := start.Add(24 * time.Hour)
 	for _, userStaking := range userStakings {
-		go func(ue *models.Delegation) {
+		us := userStaking
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() {
 				<-semaphore
 			}()
+
 			totalEarningAmount := big.NewInt(0)
-			totalEarning, err := models.GetTotalUserStakingEarning(c.Request.Context(), config.GetDB(), input.UserAddress, ue.NodeAddress, ue.Network)
+			totalEarning, err := models.GetTotalUserStakingEarning(c.Request.Context(), config.GetDB(), input.UserAddress, us.NodeAddress, us.Network)
 			if err != nil {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
 					errCh <- err
@@ -101,23 +107,28 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 			} else {
 				totalEarningAmount.Set(&totalEarning.Earning.Int)
 			}
-			totalEarningsMap[ue.NodeAddress] = models.BigInt{Int: *totalEarningAmount}
+			mu.Lock()
+			totalEarningsMap[us.NodeAddress] = models.BigInt{Int: *totalEarningAmount}
+			mu.Unlock()
 
-			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), input.UserAddress, ue.NodeAddress, ue.Network, start, end)
+			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), input.UserAddress, us.NodeAddress, us.Network, start, end)
 			if err != nil {
 				errCh <- err
 				return
 			}
+			mu.Lock()
 			if len(todayEarnings) > 0 {
-				todayEarningsMap[ue.NodeAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
+				todayEarningsMap[us.NodeAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
 			} else {
-				todayEarningsMap[ue.NodeAddress] = models.BigInt{Int: *big.NewInt(0)}
+				todayEarningsMap[us.NodeAddress] = models.BigInt{Int: *big.NewInt(0)}
 			}
-			errCh <- nil
-		}(&userStaking)
+			mu.Unlock()
+		}()
 	}
-	for i := 0; i < len(userStakings); i++ {
-		if err := <-errCh; err != nil {
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
 	}

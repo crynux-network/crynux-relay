@@ -27,6 +27,7 @@ Task fee lifecycle MUST use these relay account event types:
 - `TaskRefund`
 - `TaskIncome`
 - `DaoTaskShare`
+- `UserDelegation`
 
 Relay account event type values MUST follow this compatibility contract:
 
@@ -34,6 +35,7 @@ Relay account event type values MUST follow this compatibility contract:
 - `1 = DaoTaskShare`
 - `2 = WithdrawFeeIncome`
 - `3 = Deposit`
+- `8 = UserDelegation`
 - relay-account-only extensions MUST use values starting at `4`
 
 Relay MUST reuse historical `task_fee_events` by table rename to `relay_account_events`. Relay MUST NOT import `task_quota_events` rows into relay account event history.
@@ -48,6 +50,7 @@ Relay Wallet balance application contract SHALL be:
 - apply `DaoTaskShare`
 - apply `WithdrawFeeIncome`
 - apply `Deposit`
+- apply `UserDelegation`
 - apply `TaskPayment`
 - apply `TaskRefund`
 - skip `Withdraw`
@@ -78,17 +81,24 @@ Refund amount MUST equal the task fee amount for the corresponding task commitme
 
 ## Settlement and Distribution Rules
 
-When task settlement is successful, Relay MUST split payment into node and DAO income.
+When task settlement is successful, Relay MUST split payment into DAO income, node operator income, and optional delegated staking income.
 
 For each settled payment unit `payment`:
 
 1. Compute DAO income:
    `dao_income = floor(payment * dao_percent / 100)`
-2. Compute node income:
-   `node_income = payment - dao_income`
-3. Create `TaskIncome` event for node address with `node_income`.
-4. Create `DaoTaskShare` event for DAO address with `dao_income`.
-5. Increase balances for both addresses by their event amounts.
+2. Compute node-side income before delegation:
+   `node_income_before_delegation = payment - dao_income`
+3. If the selected node has `delegator_share > 0` and at least one active delegation on the task network, compute delegator pool:
+   `delegator_pool = floor(node_income_before_delegation * delegator_share / 100)`
+4. Compute operator income:
+   `operator_income = node_income_before_delegation - delegator_pool`
+5. Create `TaskIncome` event for node address with `operator_income`.
+6. Create `DaoTaskShare` event for DAO address with `dao_income`.
+7. When delegated staking distribution is active, create one `UserDelegation` event per participating delegator by proportional split over active delegation amounts.
+8. Increase balances for all recipient addresses by their event amounts.
+
+If delegated staking distribution is inactive, `delegator_pool` MUST be `0` and no `UserDelegation` event may be created.
 
 ## Group Settlement and Rounding
 
@@ -110,11 +120,13 @@ Relay MUST keep these invariants:
 
 ## API Visibility Requirements
 
-Task fee-related user visibility MUST include:
+Relay account API `GET /v1/relay_account/:address/task_fee` MUST expose processed records only for `TaskPayment`, `TaskIncome`, and `TaskRefund` of the authenticated address.
 
-- payment records from `TaskPayment`
-- income records from `TaskIncome`
-- share records from `DaoTaskShare`
-- refund records from `TaskRefund`
+Delegator-side `UserDelegation` income MUST be exposed through these APIs:
 
-Client API `/v1/client/:address/task_fee` MUST expose processed records for these types.
+- `GET /v1/delegator/:user_address`
+- `GET /v1/delegator/:user_address/delegation`
+- `GET /v1/delegator/:user_address/delegations`
+- `GET /v1/stats/line_chart/delegator/:address/earnings`
+- `GET /v1/stats/line_chart/delegation/:user_address/:node_address/earnings`
+- `GET /v1/client/:address/income/stats`

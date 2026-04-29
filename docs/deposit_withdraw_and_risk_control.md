@@ -34,8 +34,9 @@ Relay account events MUST be the only source used by Relay Wallet to reconstruct
 | 5 | `TaskRefund` | Increase |
 | 6 | `Withdraw` | Decrease |
 | 7 | `WithdrawRefund` | Increase |
+| 8 | `UserDelegation` | Increase |
 
-`TaskIncome` is for node-side task settlement income. `DaoTaskShare` is for DAO-side settlement share.
+`TaskIncome` is for node operator settlement income after delegated staking distribution. `DaoTaskShare` is for DAO-side settlement share. `UserDelegation` is for delegator-side settlement income.
 
 `relay_account_events` MUST contain the complete relay account balance history for all relay account event types defined in this document.
 
@@ -80,9 +81,10 @@ If task reaches refund or abort terminal paths, Relay MUST:
 On successful settlement, Relay MUST:
 
 1. Split task fee by DAO ratio.
-2. Create one `TaskIncome` event for the node address.
-3. Create one `DaoTaskShare` event for the DAO address.
-4. Increase both recipient balances by their split amounts.
+2. Create one `DaoTaskShare` event for the DAO address.
+3. Create one `TaskIncome` event for the node operator address with the operator-retained amount.
+4. When delegated staking is enabled and the node has active delegations on the task network, create `UserDelegation` events for delegators by proportional stake split of the configured delegator pool.
+5. Increase all recipient balances by their split amounts.
 
 ## Withdraw
 

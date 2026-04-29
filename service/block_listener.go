@@ -166,7 +166,6 @@ func processRelayAccountDepositTransaction(ctx context.Context, db *gorm.DB, tx 
 	return nil
 }
 
-
 func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient, blockTime time.Time) error {
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
@@ -177,20 +176,77 @@ func processNodeStakingTransaction(ctx context.Context, db *gorm.DB, tx *types.T
 		return nil
 	}
 
-	for _, log := range receipt.Logs {
-		if event, err := client.NodeStakingContractInstance.ParseNodeStaked(*log); err == nil {
-			if err := nodeStaked(ctx, db, event, client.Network); err != nil {
-				return err
-			}
-			continue
-		}
-		if event, err := client.NodeStakingContractInstance.ParseNodeTryUnstaked(*log); err == nil {
-			if err := nodeTryUnstaked(ctx, db, event, client.Network, blockTime); err != nil {
-				return err
-			}
-			continue
-		}
+	return processNodeStakingReceiptLogs(receipt.Logs, client, nodeStakingReceiptLogHandlers{
+		onNodeStaked: func(event *bindings.NodeStakingNodeStaked) error {
+			return nodeStaked(ctx, db, event, client.Network)
+		},
+		onNodeTryUnstaked: func(event *bindings.NodeStakingNodeTryUnstaked) error {
+			return nodeTryUnstaked(ctx, db, event, client.Network, blockTime)
+		},
+		onNodeSlashed: func(event *bindings.NodeStakingNodeSlashed) error {
+			return slashDelegatedStakingOfNodeAddress(ctx, db, event.NodeAddress.Hex(), client.Network)
+		},
+	})
+}
 
+type nodeStakingReceiptLogHandlers struct {
+	onNodeStaked      func(*bindings.NodeStakingNodeStaked) error
+	onNodeTryUnstaked func(*bindings.NodeStakingNodeTryUnstaked) error
+	onNodeSlashed     func(*bindings.NodeStakingNodeSlashed) error
+}
+
+func processNodeStakingReceiptLogs(receiptLogs []*types.Log, client *blockchain.BlockchainClient, handlers nodeStakingReceiptLogHandlers) error {
+	return processNodeStakingReceiptLogsWithParsers(receiptLogs, nodeStakingReceiptLogParsers{
+		parseNodeStaked: func(receiptLog types.Log) (*bindings.NodeStakingNodeStaked, error) {
+			return client.NodeStakingContractInstance.ParseNodeStaked(receiptLog)
+		},
+		parseNodeTryUnstaked: func(receiptLog types.Log) (*bindings.NodeStakingNodeTryUnstaked, error) {
+			return client.NodeStakingContractInstance.ParseNodeTryUnstaked(receiptLog)
+		},
+		parseNodeSlashed: func(receiptLog types.Log) (*bindings.NodeStakingNodeSlashed, error) {
+			return client.NodeStakingContractInstance.ParseNodeSlashed(receiptLog)
+		},
+	}, handlers)
+}
+
+type nodeStakingReceiptLogParsers struct {
+	parseNodeStaked      func(types.Log) (*bindings.NodeStakingNodeStaked, error)
+	parseNodeTryUnstaked func(types.Log) (*bindings.NodeStakingNodeTryUnstaked, error)
+	parseNodeSlashed     func(types.Log) (*bindings.NodeStakingNodeSlashed, error)
+}
+
+func processNodeStakingReceiptLogsWithParsers(receiptLogs []*types.Log, parsers nodeStakingReceiptLogParsers, handlers nodeStakingReceiptLogHandlers) error {
+	for _, receiptLog := range receiptLogs {
+		if parsers.parseNodeStaked != nil {
+			if event, err := parsers.parseNodeStaked(*receiptLog); err == nil {
+				if handlers.onNodeStaked != nil {
+					if err := handlers.onNodeStaked(event); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+		}
+		if parsers.parseNodeTryUnstaked != nil {
+			if event, err := parsers.parseNodeTryUnstaked(*receiptLog); err == nil {
+				if handlers.onNodeTryUnstaked != nil {
+					if err := handlers.onNodeTryUnstaked(event); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+		}
+		if parsers.parseNodeSlashed != nil {
+			if event, err := parsers.parseNodeSlashed(*receiptLog); err == nil {
+				if handlers.onNodeSlashed != nil {
+					if err := handlers.onNodeSlashed(event); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+		}
 	}
 
 	return nil
@@ -317,12 +373,6 @@ func processDelegatedStakingTransaction(ctx context.Context, db *gorm.DB, tx *ty
 		}
 		if event, err := client.DelegatedStakingContractInstance.ParseNodeDelegatorShareChanged(*log); err == nil {
 			if err := changeNodeDelegatorShare(ctx, db, event, client.Network); err != nil {
-				return err
-			}
-			continue
-		}
-		if event, err := client.DelegatedStakingContractInstance.ParseNodeSlashed(*log); err == nil {
-			if err := slashDelegatedStakingOfNode(ctx, db, event, client.Network); err != nil {
 				return err
 			}
 			continue
@@ -474,7 +524,7 @@ func changeNodeDelegatorShare(ctx context.Context, db *gorm.DB, event *bindings.
 			return err
 		}
 		if node.Network == network {
-			SetDelegatorShare(nodeAddress, share)
+			SetDelegatorShare(nodeAddress, network, share)
 		}
 		return nil
 	}); err != nil {
@@ -490,12 +540,15 @@ func changeNodeDelegatorShare(ctx context.Context, db *gorm.DB, event *bindings.
 	return nil
 }
 
-func slashDelegatedStakingOfNode(ctx context.Context, db *gorm.DB, event *bindings.DelegatedStakingNodeSlashed, network string) error {
+func slashDelegatedStakingOfNodeAddress(ctx context.Context, db *gorm.DB, nodeAddress, network string) error {
 	dbCtx, dbCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dbCancel()
 
-	nodeAddress := event.NodeAddress.Hex()
-	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+	return slashDelegatedStakingOfNodeAddressWithContext(dbCtx, db, nodeAddress, network)
+}
+
+func slashDelegatedStakingOfNodeAddressWithContext(ctx context.Context, db *gorm.DB, nodeAddress, network string) error {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.Delegation{}).Where("node_address = ?", nodeAddress).Where("network = ?", network).Update("valid", false).Error; err != nil {
 			return err
 		}

@@ -9,11 +9,11 @@ import (
 
 type Delegation struct {
 	gorm.Model
-	DelegatorAddress string `json:"delegator_address" gorm:"index;type:string;size:191;not null"`
-	NodeAddress      string `json:"node_address" gorm:"index;type:string;size:191;not null"`
+	DelegatorAddress string `json:"delegator_address" gorm:"index;uniqueIndex:idx_delegator_node_network;type:string;size:191;not null"`
+	NodeAddress      string `json:"node_address" gorm:"index;uniqueIndex:idx_delegator_node_network;type:string;size:191;not null"`
 	Amount           BigInt `json:"amount" gorm:"type:string;size:191;not null"`
 	Valid            bool   `json:"valid" gorm:"not null;index"`
-	Network          string `json:"network" gorm:"not null;index;type:string;size:191"`
+	Network          string `json:"network" gorm:"not null;index;uniqueIndex:idx_delegator_node_network;type:string;size:191"`
 }
 
 func GetDelegation(ctx context.Context, db *gorm.DB, delegatorAddress, nodeAddress, network string) (*Delegation, error) {

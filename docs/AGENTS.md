@@ -9,6 +9,7 @@
 | [model_predownload.md](./model_predownload.md) | Pre-download scheduling, node notification, and model availability tracking |
 | [deposit_withdraw_and_risk_control.md](./deposit_withdraw_and_risk_control.md) | Deposit and withdrawal lifecycle across Relay and Wallet, relay account ledger, and risk control checks |
 | [task_fee_charge_and_settlement.md](./task_fee_charge_and_settlement.md) | Task fee charge, refund, settlement split, and rounding rules in relay account ledger |
+| [delegated_staking.md](./delegated_staking.md) | Delegation state sync, total-staking selection impact, income split, and delegated staking API surface |
 | [relay_account_event_cache_flow.md](./relay_account_event_cache_flow.md) | End-to-end relay account flow from event creation to in-memory cache mutation and DB projection for task and withdraw paths |
 | [portal_netstats_chart.md](./portal_netstats_chart.md) | Portal netstats chart inventory, data sources, and aggregation logic |
 

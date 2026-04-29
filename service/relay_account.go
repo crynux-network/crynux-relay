@@ -700,32 +700,16 @@ func sendTaskIncome(ctx context.Context, db *gorm.DB, taskIDCommitment, address 
 	appConfig := config.GetConfig()
 	daoTaskShare := big.NewInt(0).Mul(amount, big.NewInt(0).SetUint64(appConfig.Dao.TaskFeeSharePercent))
 	daoTaskShare.Div(daoTaskShare, big.NewInt(100))
-	nodeIncome := big.NewInt(0).Sub(amount, daoTaskShare)
-	delegatorShare := GetDelegatorShare(address)
-
-	rewardEvent := models.RelayAccountEvent{
-		Address:   address,
-		Amount:    models.BigInt{Int: *new(big.Int).Set(nodeIncome)},
-		CreatedAt: time.Now(),
-		Status:    models.RelayAccountEventStatusPending,
-		Type:      models.RelayAccountEventTypeTaskIncome,
-		Reason:    fmt.Sprintf("%d-%s", models.RelayAccountEventTypeTaskIncome, taskIDCommitment),
-	}
-	daoEvent := models.RelayAccountEvent{
-		Address:   appConfig.Dao.TaskFeeShareAddress,
-		Amount:    models.BigInt{Int: *new(big.Int).Set(daoTaskShare)},
-		CreatedAt: time.Now(),
-		Status:    models.RelayAccountEventStatusPending,
-		Type:      models.RelayAccountEventTypeDaoTaskShare,
-		Reason:    fmt.Sprintf("%d-%s", models.RelayAccountEventTypeDaoTaskShare, taskIDCommitment),
-	}
-	events := []models.RelayAccountEvent{rewardEvent, daoEvent}
+	nodeIncomeBeforeDelegation := big.NewInt(0).Sub(amount, daoTaskShare)
+	nodeIncome := big.NewInt(0).Set(nodeIncomeBeforeDelegation)
+	delegatorShare := GetDelegatorShare(address, network)
+	events := make([]models.RelayAccountEvent, 0)
 
 	totalDelegatorFee := big.NewInt(0)
 	if delegatorShare > 0 {
 		userStakings := GetDelegationsOfNode(address, network)
 		if len(userStakings) > 0 {
-			totalDelegatorFee.Mul(nodeIncome, big.NewInt(int64(delegatorShare)))
+			totalDelegatorFee.Mul(nodeIncomeBeforeDelegation, big.NewInt(int64(delegatorShare)))
 			totalDelegatorFee.Div(totalDelegatorFee, big.NewInt(100))
 			nodeIncome = nodeIncome.Sub(nodeIncome, totalDelegatorFee)
 
@@ -757,6 +741,24 @@ func sendTaskIncome(ctx context.Context, db *gorm.DB, taskIDCommitment, address 
 			}
 		}
 	}
+
+	rewardEvent := models.RelayAccountEvent{
+		Address:   address,
+		Amount:    models.BigInt{Int: *new(big.Int).Set(nodeIncome)},
+		CreatedAt: time.Now(),
+		Status:    models.RelayAccountEventStatusPending,
+		Type:      models.RelayAccountEventTypeTaskIncome,
+		Reason:    fmt.Sprintf("%d-%s", models.RelayAccountEventTypeTaskIncome, taskIDCommitment),
+	}
+	daoEvent := models.RelayAccountEvent{
+		Address:   appConfig.Dao.TaskFeeShareAddress,
+		Amount:    models.BigInt{Int: *new(big.Int).Set(daoTaskShare)},
+		CreatedAt: time.Now(),
+		Status:    models.RelayAccountEventStatusPending,
+		Type:      models.RelayAccountEventTypeDaoTaskShare,
+		Reason:    fmt.Sprintf("%d-%s", models.RelayAccountEventTypeDaoTaskShare, taskIDCommitment),
+	}
+	events = append(events, rewardEvent, daoEvent)
 	incentive, _ := utils.WeiToEther(nodeIncome).Float64()
 
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
