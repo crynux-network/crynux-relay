@@ -5,9 +5,11 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"errors"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type GetNodeScoresInput struct {
@@ -29,7 +31,14 @@ type GetNodeScoresOutput struct {
 }
 
 func GetNodeScoresLineChart(c *gin.Context, input *GetNodeScoresInput) (*GetNodeScoresOutput, error) {
-	if service.GetDelegatorShare(input.Address) == 0 {
+	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), input.Address)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, response.NewNotFoundErrorResponse()
+		}
+		return nil, response.NewExceptionResponse(err)
+	}
+	if service.GetDelegatorShare(input.Address, node.Network) == 0 {
 		return nil, response.NewNotFoundErrorResponse()
 	}
 	end := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)

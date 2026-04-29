@@ -49,6 +49,9 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 		return nil, validationErr
 	}
 
+	unlockJoin := service.LockNodeJoinByAddress(in.Address)
+	defer unlockJoin()
+
 	versions := strings.Split(in.Version, ".")
 	if len(versions) != 3 {
 		return nil, response.NewValidationErrorResponse("version", "Invalid node version")

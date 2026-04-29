@@ -5,10 +5,12 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"errors"
 	"math/big"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type GetNodeEarningsLineChartInput struct {
@@ -30,7 +32,14 @@ type GetNodeEarningsLineChartOutput struct {
 }
 
 func GetNodeEarningsLineChart(c *gin.Context, input *GetNodeEarningsLineChartInput) (*GetNodeEarningsLineChartOutput, error) {
-	if service.GetDelegatorShare(input.Address) == 0 {
+	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), input.Address)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, response.NewNotFoundErrorResponse()
+		}
+		return nil, response.NewExceptionResponse(err)
+	}
+	if service.GetDelegatorShare(input.Address, node.Network) == 0 {
 		return nil, response.NewNotFoundErrorResponse()
 	}
 

@@ -524,7 +524,7 @@ func changeNodeDelegatorShare(ctx context.Context, db *gorm.DB, event *bindings.
 			return err
 		}
 		if node.Network == network {
-			SetDelegatorShare(nodeAddress, share)
+			SetDelegatorShare(nodeAddress, network, share)
 		}
 		return nil
 	}); err != nil {

@@ -702,7 +702,7 @@ func sendTaskIncome(ctx context.Context, db *gorm.DB, taskIDCommitment, address 
 	daoTaskShare.Div(daoTaskShare, big.NewInt(100))
 	nodeIncomeBeforeDelegation := big.NewInt(0).Sub(amount, daoTaskShare)
 	nodeIncome := big.NewInt(0).Set(nodeIncomeBeforeDelegation)
-	delegatorShare := GetDelegatorShare(address)
+	delegatorShare := GetDelegatorShare(address, network)
 	events := make([]models.RelayAccountEvent, 0)
 
 	totalDelegatorFee := big.NewInt(0)

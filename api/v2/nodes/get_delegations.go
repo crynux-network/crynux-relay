@@ -87,7 +87,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 	offset := (page - 1) * pageSize
 	limit := pageSize
 
-	if service.GetDelegatorShare(input.Address) == 0 {
+	if service.GetDelegatorShare(input.Address, input.Network) == 0 {
 		return nil, response.NewNotFoundErrorResponse()
 	}
 
