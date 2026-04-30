@@ -13,12 +13,14 @@ const (
 	defaultNodeStatusLogPath          = "data/logs/node_status.log"
 	defaultTaskAssignmentLogPath      = "data/logs/task_assignment.log"
 	defaultTaskValidationGroupLogPath = "data/logs/task_validation_group.log"
+	defaultAdminLogPath               = "data/logs/admin.log"
 )
 
 var nodeHealthLogger *logrus.Logger
 var nodeStatusLogger *logrus.Logger
 var taskAssignmentLogger *logrus.Logger
 var taskValidationGroupLogger *logrus.Logger
+var adminLogger *logrus.Logger
 
 func InitLog(appConfig *AppConfig) error {
 
@@ -48,6 +50,7 @@ func InitLog(appConfig *AppConfig) error {
 	initNodeStatusLogger(appConfig)
 	initTaskAssignmentLogger(appConfig)
 	initTaskValidationGroupLogger(appConfig)
+	initAdminLogger(appConfig)
 
 	return nil
 }
@@ -66,6 +69,10 @@ func GetNodeStatusLogger() *logrus.Logger {
 
 func GetTaskValidationGroupLogger() *logrus.Logger {
 	return taskValidationGroupLogger
+}
+
+func GetAdminLogger() *logrus.Logger {
+	return adminLogger
 }
 
 func initNodeHealthLogger(appConfig *AppConfig) {
@@ -112,6 +119,13 @@ func initTaskValidationGroupLogger(appConfig *AppConfig) {
 	taskValidationGroupLogger.SetOutput(newLogWriter(getTaskValidationGroupLogPath(appConfig.Log.Output), appConfig.Log.MaxFileSize, appConfig.Log.MaxDays, appConfig.Log.MaxFileNum))
 }
 
+func initAdminLogger(appConfig *AppConfig) {
+	adminLogger = logrus.New()
+	adminLogger.SetFormatter(&logrus.TextFormatter{})
+	adminLogger.SetLevel(logrus.InfoLevel)
+	adminLogger.SetOutput(newLogWriter(getAdminLogPath(appConfig.Log.Output), appConfig.Log.MaxFileSize, appConfig.Log.MaxDays, appConfig.Log.MaxFileNum))
+}
+
 func getNodeHealthLogPath(mainLogOutput string) string {
 	if mainLogOutput == "" || mainLogOutput == "stdout" || mainLogOutput == "stderr" {
 		return defaultNodeHealthLogPath
@@ -140,7 +154,17 @@ func getTaskValidationGroupLogPath(mainLogOutput string) string {
 	return filepath.Join(filepath.Dir(mainLogOutput), "task_validation_group.log")
 }
 
+func getAdminLogPath(mainLogOutput string) string {
+	if mainLogOutput == "" || mainLogOutput == "stdout" || mainLogOutput == "stderr" {
+		return defaultAdminLogPath
+	}
+	return filepath.Join(filepath.Dir(mainLogOutput), "admin.log")
+}
+
 func newLogWriter(filename string, maxFileSize, maxDays, maxFileNum int) *lumberjack.Logger {
+	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+		logrus.WithError(err).Warn("failed to create log directory")
+	}
 	logWriter := &lumberjack.Logger{
 		Filename: filename,
 		Compress: true,

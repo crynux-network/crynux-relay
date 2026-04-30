@@ -83,5 +83,11 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), admin.ExportNodeTaskHistoryHTML)
+	adminGroup.GET("/nodes_token_csv", []fizz.OperationOption{
+		fizz.ID("admin_nodes_token_csv_v2"),
+		fizz.Summary("Start exporting node token balances in CSV"),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), admin.ExportNodesTokenCSV)
 
 }
