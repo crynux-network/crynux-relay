@@ -44,10 +44,11 @@ type nodesTokenCSVRow struct {
 }
 
 type nodesBenefitAddressCSVRow struct {
-	Address        string
-	CardName       string
-	Network        string
-	BenefitAddress string
+	Address               string
+	CardName              string
+	Network               string
+	BenefitAddress        string
+	BenefitAddressBalance *big.Int
 }
 
 type nodesTokenCSVChainRequestLimiter struct {
@@ -226,16 +227,25 @@ func buildNodesTokenCSVRow(ctx context.Context, address, cardName string, stakin
 func buildNodesBenefitAddressCSVRows(ctx context.Context, address, cardName string, limiter *nodesTokenCSVChainRequestLimiter) ([]nodesBenefitAddressCSVRow, error) {
 	networks := getNodesTokenCSVNetworks()
 	rows := make([]nodesBenefitAddressCSVRow, 0, len(networks))
+	nodeAddress := common.HexToAddress(address)
 	for _, network := range networks {
 		benefitAddress, err := getNodesBenefitAddress(ctx, address, network, limiter)
 		if err != nil {
 			return nil, err
 		}
+		if nodeAddress == common.HexToAddress(benefitAddress) {
+			continue
+		}
+		benefitAddressBalance, err := getNodesTokenCSVChainBalance(ctx, benefitAddress, network, limiter)
+		if err != nil {
+			return nil, err
+		}
 		rows = append(rows, nodesBenefitAddressCSVRow{
-			Address:        address,
-			CardName:       cardName,
-			Network:        network,
-			BenefitAddress: benefitAddress,
+			Address:               address,
+			CardName:              cardName,
+			Network:               network,
+			BenefitAddress:        benefitAddress,
+			BenefitAddressBalance: benefitAddressBalance,
 		})
 	}
 	return rows, nil
@@ -358,6 +368,7 @@ func writeNodesBenefitAddressCSV(rows []nodesBenefitAddressCSVRow) (string, erro
 		"card name",
 		"network",
 		"benefit address",
+		"benefit address balance CNX",
 	}); err != nil {
 		return "", err
 	}
@@ -368,6 +379,7 @@ func writeNodesBenefitAddressCSV(rows []nodesBenefitAddressCSVRow) (string, erro
 			row.CardName,
 			row.Network,
 			row.BenefitAddress,
+			formatCNXAmount(row.BenefitAddressBalance),
 		}); err != nil {
 			return "", err
 		}
