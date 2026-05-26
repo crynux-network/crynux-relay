@@ -36,6 +36,8 @@ This means the observable flow is:
 - `Withdraw`
 - `WithdrawRefund`
 - `WithdrawFeeIncome`
+- `VestingCreated`
+- `VestingRelease`
 
 ### Relay Account Event Status
 
@@ -161,6 +163,33 @@ Deposit ingestion path:
 4. Relay applies in-memory cache increase via callback.
 5. transaction completes.
 6. background processor validates tx evidence, projects `Deposit` event into `relay_accounts`, and updates linked `deposit_records.local_status` to `Processed` or `Invalid`.
+
+## Vesting Path
+
+### Vesting Creation
+
+Admin vesting creation path:
+
+1. Relay verifies admin token and admin signer signature for each vesting item.
+2. Relay creates one `vesting_records` row.
+3. Relay creates one `VestingCreated` event (`Pending`) with zero amount and a reason that stores the vesting record ID.
+4. Background processor validates reason binding and marks event `Processed`.
+
+`VestingCreated` exists for ordering, replay protection, and wallet-side independent validation; it does not change balance.
+
+### Vesting Release
+
+Release task path:
+
+1. Background task scans active vesting records.
+2. For each record, computes `should_released` from schedule and current time.
+3. If `should_released > released_amount`, Relay:
+   - creates `VestingRelease` event (`Pending`) for `release_amount = should_released - released_amount`
+   - updates `vesting_records.released_amount` in the same transaction
+   - updates in-memory cache by the same `release_amount`
+4. Background processor later projects `VestingRelease` into `relay_accounts`.
+
+Release processing is catch-up and idempotent. Missed runs are recovered by releasing accumulated delta; repeated runs for the same checkpoint do not create duplicate balance credits.
 
 ## Consistency Characteristics
 

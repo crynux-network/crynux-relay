@@ -35,8 +35,11 @@ Relay account events MUST be the only source used by Relay Wallet to reconstruct
 | 6 | `Withdraw` | Decrease |
 | 7 | `WithdrawRefund` | Increase |
 | 8 | `UserDelegation` | Increase |
+| 9 | `VestingCreated` | No balance change |
+| 10 | `VestingRelease` | Increase |
 
 `TaskIncome` is for node operator settlement income after delegated staking distribution. `DaoTaskShare` is for DAO-side settlement share. `UserDelegation` is for delegator-side settlement income.
+`VestingCreated` anchors a signed vesting schedule. `VestingRelease` materializes released vesting amount into relay account balance.
 
 `relay_account_events` MUST contain the complete relay account balance history for all relay account event types defined in this document.
 
@@ -155,6 +158,22 @@ This design solves three different requirements at the same time:
 - wallet execution safety gate (`withdraw_records.local_status`)
 - auditable and replayable accounting pipeline (`relay_account_events.status` + `relay_accounts`)
 
+## Vesting
+
+Relay MUST support vesting through `relay_account_events` and `vesting_records`:
+
+1. `VestingCreated` events MUST be created only by admin APIs protected by admin token and admin signer signature verification.
+2. Every vesting creation item MUST be signed by the configured `admin.vesting_signer_address`.
+3. `VestingCreated` reason MUST contain the vesting record ID. Relay MUST build the wallet-facing creation payload from the corresponding `vesting_records` row.
+4. Release processing MUST be catch-up and idempotent. For each vesting record, Relay computes:
+   - `should_released = min(total_amount, total_amount * elapsed_days / duration_days)`
+   - `release_amount = should_released - released_amount`
+5. Relay MUST emit `VestingRelease` only when `release_amount > 0`.
+6. Updating `vesting_records.released_amount` and creating `VestingRelease` MUST be in one transaction.
+7. `VestingRelease` reason MUST uniquely identify the release checkpoint to prevent duplicate credits on retries.
+
+Spendable balance is driven by materialized ledger events. The locked vesting query is schedule-based and SHOULD report `total_amount - should_released` at request time.
+
 ## Relay Wallet Synchronization Rules
 
 Relay Wallet MUST synchronize in event-order:
@@ -170,7 +189,7 @@ Relay account events MUST be retained as a complete ledger for audit, including 
 
 Relay Wallet should skip applying `Withdraw` and `WithdrawRefund` to its local balance if withdrawal deduction and rollback are handled by withdrawal processing flow.
 
-Relay event logs MUST include a `payload` field as a JSON-encoded string. For `Deposit` events, `payload` MUST encode `tx_hash` and `network` derived from event reason. For non-deposit events, `payload` MUST be `{}`.
+Relay event logs MUST include a `payload` field as a JSON-encoded string. For `Deposit` events, `payload` MUST encode `tx_hash` and `network` derived from event reason. For `VestingCreated` events, `payload` MUST encode the signed vesting schedule and set `released_amount` to `0`. For `VestingRelease` events, `payload` MUST encode only `vesting_id`; Relay Wallet MUST derive release state from its local vesting record. For other event types, `payload` MUST be `{}`.
 
 When Relay Wallet skips applying an event type, it MUST still:
 
@@ -256,6 +275,7 @@ When Relay Wallet skips applying an event type, it MUST still:
 | `GET` | `/v1/client/:address/withdraw/list` | Query withdrawals |
 | `GET` | `/v1/client/:address/deposit/list` | Query deposits |
 | `GET` | `/v1/client/:address/task_fee` | Query task fee records |
+| `GET` | `/v1/relay_account/:address/vesting/locked` | Query locked vesting amount |
 
 ### Wallet APIs
 

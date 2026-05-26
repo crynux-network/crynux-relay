@@ -35,6 +35,8 @@ const (
 	RelayAccountEventTypeWithdraw          RelayAccountEventType = 6
 	RelayAccountEventTypeWithdrawRefund    RelayAccountEventType = 7
 	RelayAccountEventTypeUserDelegation    RelayAccountEventType = 8
+	RelayAccountEventTypeVestingCreated    RelayAccountEventType = 9
+	RelayAccountEventTypeVestingRelease    RelayAccountEventType = 10
 )
 
 type RelayAccountEvent struct {

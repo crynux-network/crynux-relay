@@ -89,5 +89,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), admin.ExportNodesTokenCSV)
+	adminGroup.POST("/vesting", []fizz.OperationOption{
+		fizz.ID("admin_vesting_create_v2"),
+		fizz.Summary("Create vesting records"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.CreateVestingRecords, 200))
 
 }
