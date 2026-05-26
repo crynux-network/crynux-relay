@@ -41,6 +41,13 @@ func splitRelayAccountEventReason(eventType models.RelayAccountEventType, reason
 		}
 		return parts, true
 	}
+	if eventType == models.RelayAccountEventTypeVestingRelease {
+		parts := strings.SplitN(reason, "-", 4)
+		if len(parts) != 4 || parts[0] != eventTypeStr {
+			return nil, false
+		}
+		return parts, true
+	}
 	parts := strings.SplitN(reason, "-", 2)
 	if len(parts) != 2 || parts[0] != eventTypeStr {
 		return nil, false
@@ -100,8 +107,15 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 	candidateEvents := make([]models.RelayAccountEvent, 0)
 	taskIDSet := make(map[string]struct{})
 	withdrawIDSet := make(map[uint]struct{})
+	vestingIDSet := make(map[uint]struct{})
 	balanceAddressSet := make(map[string]struct{})
 	depositReasonByEventID := make(map[uint][2]string)
+	vestingCreatedReasonByEventID := make(map[uint]uint)
+	type vestingReleaseReason struct {
+		FromReleased *big.Int
+		ToReleased   *big.Int
+	}
+	vestingReleaseReasonByEventID := make(map[uint]vestingReleaseReason)
 
 	for _, event := range events {
 		reasons, ok := splitRelayAccountEventReason(event.Type, event.Reason)
@@ -127,6 +141,35 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 			if event.Type == models.RelayAccountEventTypeWithdraw {
 				balanceAddressSet[event.Address] = struct{}{}
 			}
+		case models.RelayAccountEventTypeVestingCreated:
+			vestingID, ok := models.ParseVestingCreatedReason(event.Reason)
+			if !ok {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			vestingIDSet[vestingID] = struct{}{}
+			vestingCreatedReasonByEventID[event.ID] = vestingID
+		case models.RelayAccountEventTypeVestingRelease:
+			vestingID, err := strconv.ParseUint(reasons[1], 10, 64)
+			if err != nil {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			fromReleased, ok := big.NewInt(0).SetString(reasons[2], 10)
+			if !ok {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			toReleased, ok := big.NewInt(0).SetString(reasons[3], 10)
+			if !ok {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			vestingIDSet[uint(vestingID)] = struct{}{}
+			vestingReleaseReasonByEventID[event.ID] = vestingReleaseReason{
+				FromReleased: fromReleased,
+				ToReleased:   toReleased,
+			}
 		default:
 			invalidEvents = append(invalidEvents, event)
 			continue
@@ -141,6 +184,10 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 	withdrawIDs := make([]uint, 0, len(withdrawIDSet))
 	for withdrawID := range withdrawIDSet {
 		withdrawIDs = append(withdrawIDs, withdrawID)
+	}
+	vestingIDs := make([]uint, 0, len(vestingIDSet))
+	for vestingID := range vestingIDSet {
+		vestingIDs = append(vestingIDs, vestingID)
 	}
 	balanceAddresses := make([]string, 0, len(balanceAddressSet))
 	for address := range balanceAddressSet {
@@ -177,6 +224,20 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 		withdrawMap[record.ID] = record
 	}
 
+	var vestingRecords []models.VestingRecord
+	if len(vestingIDs) > 0 {
+		dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if err := db.WithContext(dbCtx).
+			Where("id IN (?)", vestingIDs).
+			Find(&vestingRecords).Error; err != nil {
+			return nil, nil, err
+		}
+	}
+	vestingMap := make(map[uint]models.VestingRecord, len(vestingRecords))
+	for _, record := range vestingRecords {
+		vestingMap[record.ID] = record
+	}
 	var relayAccounts []models.RelayAccount
 	if len(balanceAddresses) > 0 {
 		dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -333,6 +394,58 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 			} else {
 				invalidEvents = append(invalidEvents, event)
 			}
+		case models.RelayAccountEventTypeVestingCreated:
+			vestingID, ok := vestingCreatedReasonByEventID[event.ID]
+			if !ok {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			vesting, ok := vestingMap[vestingID]
+			if !ok ||
+				!strings.EqualFold(vesting.Address, event.Address) ||
+				event.Amount.Sign() != 0 {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			validEvents = append(validEvents, event)
+		case models.RelayAccountEventTypeVestingRelease:
+			vestingID, _ := strconv.ParseUint(reasons[1], 10, 64)
+			vesting, ok := vestingMap[uint(vestingID)]
+			if !ok || !strings.EqualFold(vesting.Address, event.Address) {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			releaseReason, ok := vestingReleaseReasonByEventID[event.ID]
+			if !ok {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			if releaseReason.FromReleased.Sign() < 0 || releaseReason.ToReleased.Sign() < 0 {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			if releaseReason.FromReleased.Cmp(releaseReason.ToReleased) > 0 {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			expectedAmount := big.NewInt(0).Sub(releaseReason.ToReleased, releaseReason.FromReleased)
+			if expectedAmount.Sign() <= 0 || expectedAmount.Cmp(&event.Amount.Int) != 0 {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			if releaseReason.ToReleased.Cmp(&vesting.TotalAmount.Int) > 0 {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			if releaseReason.ToReleased.Cmp(&vesting.ReleasedAmount.Int) != 0 {
+				invalidEvents = append(invalidEvents, event)
+				continue
+			}
+			balance := relayBalanceMap[event.Address]
+			if balance != nil {
+				balance.Add(balance, &event.Amount.Int)
+			}
+			validEvents = append(validEvents, event)
 		}
 	}
 
@@ -791,6 +904,41 @@ func rejectWithdrawToRelayAccount(ctx context.Context, db *gorm.DB, withdrawID u
 		return nil, err
 	}
 	amountCopy := new(big.Int).Set(amount)
+	return func() error {
+		relayAccountCache.mu.Lock()
+		defer relayAccountCache.mu.Unlock()
+		balance.Add(balance, amountCopy)
+		return nil
+	}, nil
+}
+
+func createVestingCreatedRelayAccountEvent(ctx context.Context, db *gorm.DB, record models.VestingRecord) error {
+	reason := models.BuildVestingCreatedReason(record)
+	return createRelayAccountEvent(ctx, db, models.RelayAccountEventTypeVestingCreated, reason, record.Address, big.NewInt(0))
+}
+
+func releaseVestingToRelayAccount(ctx context.Context, db *gorm.DB, vestingID uint, address string, fromReleased, toReleased *big.Int) (func() error, error) {
+	if fromReleased == nil || toReleased == nil {
+		return nil, errors.New("released amount cannot be nil")
+	}
+	if fromReleased.Cmp(toReleased) > 0 {
+		return nil, errors.New("invalid release range")
+	}
+	releaseAmount := big.NewInt(0).Sub(toReleased, fromReleased)
+	if releaseAmount.Sign() <= 0 {
+		return nil, errors.New("release amount must be positive")
+	}
+
+	reason := models.BuildVestingReleaseReason(vestingID, fromReleased, toReleased)
+	if err := createRelayAccountEvent(ctx, db, models.RelayAccountEventTypeVestingRelease, reason, address, releaseAmount); err != nil {
+		return nil, err
+	}
+
+	balance, err := getRelayAccountFromCache(ctx, db, address)
+	if err != nil {
+		return nil, err
+	}
+	amountCopy := new(big.Int).Set(releaseAmount)
 	return func() error {
 		relayAccountCache.mu.Lock()
 		defer relayAccountCache.mu.Unlock()

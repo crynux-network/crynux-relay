@@ -55,6 +55,7 @@ func main() {
 	service.StartNativeTokenListener(context.Background())
 	go service.StartTaskProcesser(context.Background())
 	go service.StartRelayAccountSync(context.Background(), config.GetDB())
+	go tasks.StartVestingRelease(context.Background())
 	// go tasks.ProcessTasks(context.Background())
 	go tasks.StartSyncNetwork(context.Background())
 	go tasks.StartStatsTaskCount(context.Background())
