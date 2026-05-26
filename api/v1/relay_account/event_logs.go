@@ -8,12 +8,15 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/utils"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+const emptyEventPayload = "{}"
 
 type GetRelayAccountEventLogsInput struct {
 	StartID uint `query:"start_id" json:"start_id" description:"Start ID"`
@@ -40,24 +43,83 @@ type GetRelayAccountEventLogsResponse struct {
 	Data []RelayAccountEventLog `json:"data"`
 }
 
-func getEventPayload(eventType models.RelayAccountEventType, reason string) string {
-	if eventType != models.RelayAccountEventTypeDeposit {
-		return "{}"
-	}
-
-	reasons := strings.SplitN(reason, "-", 3)
-	if len(reasons) != 3 || reasons[0] != strconv.Itoa(int(models.RelayAccountEventTypeDeposit)) {
-		return "{}"
-	}
-	payload := map[string]string{
-		"tx_hash": reasons[1],
-		"network": reasons[2],
-	}
+func marshalEventPayload(payload interface{}) (string, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return "{}"
+		return "", err
 	}
-	return string(payloadJSON)
+	return string(payloadJSON), nil
+}
+
+func buildEventPayload(event models.RelayAccountEvent, vestingMap map[uint]models.VestingRecord) (string, error) {
+	switch event.Type {
+	case models.RelayAccountEventTypeDeposit:
+		reason := event.Reason
+		reasons := strings.SplitN(reason, "-", 3)
+		if len(reasons) != 3 || reasons[0] != strconv.Itoa(int(models.RelayAccountEventTypeDeposit)) {
+			return "", fmt.Errorf("invalid deposit event reason: event_id=%d", event.ID)
+		}
+		payload := map[string]string{
+			"tx_hash": reasons[1],
+			"network": reasons[2],
+		}
+		return marshalEventPayload(payload)
+	case models.RelayAccountEventTypeVestingCreated:
+		vestingID, ok := models.ParseVestingCreatedReason(event.Reason)
+		if !ok {
+			return "", fmt.Errorf("invalid vesting created event reason: event_id=%d", event.ID)
+		}
+		record, ok := vestingMap[vestingID]
+		if !ok {
+			return "", fmt.Errorf("vesting record not found for event payload: event_id=%d vesting_id=%d", event.ID, vestingID)
+		}
+		payload := models.BuildVestingCreatedPayload(record)
+		return marshalEventPayload(payload)
+	case models.RelayAccountEventTypeVestingRelease:
+		vestingID, _, _, ok := models.ParseVestingReleaseReason(event.Reason)
+		if !ok {
+			return "", fmt.Errorf("invalid vesting release event reason: event_id=%d", event.ID)
+		}
+		payload := map[string]interface{}{
+			"vesting_id": vestingID,
+		}
+		return marshalEventPayload(payload)
+	default:
+		return emptyEventPayload, nil
+	}
+}
+
+func loadVestingRecordsForEvents(ctx context.Context, events []models.RelayAccountEvent) (map[uint]models.VestingRecord, error) {
+	vestingIDSet := make(map[uint]struct{})
+	for _, event := range events {
+		if event.Type != models.RelayAccountEventTypeVestingCreated || event.Status != models.RelayAccountEventStatusProcessed {
+			continue
+		}
+		vestingID, ok := models.ParseVestingCreatedReason(event.Reason)
+		if !ok {
+			return nil, fmt.Errorf("invalid vesting created event reason: event_id=%d", event.ID)
+		}
+		vestingIDSet[vestingID] = struct{}{}
+	}
+	if len(vestingIDSet) == 0 {
+		return map[uint]models.VestingRecord{}, nil
+	}
+	vestingIDs := make([]uint, 0, len(vestingIDSet))
+	for vestingID := range vestingIDSet {
+		vestingIDs = append(vestingIDs, vestingID)
+	}
+	var records []models.VestingRecord
+	if err := config.GetDB().WithContext(ctx).
+		Model(&models.VestingRecord{}).
+		Where("id IN (?)", vestingIDs).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	vestingMap := make(map[uint]models.VestingRecord, len(records))
+	for _, record := range records {
+		vestingMap[record.ID] = record
+	}
+	return vestingMap, nil
 }
 
 func GetRelayAccountEventLogs(c *gin.Context, in *GetRelayAccountEventLogsInputWithSignature) (*GetRelayAccountEventLogsResponse, error) {
@@ -90,6 +152,10 @@ func GetRelayAccountEventLogs(c *gin.Context, in *GetRelayAccountEventLogsInputW
 	if len(events) > 0 {
 		appConfig := config.GetConfig()
 		invalidIDs := make([]uint, 0)
+		vestingMap, err := loadVestingRecordsForEvents(dbCtx, events)
+		if err != nil {
+			return nil, err
+		}
 		for _, event := range events {
 			if event.Status == models.RelayAccountEventStatusPending {
 				break
@@ -105,13 +171,18 @@ func GetRelayAccountEventLogs(c *gin.Context, in *GetRelayAccountEventLogsInputW
 				continue
 			}
 
+			payload, err := buildEventPayload(event, vestingMap)
+			if err != nil {
+				return nil, err
+			}
+
 			logs = append(logs, RelayAccountEventLog{
 				ID:        event.ID,
 				CreatedAt: uint64(event.CreatedAt.Unix()),
 				Address:   event.Address,
 				Amount:    event.Amount.String(),
 				Type:      event.Type,
-				Payload:   getEventPayload(event.Type, event.Reason),
+				Payload:   payload,
 			})
 		}
 

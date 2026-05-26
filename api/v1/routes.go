@@ -290,6 +290,10 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get task fee records"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetTaskFeeLedgerRecords, 200))
+	relayAccountGroup.GET("/:address/vesting/locked", []fizz.OperationOption{
+		fizz.Summary("Get locked vesting amount"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetLockedVesting, 200))
 
 	withdrawGroup := v1g.Group("withdraw", "withdraw", "withdraw related APIs")
 	withdrawGroup.GET("/list", []fizz.OperationOption{

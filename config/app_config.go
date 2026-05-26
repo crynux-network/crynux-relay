@@ -47,7 +47,8 @@ type AppConfig struct {
 	} `mapstructure:"http"`
 
 	Admin struct {
-		AuthToken string `mapstructure:"auth_token"`
+		AuthToken            string `mapstructure:"auth_token"`
+		VestingSignerAddress string `mapstructure:"vesting_signer_address"`
 	} `mapstructure:"admin"`
 
 	DataDir struct {

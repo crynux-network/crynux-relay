@@ -56,7 +56,7 @@ Relay Wallet balance application contract SHALL be:
 - skip `Withdraw`
 - skip `WithdrawRefund`
 
-Relay event log rows include a `payload` field as a JSON-encoded string. For `Deposit`, payload encodes `tx_hash` and `network`. For non-deposit event types, payload is `{}`.
+Relay event log rows include a `payload` field as a JSON-encoded string. For `Deposit`, payload encodes `tx_hash` and `network`. Vesting payload requirements are specified in `deposit_withdraw_and_risk_control.md`. For other non-deposit event types, payload is `{}`.
 
 For skipped event types, Relay Wallet MUST still verify integrity and MUST still advance checkpoint to keep event-order alignment with withdrawal synchronization watermark.
 

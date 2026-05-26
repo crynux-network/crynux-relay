@@ -28,6 +28,7 @@ http:
     expires_in: 3600
 admin:
   auth_token: ""
+  vesting_signer_address: ""
 data_dir:
   inference_tasks: "data/inference_tasks"
   slashed_tasks: "data/slashed_tasks"
