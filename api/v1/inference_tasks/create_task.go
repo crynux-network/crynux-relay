@@ -55,6 +55,19 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		return nil, validationErr
 	}
 
+	if config.GetConfig().Task.TaskWhitelistEnabled {
+		allowed, err := service.IsTaskCreatorWhitelisted(c.Request.Context(), config.GetDB(), address)
+		if err != nil {
+			if errors.Is(err, service.ErrInvalidTaskWhitelistAddress) {
+				return nil, response.NewValidationErrorResponse("address", "Invalid address")
+			}
+			return nil, response.NewExceptionResponse(err)
+		}
+		if !allowed {
+			return nil, response.NewValidationErrorResponse("address", "Signer not allowed")
+		}
+	}
+
 	validationErr, err := models.ValidateTaskArgsJsonStr(in.TaskArgs, in.TaskType)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)

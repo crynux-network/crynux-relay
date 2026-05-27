@@ -62,6 +62,9 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		}).Create(&networkNodeData).Error; err != nil {
 			return err
 		}
+		if err := IncrementNodeNameCountTx(ctx, tx, node); err != nil {
+			return err
+		}
 		if err := emitEvent(ctx, tx, &models.NodeJoinEvent{NodeAddress: node.Address, Network: node.Network}); err != nil {
 			return err
 		}
@@ -70,12 +73,14 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if err != nil {
 		return err
 	}
+	ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
 	UpdateMaxStaking(node.Address, &node.StakeAmount.Int)
 	LogNodeStatusChange(node, "join")
 	return nil
 }
 
 func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slashed bool) error {
+	wasActiveBeforeQuit := IsNodeStatusActiveForNodeNameCount(node.Status)
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// delete all node local models
 		err := tx.Where("node_address = ?", node.Address).Delete(&models.NodeModel{}).Error
@@ -89,6 +94,11 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 			"stake_amount":               models.BigInt{Int: *big.NewInt(0)},
 		}); err != nil {
 			return err
+		}
+		if wasActiveBeforeQuit {
+			if err := DecrementNodeNameCountTx(ctx, tx, node); err != nil {
+				return err
+			}
 		}
 		UpdateMaxStaking(node.Address, big.NewInt(0))
 		var txID uint
@@ -118,6 +128,9 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 	})
 	if err != nil {
 		return err
+	}
+	if wasActiveBeforeQuit {
+		ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), -1)
 	}
 	return nil
 }
@@ -228,6 +241,7 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 		}); err != nil {
 			return err
 		}
+		ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), -1)
 		LogNodeStatusChange(node, "pause")
 		return nil
 	}

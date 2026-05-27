@@ -54,8 +54,14 @@ func NodeResume(c *gin.Context, in *ResumeInputWithSignature) (*response.Respons
 			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
 		}
 
-		err = node.Update(c.Request.Context(), config.GetDB(), map[string]interface{}{"status": models.NodeStatusAvailable})
+		err = config.GetDB().Transaction(func(tx *gorm.DB) error {
+			if err := node.Update(c.Request.Context(), tx, map[string]interface{}{"status": models.NodeStatusAvailable}); err != nil {
+				return err
+			}
+			return service.IncrementNodeNameCountTx(c.Request.Context(), tx, node)
+		})
 		if err == nil {
+			service.ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, service.BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
 			service.LogNodeStatusChange(node, "resume")
 			break
 		} else if errors.Is(err, models.ErrNodeStatusChanged) {

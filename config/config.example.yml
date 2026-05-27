@@ -74,6 +74,9 @@ blockchains:
 task:
   stake_amount: 0
   distance_threshold: 0
+  task_whitelist_enabled: false
+  minimum_node_name_number: 10
+  node_name_whitelist_enabled: false
 task_schema:
   stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-inference-task.json"
   gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/main/schema/gpt-inference-task.json"
