@@ -53,7 +53,9 @@ func ComputeVestingShouldReleased(totalAmount *big.Int, startTime time.Time, dur
 		return big.NewInt(0)
 	}
 
-	elapsedDays := uint(nowUTC.Sub(startUTC) / (24 * time.Hour))
+	startDay := time.Date(startUTC.Year(), startUTC.Month(), startUTC.Day(), 0, 0, 0, 0, time.UTC)
+	nowDay := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	elapsedDays := uint(nowDay.Sub(startDay) / (24 * time.Hour))
 	if elapsedDays >= durationDays {
 		return new(big.Int).Set(totalAmount)
 	}

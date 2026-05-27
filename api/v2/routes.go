@@ -89,6 +89,13 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), admin.ExportNodesTokenCSV)
+	adminGroup.GET("/emission/task_fee_csv", []fizz.OperationOption{
+		fizz.ID("admin_emission_task_fee_csv_v2"),
+		fizz.Summary("Export previous emission week task fee and emission in CSV"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), admin.ExportEmissionTaskFeeCSV)
 	adminGroup.POST("/vesting", []fizz.OperationOption{
 		fizz.ID("admin_vesting_create_v2"),
 		fizz.Summary("Create vesting records"),
