@@ -80,59 +80,70 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 }
 
 func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slashed bool) error {
-	wasActiveBeforeQuit := IsNodeStatusActiveForNodeNameCount(node.Status)
+	var wasActiveBeforeQuit bool
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// delete all node local models
-		err := tx.Where("node_address = ?", node.Address).Delete(&models.NodeModel{}).Error
-		if err != nil {
-			return err
-		}
-
-		if err := node.Update(ctx, tx, map[string]interface{}{
-			"status":                     models.NodeStatusQuit,
-			"current_task_id_commitment": sql.NullString{Valid: false},
-			"stake_amount":               models.BigInt{Int: *big.NewInt(0)},
-		}); err != nil {
-			return err
-		}
-		if wasActiveBeforeQuit {
-			if err := DecrementNodeNameCountTx(ctx, tx, node); err != nil {
-				return err
-			}
-		}
-		UpdateMaxStaking(node.Address, big.NewInt(0))
-		var txID uint
-		stakingInfo, err := blockchain.GetStakingInfo(ctx, common.HexToAddress(node.Address), node.Network)
-		if err != nil {
-			return err
-		}
-		if stakingInfo.Status != 0 { // not unstaked
-			if slashed {
-				blockchainTransaction, err := blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
-				if err != nil {
-					return err
-				}
-				txID = blockchainTransaction.ID
-			} else {
-				// blockchainTransaction, err := blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
-				// if err != nil {
-				// 	return err
-				// }
-				// txID = blockchainTransaction.ID
-			}
-		}
-		if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: txID, Network: node.Network}); err != nil {
-			return err
-		}
-		return nil
+		var err error
+		wasActiveBeforeQuit, err = setNodeStatusQuitTx(ctx, tx, node, slashed)
+		return err
 	})
 	if err != nil {
 		return err
 	}
+	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	return nil
+}
+
+func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, slashed bool) (bool, error) {
+	wasActiveBeforeQuit := IsNodeStatusActiveForNodeNameCount(node.Status)
+	// delete all node local models
+	err := tx.Where("node_address = ?", node.Address).Delete(&models.NodeModel{}).Error
+	if err != nil {
+		return false, err
+	}
+
+	if err := node.Update(ctx, tx, map[string]interface{}{
+		"status":                     models.NodeStatusQuit,
+		"current_task_id_commitment": sql.NullString{Valid: false},
+		"stake_amount":               models.BigInt{Int: *big.NewInt(0)},
+	}); err != nil {
+		return false, err
+	}
+	if wasActiveBeforeQuit {
+		if err := DecrementNodeNameCountTx(ctx, tx, node); err != nil {
+			return false, err
+		}
+	}
+	var txID uint
+	stakingInfo, err := blockchain.GetStakingInfo(ctx, common.HexToAddress(node.Address), node.Network)
+	if err != nil {
+		return false, err
+	}
+	if stakingInfo.Status != 0 { // not unstaked
+		if slashed {
+			blockchainTransaction, err := blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
+			if err != nil {
+				return false, err
+			}
+			txID = blockchainTransaction.ID
+		} else {
+			blockchainTransaction, err := blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
+			if err != nil {
+				return false, err
+			}
+			txID = blockchainTransaction.ID
+		}
+	}
+	if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: txID, Network: node.Network}); err != nil {
+		return false, err
+	}
+	return wasActiveBeforeQuit, nil
+}
+
+func applyNodeQuitPostCommit(node *models.Node, wasActiveBeforeQuit bool) {
+	UpdateMaxStaking(node.Address, big.NewInt(0))
 	if wasActiveBeforeQuit {
 		ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), -1)
 	}
-	return nil
 }
 
 func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommitment string, taskModelIDs []string) error {
@@ -206,14 +217,18 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 			return err
 		}
 		healthMetrics := calculateCurrentNodeHealthMetrics(node)
+		var wasActiveBeforeQuit bool
 		if err := db.Transaction(func(tx *gorm.DB) error {
-			if err := SetNodeStatusQuit(ctx, tx, node, false); err != nil {
+			var err error
+			wasActiveBeforeQuit, err = setNodeStatusQuitTx(ctx, tx, node, false)
+			if err != nil {
 				return err
 			}
 			return emitEvent(ctx, tx, &models.NodeKickedOutEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Network: node.Network})
 		}); err != nil {
 			return err
 		}
+		applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
 		LogNodeStatusChange(node, "kickout")
 		logNodeKickoutHealthEvent(node, task, healthMetrics)
 		return nil
@@ -256,14 +271,21 @@ func nodeSlash(ctx context.Context, db *gorm.DB, node *models.Node) error {
 		return errors.New("task id commitment is not valid")
 	}
 	taskIDCommitment := node.CurrentTaskIDCommitment.String
-	return db.Transaction(func(tx *gorm.DB) error {
-		slashedAmount := node.StakeAmount
-		if err := SetNodeStatusQuit(ctx, db, node, true); err != nil {
+	slashedAmount := node.StakeAmount
+	var wasActiveBeforeQuit bool
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		wasActiveBeforeQuit, err = setNodeStatusQuitTx(ctx, tx, node, true)
+		if err != nil {
 			return err
 		}
-		LogNodeStatusChange(node, "slashed")
-		return emitEvent(ctx, db, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network})
-	})
+		return emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network})
+	}); err != nil {
+		return err
+	}
+	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	LogNodeStatusChange(node, "slashed")
+	return nil
 }
 
 func updateNodeQosScore(ctx context.Context, db *gorm.DB, node *models.Node, qos uint64) error {
