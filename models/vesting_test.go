@@ -10,7 +10,7 @@ import (
 
 func TestComputeVestingShouldReleased(t *testing.T) {
 	total := big.NewInt(0).SetUint64(1000)
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	start := time.Date(2026, 1, 1, 13, 30, 0, 0, time.UTC)
 
 	tests := []struct {
 		name     string
@@ -26,13 +26,19 @@ func TestComputeVestingShouldReleased(t *testing.T) {
 		},
 		{
 			name:     "same day no release",
-			now:      start.Add(6 * time.Hour),
+			now:      time.Date(2026, 1, 1, 23, 59, 59, 0, time.UTC),
 			duration: 10,
 			expected: "0",
 		},
 		{
+			name:     "next day midnight releases first day",
+			now:      time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+			duration: 10,
+			expected: "100",
+		},
+		{
 			name:     "mid schedule",
-			now:      start.Add(3 * 24 * time.Hour),
+			now:      time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC),
 			duration: 10,
 			expected: "300",
 		},
