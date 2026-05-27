@@ -82,8 +82,9 @@ type AppConfig struct {
 	} `mapstructure:"blockchains"`
 
 	Task struct {
-		StakeAmount       uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
-		DistanceThreshold uint64 `mapstructure:"distance_threshold"`
+		StakeAmount          uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
+		DistanceThreshold    uint64 `mapstructure:"distance_threshold"`
+		TaskWhitelistEnabled bool   `mapstructure:"task_whitelist_enabled"`
 	}
 
 	TaskSchema struct {

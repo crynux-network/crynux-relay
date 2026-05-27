@@ -103,5 +103,25 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.CreateVestingRecords, 200))
+	adminGroup.GET("/task_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_task_whitelist_list_v2"),
+		fizz.Summary("List task creator whitelist"),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListTaskWhitelist, 200))
+	adminGroup.POST("/task_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_task_whitelist_add_v2"),
+		fizz.Summary("Add an address to task creator whitelist"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.AddTaskWhitelist, 200))
+	adminGroup.DELETE("/task_whitelist/:address", []fizz.OperationOption{
+		fizz.ID("admin_task_whitelist_delete_v2"),
+		fizz.Summary("Delete an address from task creator whitelist"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DeleteTaskWhitelist, 200))
 
 }
