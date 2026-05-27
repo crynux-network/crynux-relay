@@ -87,6 +87,7 @@ credits:
 dao:
   task_fee_share_address: ""
   task_fee_share_percent: 2
+  mainnet_start_time: "2026-01-01T00:00:00Z"
 relay_account:
   deposit_address: ""
 mac:

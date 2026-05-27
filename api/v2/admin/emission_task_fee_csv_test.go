@@ -1,0 +1,48 @@
+package admin
+
+import (
+	"math/big"
+	"testing"
+)
+
+func TestBuildEmissionTaskFeeCSVRowsAllocatesIntegerCNXAndRemainder(t *testing.T) {
+	wei := big.NewInt(1_000_000_000_000_000_000)
+	participants := []emissionTaskFeeParticipant{
+		{
+			Address: "0xnode",
+			Type:    "node",
+			TaskFee: big.NewInt(0).Mul(big.NewInt(2), wei),
+		},
+		{
+			Address: "0xdelegator",
+			Type:    "delegator",
+			TaskFee: big.NewInt(0).Mul(big.NewInt(1), wei),
+		},
+	}
+	total := big.NewInt(0).Mul(big.NewInt(3), wei)
+
+	rows := buildEmissionTaskFeeCSVRows(participants, total, 10)
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(rows))
+	}
+
+	if rows[0].Address != "0xnode" || rows[0].Type != "node" || rows[0].TaskFee != "2.00" || rows[0].Emission != "6.00" {
+		t.Fatalf("unexpected node row: %+v", rows[0])
+	}
+	if rows[1].Address != "0xdelegator" || rows[1].Type != "delegator" || rows[1].TaskFee != "1.00" || rows[1].Emission != "3.00" {
+		t.Fatalf("unexpected delegator row: %+v", rows[1])
+	}
+	if rows[2].Type != "remainder" || rows[2].TaskFee != "0.00" || rows[2].Emission != "1.00" {
+		t.Fatalf("unexpected remainder row: %+v", rows[2])
+	}
+}
+
+func TestBuildEmissionTaskFeeCSVRowsHandlesZeroTotal(t *testing.T) {
+	rows := buildEmissionTaskFeeCSVRows(nil, big.NewInt(0), 7)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].Type != "remainder" || rows[0].Emission != "7.00" {
+		t.Fatalf("unexpected row: %+v", rows[0])
+	}
+}
