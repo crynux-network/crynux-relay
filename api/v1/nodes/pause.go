@@ -60,9 +60,19 @@ func NodePause(c *gin.Context, in *PauseInputWithSignature) (*response.Response,
 			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
 		}
 
-		err = node.Update(c.Request.Context(), config.GetDB(), map[string]interface{}{"status": status})
+		if status == models.NodeStatusPaused {
+			err = config.GetDB().Transaction(func(tx *gorm.DB) error {
+				if err := node.Update(c.Request.Context(), tx, map[string]interface{}{"status": status}); err != nil {
+					return err
+				}
+				return service.DecrementNodeNameCountTx(c.Request.Context(), tx, node)
+			})
+		} else {
+			err = node.Update(c.Request.Context(), config.GetDB(), map[string]interface{}{"status": status})
+		}
 		if err == nil {
 			if status == models.NodeStatusPaused {
+				service.ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, service.BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), -1)
 				service.LogNodeStatusChange(node, "pause")
 			}
 			break

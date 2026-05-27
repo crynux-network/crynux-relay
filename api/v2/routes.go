@@ -123,5 +123,31 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DeleteTaskWhitelist, 200))
+	adminGroup.GET("/node_name_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_node_name_whitelist_list_v2"),
+		fizz.Summary("List node name whitelist"),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListNodeNameWhitelist, 200))
+	adminGroup.POST("/node_name_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_node_name_whitelist_add_v2"),
+		fizz.Summary("Add an entry to node name whitelist"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.AddNodeNameWhitelist, 200))
+	adminGroup.DELETE("/node_name_whitelist/:gpu_name/:gpu_vram/:node_version", []fizz.OperationOption{
+		fizz.ID("admin_node_name_whitelist_delete_v2"),
+		fizz.Summary("Delete an entry from node name whitelist"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DeleteNodeNameWhitelist, 200))
+	adminGroup.GET("/node_names_csv", []fizz.OperationOption{
+		fizz.ID("admin_node_names_csv_v2"),
+		fizz.Summary("Export node names in CSV"),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), admin.ExportNodeNamesCSV)
 
 }

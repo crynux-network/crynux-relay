@@ -87,6 +87,40 @@ func filterNodesByVram(ctx context.Context, minVram uint64, taskVersionNumbers [
 	return allNodes, nil
 }
 
+func filterNodesByNodeNamePolicy(ctx context.Context, nodes []models.Node) ([]models.Node, error) {
+	cfg := config.GetConfig()
+	minimumNodeNameNumber := cfg.Task.MinimumNodeNameNumber
+	nodeNameWhitelistEnabled := cfg.Task.NodeNameWhitelistEnabled
+	if minimumNodeNameNumber == 0 && !nodeNameWhitelistEnabled {
+		return nodes, nil
+	}
+
+	filtered := make([]models.Node, 0, len(nodes))
+	for _, node := range nodes {
+		nodeVersion := BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion)
+		if nodeNameWhitelistEnabled {
+			allowed, err := IsNodeNameWhitelisted(ctx, config.GetDB(), node.GPUName, node.GPUVram, nodeVersion)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				continue
+			}
+		}
+		if minimumNodeNameNumber > 0 {
+			count, err := GetNodeNameActiveCount(ctx, config.GetDB(), node.GPUName, node.GPUVram, nodeVersion)
+			if err != nil {
+				return nil, err
+			}
+			if count < minimumNodeNameNumber {
+				continue
+			}
+		}
+		filtered = append(filtered, node)
+	}
+	return filtered, nil
+}
+
 func matchModels(nodeModelIDs, taskModelIDs []string) int {
 	nodeModelIDSet := make(map[string]struct{})
 	for _, nodeModelID := range nodeModelIDs {
@@ -153,6 +187,10 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 			}
 			nodes = newNodes
 		}
+	}
+	nodes, err = filterNodesByNodeNamePolicy(ctx, nodes)
+	if err != nil {
+		return nil, err
 	}
 	if len(nodes) == 0 {
 		logTaskAssignmentEvent(ctx, task, nodes)
@@ -222,6 +260,10 @@ func selectNodesForDownloadTask(ctx context.Context, task *models.InferenceTask,
 		if err != nil {
 			return nil, err
 		}
+	}
+	nodes, err = filterNodesByNodeNamePolicy(ctx, nodes)
+	if err != nil {
+		return nil, err
 	}
 	if len(nodes) == 0 {
 		return nil, nil
