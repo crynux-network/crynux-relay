@@ -295,53 +295,58 @@ func nodeTryUnstaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStaki
 	defer dbCancel()
 
 	address := event.NodeAddress.Hex()
-	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
-		node, err := models.GetNodeByAddress(dbCtx, tx, address)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
-		}
-		if node.Network != network {
+	node, err := models.GetNodeByAddress(dbCtx, db, address)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
-
-		if blockTime.Before(node.JoinTime) {
-			return nil
-		}
-
-	retryLoop:
-		for range 3 {
-			switch node.Status {
-			case models.NodeStatusAvailable, models.NodeStatusPaused:
-				err = SetNodeStatusQuit(dbCtx, config.GetDB(), node, false)
-				if err == nil {
-					break retryLoop
-				} else if errors.Is(err, models.ErrNodeStatusChanged) {
-					if err := node.SyncStatus(dbCtx, config.GetDB()); err != nil {
-						return err
-					}
-				} else {
-					return err
-				}
-			case models.NodeStatusBusy:
-				err = node.Update(dbCtx, config.GetDB(), map[string]interface{}{"status": models.NodeStatusPendingQuit})
-				if err == nil {
-					break retryLoop
-				} else if errors.Is(err, models.ErrNodeStatusChanged) {
-					if err := node.SyncStatus(dbCtx, config.GetDB()); err != nil {
-						return err
-					}
-				} else {
-					return err
-				}
-			default:
-				break retryLoop
-			}
-		}
+		log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
 		return err
-	}); err != nil {
+	}
+	if node.Network != network {
+		return nil
+	}
+
+	if blockTime.Before(node.JoinTime) {
+		return nil
+	}
+
+retryLoop:
+	for range 3 {
+		switch node.Status {
+		case models.NodeStatusAvailable, models.NodeStatusPaused:
+			err = SetNodeStatusQuit(dbCtx, db, node, false)
+			if err == nil {
+				break retryLoop
+			} else if errors.Is(err, models.ErrNodeStatusChanged) {
+				if err := node.SyncStatus(dbCtx, db); err != nil {
+					log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
+					return err
+				}
+				err = nil
+			} else {
+				log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
+				return err
+			}
+		case models.NodeStatusBusy:
+			err = node.Update(dbCtx, db, map[string]interface{}{"status": models.NodeStatusPendingQuit})
+			if err == nil {
+				break retryLoop
+			} else if errors.Is(err, models.ErrNodeStatusChanged) {
+				if err := node.SyncStatus(dbCtx, db); err != nil {
+					log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
+					return err
+				}
+				err = nil
+			} else {
+				log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
+				return err
+			}
+		default:
+			break retryLoop
+		}
+	}
+	if err != nil {
 		log.Errorf("NodeUnstaked: failed to process node unstaked event for node %s: %v", address, err)
 		return err
 	}

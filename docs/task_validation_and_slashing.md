@@ -177,14 +177,15 @@ A node is slashed when its submitted result does not match the majority in a val
 3. A **`NodeStaking::slashStaking`** blockchain transaction is queued. This calls the `slashStaking` method on the NodeStaking smart contract, which confiscates the node's entire staked balance.
 4. Two events are emitted: `NodeSlashed` (with the offending task ID commitment) and `NodeQuit` (with the blockchain transaction ID).
 
-### Normal Quit vs Slashed Quit
+### Normal Quit, Recovery Quit, and Slashed Quit
 
-| Scenario | Smart Contract Call | Token Outcome |
-|----------|-------------------|---------------|
-| Normal quit | `NodeStaking::unstake` | Tokens returned to node |
-| Slashed quit | `NodeStaking::slashStaking` | Tokens confiscated |
+| Scenario | Node-owner chain action | Relay smart contract call | Token outcome |
+|----------|-------------------------|---------------------------|---------------|
+| Normal node quit | `NodeStaking::tryUnstake` before Relay quit API | `NodeStaking::unstake` | Tokens returned to node |
+| On-chain recovery quit | `NodeStaking::tryUnstake`, then `NodeStaking::forceUnstake` if Relay does not complete unstake | `NodeStaking::unstake` when Relay is available | Tokens returned to node |
+| Slashed quit | None required | `NodeStaking::slashStaking` | Tokens confiscated |
 
-Both paths are handled by `SetNodeStatusQuit`, differentiated by the `slashed` boolean parameter.
+Local quit completion is handled by `SetNodeStatusQuit`, differentiated by the `slashed` boolean parameter. The complete node quit, Relay admin unstake, on-chain recovery, and kickout flow is specified in `node_quit_and_unstake.md`.
 
 ## Task Timeout and Abort
 
@@ -228,6 +229,7 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 | `service/start_task.go` | Task queue processing and node dispatch |
 | `service/select_nodes.go` | Node selection for task assignment (weighted by QoS and staking) |
 | `blockchain/nodeStaking.go` | Blockchain interactions: `SlashStaking`, `QueueSlashStaking`, `Unstake`, `QueueUnstake` |
+| `docs/node_quit_and_unstake.md` | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | `blockchain/task.go` | Perceptual hash and SHA-256 hash computation for result scoring |
 | `models/inference_task.go` | Task model, status enum, abort reason enum |
 | `models/node.go` | Node model with staking, health, and QoS fields |
