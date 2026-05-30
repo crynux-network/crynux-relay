@@ -1,4 +1,4 @@
-name: Release build h-relay docker image
+name: Release build Crynux Relay docker image
 
 on:
   release:
