@@ -8,6 +8,7 @@ import (
 	"crynux_relay/service"
 	"crynux_relay/utils"
 	"encoding/csv"
+	"fmt"
 	"math/big"
 	"net/http"
 	"os"
@@ -24,9 +25,12 @@ import (
 const (
 	nodesTokenCSVChainRequestBatchSize = 10
 	nodesTokenCSVChainRequestPause     = time.Second
+	nodesTokenCSVChainRequestMaxRetry  = 10
 	nodesTokenCSVDymensionNetwork      = "dymension"
 	nodesTokenCSVNearNetwork           = "near"
 )
+
+var nodesTokenCSVChainRequestRetryWait = 10 * time.Second
 
 var nodesTokenCSVExportState = struct {
 	sync.Mutex
@@ -257,7 +261,9 @@ func getNodesTokenCSVChainBalance(ctx context.Context, address, network string, 
 		return nil, err
 	}
 
-	balance, err := client.BalanceAt(ctx, common.HexToAddress(address))
+	balance, err := retryNodesTokenCSVChainRequest(ctx, "balance", network, address, func() (*big.Int, error) {
+		return client.BalanceAt(ctx, common.HexToAddress(address))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +274,9 @@ func getNodesTokenCSVChainBalance(ctx context.Context, address, network string, 
 }
 
 func getNodesBenefitAddress(ctx context.Context, address, network string, limiter *nodesTokenCSVChainRequestLimiter) (string, error) {
-	benefitAddress, err := blockchain.GetBenefitAddress(ctx, common.HexToAddress(address), network)
+	benefitAddress, err := retryNodesTokenCSVChainRequest(ctx, "benefit_address", network, address, func() (common.Address, error) {
+		return blockchain.GetBenefitAddress(ctx, common.HexToAddress(address), network)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -276,6 +284,45 @@ func getNodesBenefitAddress(ctx context.Context, address, network string, limite
 		return "", err
 	}
 	return benefitAddress.Hex(), nil
+}
+
+func retryNodesTokenCSVChainRequest[T any](ctx context.Context, operation, network, address string, request func() (T, error)) (T, error) {
+	logger := getAdminLogger()
+	var zero T
+	var lastErr error
+
+	for retry := 0; retry <= nodesTokenCSVChainRequestMaxRetry; retry++ {
+		result, err := request()
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
+		if retry == nodesTokenCSVChainRequestMaxRetry {
+			break
+		}
+
+		logger.WithError(err).WithFields(log.Fields{
+			"operation":   operation,
+			"network":     network,
+			"address":     address,
+			"retry":       retry + 1,
+			"max_retries": nodesTokenCSVChainRequestMaxRetry,
+			"retry_after": nodesTokenCSVChainRequestRetryWait.String(),
+		}).Warn("Retrying nodes token CSV blockchain request")
+
+		timer := time.NewTimer(nodesTokenCSVChainRequestRetryWait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return zero, ctx.Err()
+		case <-timer.C:
+		}
+	}
+
+	return zero, fmt.Errorf("nodes token CSV blockchain request failed after %d retries: %w", nodesTokenCSVChainRequestMaxRetry, lastErr)
 }
 
 func (limiter *nodesTokenCSVChainRequestLimiter) wait(ctx context.Context) error {
