@@ -97,6 +97,12 @@ func (c *delegationCache) removeNode(nodeAddress string) {
 	if _, ok := c.nodeDelegations[nodeAddress]; ok {
 		for delegatorAddress, amount := range c.nodeDelegations[nodeAddress] {
 			c.userStakeAmount[delegatorAddress].Sub(c.userStakeAmount[delegatorAddress], amount)
+			if nodeStakings, ok := c.userDelegations[delegatorAddress]; ok {
+				delete(nodeStakings, nodeAddress)
+				if len(nodeStakings) == 0 {
+					delete(c.userDelegations, delegatorAddress)
+				}
+			}
 		}
 		delete(c.nodeDelegations, nodeAddress)
 		c.nodeStakeAmount[nodeAddress] = big.NewInt(0)
