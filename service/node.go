@@ -6,6 +6,7 @@ import (
 	"crynux_relay/models"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -14,8 +15,20 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var (
+	getStakingInfo        = blockchain.GetStakingInfo
+	getNodeDelegatorShare = blockchain.GetNodeDelegatorShare
+	getNodeStakingInfos   = blockchain.GetNodeStakingInfos
+)
+
+type chainDelegation struct {
+	DelegatorAddress string
+	Amount           *big.Int
+}
+
 func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, modelIDs []string) error {
-	stakingInfo, err := blockchain.GetStakingInfo(ctx, common.HexToAddress(node.Address), node.Network)
+	nodeAddress := common.HexToAddress(node.Address)
+	stakingInfo, err := getStakingInfo(ctx, nodeAddress, node.Network)
 	if err != nil {
 		return err
 	}
@@ -23,12 +36,19 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if stakingAmount.Cmp(&node.StakeAmount.Int) != 0 {
 		return errors.New("staking amount mismatch")
 	}
-	userStakingAmount := GetNodeTotalStakeAmount(node.Address, node.Network)
-	totalStakingAmount := big.NewInt(0).Add(stakingAmount, userStakingAmount)
-	delegatorShare, err := blockchain.GetNodeDelegatorShare(ctx, common.HexToAddress(node.Address), node.Network)
+	delegatorShare, err := getNodeDelegatorShare(ctx, nodeAddress, node.Network)
 	if err != nil {
 		return err
 	}
+	delegatorAddresses, delegationAmounts, err := getNodeStakingInfos(ctx, nodeAddress, node.Network)
+	if err != nil {
+		return err
+	}
+	chainDelegations, delegatedStakingAmount, err := normalizeChainDelegations(delegatorAddresses, delegationAmounts)
+	if err != nil {
+		return err
+	}
+	totalStakingAmount := big.NewInt(0).Add(stakingAmount, delegatedStakingAmount)
 
 	err = db.Transaction(func(tx *gorm.DB) error {
 		node.Status = models.NodeStatusAvailable
@@ -37,6 +57,9 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		node.HealthUpdatedAt = sql.NullTime{Time: time.Now(), Valid: true}
 		node.DelegatorShare = delegatorShare
 		if err := node.Save(ctx, tx); err != nil {
+			return err
+		}
+		if err := syncNodeDelegationsFromChainTx(tx, node.Address, node.Network, chainDelegations); err != nil {
 			return err
 		}
 		var nodeModels []models.NodeModel
@@ -74,9 +97,64 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		return err
 	}
 	ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
-	UpdateMaxStaking(node.Address, &node.StakeAmount.Int)
+	applyNodeDelegationsToCache(node.Address, node.Network, chainDelegations)
+	SetDelegatorShare(node.Address, node.Network, delegatorShare)
+	UpdateMaxStaking(node.Address, totalStakingAmount)
 	LogNodeStatusChange(node, "join")
 	return nil
+}
+
+func normalizeChainDelegations(delegatorAddresses []common.Address, amounts []*big.Int) ([]chainDelegation, *big.Int, error) {
+	if len(delegatorAddresses) != len(amounts) {
+		return nil, nil, fmt.Errorf("delegated staking info length mismatch: %d addresses, %d amounts", len(delegatorAddresses), len(amounts))
+	}
+	delegations := make([]chainDelegation, 0, len(delegatorAddresses))
+	total := big.NewInt(0)
+	for i, delegatorAddress := range delegatorAddresses {
+		amount := amounts[i]
+		if amount == nil || amount.Sign() == 0 {
+			continue
+		}
+		amountCopy := big.NewInt(0).Set(amount)
+		delegations = append(delegations, chainDelegation{
+			DelegatorAddress: delegatorAddress.Hex(),
+			Amount:           amountCopy,
+		})
+		total.Add(total, amountCopy)
+	}
+	return delegations, total, nil
+}
+
+func syncNodeDelegationsFromChainTx(tx *gorm.DB, nodeAddress, network string, delegations []chainDelegation) error {
+	if err := tx.Model(&models.Delegation{}).
+		Where("node_address = ?", nodeAddress).
+		Where("network = ?", network).
+		Update("valid", false).Error; err != nil {
+		return err
+	}
+	for _, delegation := range delegations {
+		row := models.Delegation{
+			DelegatorAddress: delegation.DelegatorAddress,
+			NodeAddress:      nodeAddress,
+			Amount:           models.BigInt{Int: *delegation.Amount},
+			Valid:            true,
+			Network:          network,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "delegator_address"}, {Name: "node_address"}, {Name: "network"}},
+			DoUpdates: clause.AssignmentColumns([]string{"amount", "valid", "updated_at"}),
+		}).Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyNodeDelegationsToCache(nodeAddress, network string, delegations []chainDelegation) {
+	RemoveNodeDelegations(nodeAddress, network)
+	for _, delegation := range delegations {
+		UpdateDelegation(delegation.DelegatorAddress, nodeAddress, delegation.Amount, network)
+	}
 }
 
 func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slashed bool) error {

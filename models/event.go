@@ -291,6 +291,7 @@ func (e *NodeQuitEvent) ToEvent() (*Event, error) {
 type NodeStakingEvent struct {
 	NodeAddress   string `json:"node_address"`
 	StakingAmount BigInt `json:"staking_amount"`
+	Network       string `json:"network"`
 }
 
 func (e *NodeStakingEvent) ToEvent() (*Event, error) {

@@ -25,6 +25,22 @@ func GetNodeDelegatorShare(ctx context.Context, nodeAddress common.Address, netw
 	return client.DelegatedStakingContractInstance.GetNodeDelegatorShare(opts, nodeAddress)
 }
 
+func GetNodeStakingInfos(ctx context.Context, nodeAddress common.Address, network string) ([]common.Address, []*big.Int, error) {
+	client, err := GetBlockchainClient(network)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	opts := &bind.CallOpts{
+		Pending: false,
+		Context: callCtx,
+	}
+	return client.DelegatedStakingContractInstance.GetNodeStakingInfos(opts, nodeAddress)
+}
+
 func GetUserStakeAmountOfNode(ctx context.Context, nodeAddress common.Address, network string) (*big.Int, error) {
 	client, err := GetBlockchainClient(network)
 	if err != nil {
