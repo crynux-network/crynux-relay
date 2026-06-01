@@ -31,7 +31,7 @@ var (
 
 // DelegatedStakingMetaData contains all meta data concerning the DelegatedStaking contract.
 var DelegatedStakingMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DelegatorStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DelegatorUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint8\",\"name\":\"share\",\"type\":\"uint8\"}],\"name\":\"NodeDelegatorShareChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"NodeSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"getAllDelegatorAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllNodeAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllNodeDelegatorShares\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint8[]\",\"name\":\"\",\"type\":\"uint8[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getDelegationStakingAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"}],\"name\":\"getDelegatorStakingInfos\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"}],\"name\":\"getDelegatorTotalStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getNodeDelegatorShare\",\"outputs\":[{\"internalType\":\"uint8\",\"name\":\"\",\"type\":\"uint8\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getNodeStakingInfos\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getNodeTotalStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint8\",\"name\":\"share\",\"type\":\"uint8\"}],\"name\":\"setDelegatorShare\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakeAmount\",\"type\":\"uint256\"}],\"name\":\"setMinStakeAmount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setNodeStakingAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"slashNode\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"unstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"slashReceiverAddress\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DelegatorSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DelegatorStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DelegatorUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint8\",\"name\":\"share\",\"type\":\"uint8\"}],\"name\":\"NodeDelegatorShareChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"parameterControllerAddress\",\"type\":\"address\"}],\"name\":\"ParameterControllerUpdated\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"getAllDelegatorAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllNodeAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getDelegatableNodeCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"page\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"pageSize\",\"type\":\"uint256\"}],\"name\":\"getDelegatableNodes\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint8[]\",\"name\":\"\",\"type\":\"uint8[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getDelegationStakingAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"}],\"name\":\"getDelegatorStakingInfos\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegatorAddress\",\"type\":\"address\"}],\"name\":\"getDelegatorTotalStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getNodeDelegatorShare\",\"outputs\":[{\"internalType\":\"uint8\",\"name\":\"\",\"type\":\"uint8\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getNodeStakingInfoCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"page\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"pageSize\",\"type\":\"uint256\"}],\"name\":\"getNodeStakingInfos\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getNodeTotalStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint8\",\"name\":\"share\",\"type\":\"uint8\"}],\"name\":\"setDelegatorShare\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakeAmount\",\"type\":\"uint256\"}],\"name\":\"setMinStakeAmount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setParameterController\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"address[]\",\"name\":\"delegators\",\"type\":\"address[]\"}],\"name\":\"slashNodeDelegations\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"unstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // DelegatedStakingABI is the input ABI used to generate the binding from.
@@ -242,12 +242,43 @@ func (_DelegatedStaking *DelegatedStakingCallerSession) GetAllNodeAddresses() ([
 	return _DelegatedStaking.Contract.GetAllNodeAddresses(&_DelegatedStaking.CallOpts)
 }
 
-// GetAllNodeDelegatorShares is a free data retrieval call binding the contract method 0x20b2074f.
+// GetDelegatableNodeCount is a free data retrieval call binding the contract method 0x582319d6.
 //
-// Solidity: function getAllNodeDelegatorShares() view returns(address[], uint8[])
-func (_DelegatedStaking *DelegatedStakingCaller) GetAllNodeDelegatorShares(opts *bind.CallOpts) ([]common.Address, []uint8, error) {
+// Solidity: function getDelegatableNodeCount() view returns(uint256)
+func (_DelegatedStaking *DelegatedStakingCaller) GetDelegatableNodeCount(opts *bind.CallOpts) (*big.Int, error) {
 	var out []interface{}
-	err := _DelegatedStaking.contract.Call(opts, &out, "getAllNodeDelegatorShares")
+	err := _DelegatedStaking.contract.Call(opts, &out, "getDelegatableNodeCount")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetDelegatableNodeCount is a free data retrieval call binding the contract method 0x582319d6.
+//
+// Solidity: function getDelegatableNodeCount() view returns(uint256)
+func (_DelegatedStaking *DelegatedStakingSession) GetDelegatableNodeCount() (*big.Int, error) {
+	return _DelegatedStaking.Contract.GetDelegatableNodeCount(&_DelegatedStaking.CallOpts)
+}
+
+// GetDelegatableNodeCount is a free data retrieval call binding the contract method 0x582319d6.
+//
+// Solidity: function getDelegatableNodeCount() view returns(uint256)
+func (_DelegatedStaking *DelegatedStakingCallerSession) GetDelegatableNodeCount() (*big.Int, error) {
+	return _DelegatedStaking.Contract.GetDelegatableNodeCount(&_DelegatedStaking.CallOpts)
+}
+
+// GetDelegatableNodes is a free data retrieval call binding the contract method 0x8c07d538.
+//
+// Solidity: function getDelegatableNodes(uint256 page, uint256 pageSize) view returns(address[], uint8[])
+func (_DelegatedStaking *DelegatedStakingCaller) GetDelegatableNodes(opts *bind.CallOpts, page *big.Int, pageSize *big.Int) ([]common.Address, []uint8, error) {
+	var out []interface{}
+	err := _DelegatedStaking.contract.Call(opts, &out, "getDelegatableNodes", page, pageSize)
 
 	if err != nil {
 		return *new([]common.Address), *new([]uint8), err
@@ -260,18 +291,18 @@ func (_DelegatedStaking *DelegatedStakingCaller) GetAllNodeDelegatorShares(opts 
 
 }
 
-// GetAllNodeDelegatorShares is a free data retrieval call binding the contract method 0x20b2074f.
+// GetDelegatableNodes is a free data retrieval call binding the contract method 0x8c07d538.
 //
-// Solidity: function getAllNodeDelegatorShares() view returns(address[], uint8[])
-func (_DelegatedStaking *DelegatedStakingSession) GetAllNodeDelegatorShares() ([]common.Address, []uint8, error) {
-	return _DelegatedStaking.Contract.GetAllNodeDelegatorShares(&_DelegatedStaking.CallOpts)
+// Solidity: function getDelegatableNodes(uint256 page, uint256 pageSize) view returns(address[], uint8[])
+func (_DelegatedStaking *DelegatedStakingSession) GetDelegatableNodes(page *big.Int, pageSize *big.Int) ([]common.Address, []uint8, error) {
+	return _DelegatedStaking.Contract.GetDelegatableNodes(&_DelegatedStaking.CallOpts, page, pageSize)
 }
 
-// GetAllNodeDelegatorShares is a free data retrieval call binding the contract method 0x20b2074f.
+// GetDelegatableNodes is a free data retrieval call binding the contract method 0x8c07d538.
 //
-// Solidity: function getAllNodeDelegatorShares() view returns(address[], uint8[])
-func (_DelegatedStaking *DelegatedStakingCallerSession) GetAllNodeDelegatorShares() ([]common.Address, []uint8, error) {
-	return _DelegatedStaking.Contract.GetAllNodeDelegatorShares(&_DelegatedStaking.CallOpts)
+// Solidity: function getDelegatableNodes(uint256 page, uint256 pageSize) view returns(address[], uint8[])
+func (_DelegatedStaking *DelegatedStakingCallerSession) GetDelegatableNodes(page *big.Int, pageSize *big.Int) ([]common.Address, []uint8, error) {
+	return _DelegatedStaking.Contract.GetDelegatableNodes(&_DelegatedStaking.CallOpts, page, pageSize)
 }
 
 // GetDelegationStakingAmount is a free data retrieval call binding the contract method 0x86ca0bc7.
@@ -430,12 +461,43 @@ func (_DelegatedStaking *DelegatedStakingCallerSession) GetNodeDelegatorShare(no
 	return _DelegatedStaking.Contract.GetNodeDelegatorShare(&_DelegatedStaking.CallOpts, nodeAddress)
 }
 
-// GetNodeStakingInfos is a free data retrieval call binding the contract method 0xa54903f0.
+// GetNodeStakingInfoCount is a free data retrieval call binding the contract method 0x57a55e19.
 //
-// Solidity: function getNodeStakingInfos(address nodeAddress) view returns(address[], uint256[])
-func (_DelegatedStaking *DelegatedStakingCaller) GetNodeStakingInfos(opts *bind.CallOpts, nodeAddress common.Address) ([]common.Address, []*big.Int, error) {
+// Solidity: function getNodeStakingInfoCount(address nodeAddress) view returns(uint256)
+func (_DelegatedStaking *DelegatedStakingCaller) GetNodeStakingInfoCount(opts *bind.CallOpts, nodeAddress common.Address) (*big.Int, error) {
 	var out []interface{}
-	err := _DelegatedStaking.contract.Call(opts, &out, "getNodeStakingInfos", nodeAddress)
+	err := _DelegatedStaking.contract.Call(opts, &out, "getNodeStakingInfoCount", nodeAddress)
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetNodeStakingInfoCount is a free data retrieval call binding the contract method 0x57a55e19.
+//
+// Solidity: function getNodeStakingInfoCount(address nodeAddress) view returns(uint256)
+func (_DelegatedStaking *DelegatedStakingSession) GetNodeStakingInfoCount(nodeAddress common.Address) (*big.Int, error) {
+	return _DelegatedStaking.Contract.GetNodeStakingInfoCount(&_DelegatedStaking.CallOpts, nodeAddress)
+}
+
+// GetNodeStakingInfoCount is a free data retrieval call binding the contract method 0x57a55e19.
+//
+// Solidity: function getNodeStakingInfoCount(address nodeAddress) view returns(uint256)
+func (_DelegatedStaking *DelegatedStakingCallerSession) GetNodeStakingInfoCount(nodeAddress common.Address) (*big.Int, error) {
+	return _DelegatedStaking.Contract.GetNodeStakingInfoCount(&_DelegatedStaking.CallOpts, nodeAddress)
+}
+
+// GetNodeStakingInfos is a free data retrieval call binding the contract method 0x178d9c53.
+//
+// Solidity: function getNodeStakingInfos(address nodeAddress, uint256 page, uint256 pageSize) view returns(address[], uint256[])
+func (_DelegatedStaking *DelegatedStakingCaller) GetNodeStakingInfos(opts *bind.CallOpts, nodeAddress common.Address, page *big.Int, pageSize *big.Int) ([]common.Address, []*big.Int, error) {
+	var out []interface{}
+	err := _DelegatedStaking.contract.Call(opts, &out, "getNodeStakingInfos", nodeAddress, page, pageSize)
 
 	if err != nil {
 		return *new([]common.Address), *new([]*big.Int), err
@@ -448,18 +510,18 @@ func (_DelegatedStaking *DelegatedStakingCaller) GetNodeStakingInfos(opts *bind.
 
 }
 
-// GetNodeStakingInfos is a free data retrieval call binding the contract method 0xa54903f0.
+// GetNodeStakingInfos is a free data retrieval call binding the contract method 0x178d9c53.
 //
-// Solidity: function getNodeStakingInfos(address nodeAddress) view returns(address[], uint256[])
-func (_DelegatedStaking *DelegatedStakingSession) GetNodeStakingInfos(nodeAddress common.Address) ([]common.Address, []*big.Int, error) {
-	return _DelegatedStaking.Contract.GetNodeStakingInfos(&_DelegatedStaking.CallOpts, nodeAddress)
+// Solidity: function getNodeStakingInfos(address nodeAddress, uint256 page, uint256 pageSize) view returns(address[], uint256[])
+func (_DelegatedStaking *DelegatedStakingSession) GetNodeStakingInfos(nodeAddress common.Address, page *big.Int, pageSize *big.Int) ([]common.Address, []*big.Int, error) {
+	return _DelegatedStaking.Contract.GetNodeStakingInfos(&_DelegatedStaking.CallOpts, nodeAddress, page, pageSize)
 }
 
-// GetNodeStakingInfos is a free data retrieval call binding the contract method 0xa54903f0.
+// GetNodeStakingInfos is a free data retrieval call binding the contract method 0x178d9c53.
 //
-// Solidity: function getNodeStakingInfos(address nodeAddress) view returns(address[], uint256[])
-func (_DelegatedStaking *DelegatedStakingCallerSession) GetNodeStakingInfos(nodeAddress common.Address) ([]common.Address, []*big.Int, error) {
-	return _DelegatedStaking.Contract.GetNodeStakingInfos(&_DelegatedStaking.CallOpts, nodeAddress)
+// Solidity: function getNodeStakingInfos(address nodeAddress, uint256 page, uint256 pageSize) view returns(address[], uint256[])
+func (_DelegatedStaking *DelegatedStakingCallerSession) GetNodeStakingInfos(nodeAddress common.Address, page *big.Int, pageSize *big.Int) ([]common.Address, []*big.Int, error) {
+	return _DelegatedStaking.Contract.GetNodeStakingInfos(&_DelegatedStaking.CallOpts, nodeAddress, page, pageSize)
 }
 
 // GetNodeTotalStakeAmount is a free data retrieval call binding the contract method 0xc74ce32f.
@@ -545,6 +607,27 @@ func (_DelegatedStaking *DelegatedStakingTransactorSession) RenounceOwnership() 
 	return _DelegatedStaking.Contract.RenounceOwnership(&_DelegatedStaking.TransactOpts)
 }
 
+// SetAdminAddress is a paid mutator transaction binding the contract method 0x2c1e816d.
+//
+// Solidity: function setAdminAddress(address addr) returns()
+func (_DelegatedStaking *DelegatedStakingTransactor) SetAdminAddress(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.contract.Transact(opts, "setAdminAddress", addr)
+}
+
+// SetAdminAddress is a paid mutator transaction binding the contract method 0x2c1e816d.
+//
+// Solidity: function setAdminAddress(address addr) returns()
+func (_DelegatedStaking *DelegatedStakingSession) SetAdminAddress(addr common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.Contract.SetAdminAddress(&_DelegatedStaking.TransactOpts, addr)
+}
+
+// SetAdminAddress is a paid mutator transaction binding the contract method 0x2c1e816d.
+//
+// Solidity: function setAdminAddress(address addr) returns()
+func (_DelegatedStaking *DelegatedStakingTransactorSession) SetAdminAddress(addr common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.Contract.SetAdminAddress(&_DelegatedStaking.TransactOpts, addr)
+}
+
 // SetDelegatorShare is a paid mutator transaction binding the contract method 0x8a114c20.
 //
 // Solidity: function setDelegatorShare(uint8 share) returns()
@@ -587,46 +670,46 @@ func (_DelegatedStaking *DelegatedStakingTransactorSession) SetMinStakeAmount(st
 	return _DelegatedStaking.Contract.SetMinStakeAmount(&_DelegatedStaking.TransactOpts, stakeAmount)
 }
 
-// SetNodeStakingAddress is a paid mutator transaction binding the contract method 0x6e970b58.
+// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
 //
-// Solidity: function setNodeStakingAddress(address addr) returns()
-func (_DelegatedStaking *DelegatedStakingTransactor) SetNodeStakingAddress(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
-	return _DelegatedStaking.contract.Transact(opts, "setNodeStakingAddress", addr)
+// Solidity: function setParameterController(address addr) returns()
+func (_DelegatedStaking *DelegatedStakingTransactor) SetParameterController(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.contract.Transact(opts, "setParameterController", addr)
 }
 
-// SetNodeStakingAddress is a paid mutator transaction binding the contract method 0x6e970b58.
+// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
 //
-// Solidity: function setNodeStakingAddress(address addr) returns()
-func (_DelegatedStaking *DelegatedStakingSession) SetNodeStakingAddress(addr common.Address) (*types.Transaction, error) {
-	return _DelegatedStaking.Contract.SetNodeStakingAddress(&_DelegatedStaking.TransactOpts, addr)
+// Solidity: function setParameterController(address addr) returns()
+func (_DelegatedStaking *DelegatedStakingSession) SetParameterController(addr common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.Contract.SetParameterController(&_DelegatedStaking.TransactOpts, addr)
 }
 
-// SetNodeStakingAddress is a paid mutator transaction binding the contract method 0x6e970b58.
+// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
 //
-// Solidity: function setNodeStakingAddress(address addr) returns()
-func (_DelegatedStaking *DelegatedStakingTransactorSession) SetNodeStakingAddress(addr common.Address) (*types.Transaction, error) {
-	return _DelegatedStaking.Contract.SetNodeStakingAddress(&_DelegatedStaking.TransactOpts, addr)
+// Solidity: function setParameterController(address addr) returns()
+func (_DelegatedStaking *DelegatedStakingTransactorSession) SetParameterController(addr common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.Contract.SetParameterController(&_DelegatedStaking.TransactOpts, addr)
 }
 
-// SlashNode is a paid mutator transaction binding the contract method 0x5dca14f1.
+// SlashNodeDelegations is a paid mutator transaction binding the contract method 0xa06c0561.
 //
-// Solidity: function slashNode(address nodeAddress) returns()
-func (_DelegatedStaking *DelegatedStakingTransactor) SlashNode(opts *bind.TransactOpts, nodeAddress common.Address) (*types.Transaction, error) {
-	return _DelegatedStaking.contract.Transact(opts, "slashNode", nodeAddress)
+// Solidity: function slashNodeDelegations(address nodeAddress, address[] delegators) returns()
+func (_DelegatedStaking *DelegatedStakingTransactor) SlashNodeDelegations(opts *bind.TransactOpts, nodeAddress common.Address, delegators []common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.contract.Transact(opts, "slashNodeDelegations", nodeAddress, delegators)
 }
 
-// SlashNode is a paid mutator transaction binding the contract method 0x5dca14f1.
+// SlashNodeDelegations is a paid mutator transaction binding the contract method 0xa06c0561.
 //
-// Solidity: function slashNode(address nodeAddress) returns()
-func (_DelegatedStaking *DelegatedStakingSession) SlashNode(nodeAddress common.Address) (*types.Transaction, error) {
-	return _DelegatedStaking.Contract.SlashNode(&_DelegatedStaking.TransactOpts, nodeAddress)
+// Solidity: function slashNodeDelegations(address nodeAddress, address[] delegators) returns()
+func (_DelegatedStaking *DelegatedStakingSession) SlashNodeDelegations(nodeAddress common.Address, delegators []common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.Contract.SlashNodeDelegations(&_DelegatedStaking.TransactOpts, nodeAddress, delegators)
 }
 
-// SlashNode is a paid mutator transaction binding the contract method 0x5dca14f1.
+// SlashNodeDelegations is a paid mutator transaction binding the contract method 0xa06c0561.
 //
-// Solidity: function slashNode(address nodeAddress) returns()
-func (_DelegatedStaking *DelegatedStakingTransactorSession) SlashNode(nodeAddress common.Address) (*types.Transaction, error) {
-	return _DelegatedStaking.Contract.SlashNode(&_DelegatedStaking.TransactOpts, nodeAddress)
+// Solidity: function slashNodeDelegations(address nodeAddress, address[] delegators) returns()
+func (_DelegatedStaking *DelegatedStakingTransactorSession) SlashNodeDelegations(nodeAddress common.Address, delegators []common.Address) (*types.Transaction, error) {
+	return _DelegatedStaking.Contract.SlashNodeDelegations(&_DelegatedStaking.TransactOpts, nodeAddress, delegators)
 }
 
 // Stake is a paid mutator transaction binding the contract method 0xadc9772e.
@@ -690,6 +773,152 @@ func (_DelegatedStaking *DelegatedStakingSession) Unstake(nodeAddress common.Add
 // Solidity: function unstake(address nodeAddress) returns()
 func (_DelegatedStaking *DelegatedStakingTransactorSession) Unstake(nodeAddress common.Address) (*types.Transaction, error) {
 	return _DelegatedStaking.Contract.Unstake(&_DelegatedStaking.TransactOpts, nodeAddress)
+}
+
+// DelegatedStakingDelegatorSlashedIterator is returned from FilterDelegatorSlashed and is used to iterate over the raw logs and unpacked data for DelegatorSlashed events raised by the DelegatedStaking contract.
+type DelegatedStakingDelegatorSlashedIterator struct {
+	Event *DelegatedStakingDelegatorSlashed // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *DelegatedStakingDelegatorSlashedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(DelegatedStakingDelegatorSlashed)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(DelegatedStakingDelegatorSlashed)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *DelegatedStakingDelegatorSlashedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *DelegatedStakingDelegatorSlashedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// DelegatedStakingDelegatorSlashed represents a DelegatorSlashed event raised by the DelegatedStaking contract.
+type DelegatedStakingDelegatorSlashed struct {
+	DelegatorAddress common.Address
+	NodeAddress      common.Address
+	Amount           *big.Int
+	Raw              types.Log // Blockchain specific contextual infos
+}
+
+// FilterDelegatorSlashed is a free log retrieval operation binding the contract event 0x247035791e9eee4a6b00d147b898740b822f3422ff7e9eba736438943e31ff04.
+//
+// Solidity: event DelegatorSlashed(address indexed delegatorAddress, address nodeAddress, uint256 amount)
+func (_DelegatedStaking *DelegatedStakingFilterer) FilterDelegatorSlashed(opts *bind.FilterOpts, delegatorAddress []common.Address) (*DelegatedStakingDelegatorSlashedIterator, error) {
+
+	var delegatorAddressRule []interface{}
+	for _, delegatorAddressItem := range delegatorAddress {
+		delegatorAddressRule = append(delegatorAddressRule, delegatorAddressItem)
+	}
+
+	logs, sub, err := _DelegatedStaking.contract.FilterLogs(opts, "DelegatorSlashed", delegatorAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return &DelegatedStakingDelegatorSlashedIterator{contract: _DelegatedStaking.contract, event: "DelegatorSlashed", logs: logs, sub: sub}, nil
+}
+
+// WatchDelegatorSlashed is a free log subscription operation binding the contract event 0x247035791e9eee4a6b00d147b898740b822f3422ff7e9eba736438943e31ff04.
+//
+// Solidity: event DelegatorSlashed(address indexed delegatorAddress, address nodeAddress, uint256 amount)
+func (_DelegatedStaking *DelegatedStakingFilterer) WatchDelegatorSlashed(opts *bind.WatchOpts, sink chan<- *DelegatedStakingDelegatorSlashed, delegatorAddress []common.Address) (event.Subscription, error) {
+
+	var delegatorAddressRule []interface{}
+	for _, delegatorAddressItem := range delegatorAddress {
+		delegatorAddressRule = append(delegatorAddressRule, delegatorAddressItem)
+	}
+
+	logs, sub, err := _DelegatedStaking.contract.WatchLogs(opts, "DelegatorSlashed", delegatorAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(DelegatedStakingDelegatorSlashed)
+				if err := _DelegatedStaking.contract.UnpackLog(event, "DelegatorSlashed", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseDelegatorSlashed is a log parse operation binding the contract event 0x247035791e9eee4a6b00d147b898740b822f3422ff7e9eba736438943e31ff04.
+//
+// Solidity: event DelegatorSlashed(address indexed delegatorAddress, address nodeAddress, uint256 amount)
+func (_DelegatedStaking *DelegatedStakingFilterer) ParseDelegatorSlashed(log types.Log) (*DelegatedStakingDelegatorSlashed, error) {
+	event := new(DelegatedStakingDelegatorSlashed)
+	if err := _DelegatedStaking.contract.UnpackLog(event, "DelegatorSlashed", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
 }
 
 // DelegatedStakingDelegatorStakedIterator is returned from FilterDelegatorStaked and is used to iterate over the raw logs and unpacked data for DelegatorStaked events raised by the DelegatedStaking contract.
@@ -1129,150 +1358,6 @@ func (_DelegatedStaking *DelegatedStakingFilterer) ParseNodeDelegatorShareChange
 	return event, nil
 }
 
-// DelegatedStakingNodeSlashedIterator is returned from FilterNodeSlashed and is used to iterate over the raw logs and unpacked data for NodeSlashed events raised by the DelegatedStaking contract.
-type DelegatedStakingNodeSlashedIterator struct {
-	Event *DelegatedStakingNodeSlashed // Event containing the contract specifics and raw log
-
-	contract *bind.BoundContract // Generic contract to use for unpacking event data
-	event    string              // Event name to use for unpacking event data
-
-	logs chan types.Log        // Log channel receiving the found contract events
-	sub  ethereum.Subscription // Subscription for errors, completion and termination
-	done bool                  // Whether the subscription completed delivering logs
-	fail error                 // Occurred error to stop iteration
-}
-
-// Next advances the iterator to the subsequent event, returning whether there
-// are any more events found. In case of a retrieval or parsing error, false is
-// returned and Error() can be queried for the exact failure.
-func (it *DelegatedStakingNodeSlashedIterator) Next() bool {
-	// If the iterator failed, stop iterating
-	if it.fail != nil {
-		return false
-	}
-	// If the iterator completed, deliver directly whatever's available
-	if it.done {
-		select {
-		case log := <-it.logs:
-			it.Event = new(DelegatedStakingNodeSlashed)
-			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-				it.fail = err
-				return false
-			}
-			it.Event.Raw = log
-			return true
-
-		default:
-			return false
-		}
-	}
-	// Iterator still in progress, wait for either a data or an error event
-	select {
-	case log := <-it.logs:
-		it.Event = new(DelegatedStakingNodeSlashed)
-		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-			it.fail = err
-			return false
-		}
-		it.Event.Raw = log
-		return true
-
-	case err := <-it.sub.Err():
-		it.done = true
-		it.fail = err
-		return it.Next()
-	}
-}
-
-// Error returns any retrieval or parsing error occurred during filtering.
-func (it *DelegatedStakingNodeSlashedIterator) Error() error {
-	return it.fail
-}
-
-// Close terminates the iteration process, releasing any pending underlying
-// resources.
-func (it *DelegatedStakingNodeSlashedIterator) Close() error {
-	it.sub.Unsubscribe()
-	return nil
-}
-
-// DelegatedStakingNodeSlashed represents a NodeSlashed event raised by the DelegatedStaking contract.
-type DelegatedStakingNodeSlashed struct {
-	NodeAddress common.Address
-	Raw         types.Log // Blockchain specific contextual infos
-}
-
-// FilterNodeSlashed is a free log retrieval operation binding the contract event 0x29f3a9a9c7f6d4074ec8817742795e031d525ab8fe33b05ee339002580ef3a64.
-//
-// Solidity: event NodeSlashed(address indexed nodeAddress)
-func (_DelegatedStaking *DelegatedStakingFilterer) FilterNodeSlashed(opts *bind.FilterOpts, nodeAddress []common.Address) (*DelegatedStakingNodeSlashedIterator, error) {
-
-	var nodeAddressRule []interface{}
-	for _, nodeAddressItem := range nodeAddress {
-		nodeAddressRule = append(nodeAddressRule, nodeAddressItem)
-	}
-
-	logs, sub, err := _DelegatedStaking.contract.FilterLogs(opts, "NodeSlashed", nodeAddressRule)
-	if err != nil {
-		return nil, err
-	}
-	return &DelegatedStakingNodeSlashedIterator{contract: _DelegatedStaking.contract, event: "NodeSlashed", logs: logs, sub: sub}, nil
-}
-
-// WatchNodeSlashed is a free log subscription operation binding the contract event 0x29f3a9a9c7f6d4074ec8817742795e031d525ab8fe33b05ee339002580ef3a64.
-//
-// Solidity: event NodeSlashed(address indexed nodeAddress)
-func (_DelegatedStaking *DelegatedStakingFilterer) WatchNodeSlashed(opts *bind.WatchOpts, sink chan<- *DelegatedStakingNodeSlashed, nodeAddress []common.Address) (event.Subscription, error) {
-
-	var nodeAddressRule []interface{}
-	for _, nodeAddressItem := range nodeAddress {
-		nodeAddressRule = append(nodeAddressRule, nodeAddressItem)
-	}
-
-	logs, sub, err := _DelegatedStaking.contract.WatchLogs(opts, "NodeSlashed", nodeAddressRule)
-	if err != nil {
-		return nil, err
-	}
-	return event.NewSubscription(func(quit <-chan struct{}) error {
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case log := <-logs:
-				// New log arrived, parse the event and forward to the user
-				event := new(DelegatedStakingNodeSlashed)
-				if err := _DelegatedStaking.contract.UnpackLog(event, "NodeSlashed", log); err != nil {
-					return err
-				}
-				event.Raw = log
-
-				select {
-				case sink <- event:
-				case err := <-sub.Err():
-					return err
-				case <-quit:
-					return nil
-				}
-			case err := <-sub.Err():
-				return err
-			case <-quit:
-				return nil
-			}
-		}
-	}), nil
-}
-
-// ParseNodeSlashed is a log parse operation binding the contract event 0x29f3a9a9c7f6d4074ec8817742795e031d525ab8fe33b05ee339002580ef3a64.
-//
-// Solidity: event NodeSlashed(address indexed nodeAddress)
-func (_DelegatedStaking *DelegatedStakingFilterer) ParseNodeSlashed(log types.Log) (*DelegatedStakingNodeSlashed, error) {
-	event := new(DelegatedStakingNodeSlashed)
-	if err := _DelegatedStaking.contract.UnpackLog(event, "NodeSlashed", log); err != nil {
-		return nil, err
-	}
-	event.Raw = log
-	return event, nil
-}
-
 // DelegatedStakingOwnershipTransferredIterator is returned from FilterOwnershipTransferred and is used to iterate over the raw logs and unpacked data for OwnershipTransferred events raised by the DelegatedStaking contract.
 type DelegatedStakingOwnershipTransferredIterator struct {
 	Event *DelegatedStakingOwnershipTransferred // Event containing the contract specifics and raw log
@@ -1420,6 +1505,150 @@ func (_DelegatedStaking *DelegatedStakingFilterer) WatchOwnershipTransferred(opt
 func (_DelegatedStaking *DelegatedStakingFilterer) ParseOwnershipTransferred(log types.Log) (*DelegatedStakingOwnershipTransferred, error) {
 	event := new(DelegatedStakingOwnershipTransferred)
 	if err := _DelegatedStaking.contract.UnpackLog(event, "OwnershipTransferred", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// DelegatedStakingParameterControllerUpdatedIterator is returned from FilterParameterControllerUpdated and is used to iterate over the raw logs and unpacked data for ParameterControllerUpdated events raised by the DelegatedStaking contract.
+type DelegatedStakingParameterControllerUpdatedIterator struct {
+	Event *DelegatedStakingParameterControllerUpdated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *DelegatedStakingParameterControllerUpdatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(DelegatedStakingParameterControllerUpdated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(DelegatedStakingParameterControllerUpdated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *DelegatedStakingParameterControllerUpdatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *DelegatedStakingParameterControllerUpdatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// DelegatedStakingParameterControllerUpdated represents a ParameterControllerUpdated event raised by the DelegatedStaking contract.
+type DelegatedStakingParameterControllerUpdated struct {
+	ParameterControllerAddress common.Address
+	Raw                        types.Log // Blockchain specific contextual infos
+}
+
+// FilterParameterControllerUpdated is a free log retrieval operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
+//
+// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
+func (_DelegatedStaking *DelegatedStakingFilterer) FilterParameterControllerUpdated(opts *bind.FilterOpts, parameterControllerAddress []common.Address) (*DelegatedStakingParameterControllerUpdatedIterator, error) {
+
+	var parameterControllerAddressRule []interface{}
+	for _, parameterControllerAddressItem := range parameterControllerAddress {
+		parameterControllerAddressRule = append(parameterControllerAddressRule, parameterControllerAddressItem)
+	}
+
+	logs, sub, err := _DelegatedStaking.contract.FilterLogs(opts, "ParameterControllerUpdated", parameterControllerAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return &DelegatedStakingParameterControllerUpdatedIterator{contract: _DelegatedStaking.contract, event: "ParameterControllerUpdated", logs: logs, sub: sub}, nil
+}
+
+// WatchParameterControllerUpdated is a free log subscription operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
+//
+// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
+func (_DelegatedStaking *DelegatedStakingFilterer) WatchParameterControllerUpdated(opts *bind.WatchOpts, sink chan<- *DelegatedStakingParameterControllerUpdated, parameterControllerAddress []common.Address) (event.Subscription, error) {
+
+	var parameterControllerAddressRule []interface{}
+	for _, parameterControllerAddressItem := range parameterControllerAddress {
+		parameterControllerAddressRule = append(parameterControllerAddressRule, parameterControllerAddressItem)
+	}
+
+	logs, sub, err := _DelegatedStaking.contract.WatchLogs(opts, "ParameterControllerUpdated", parameterControllerAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(DelegatedStakingParameterControllerUpdated)
+				if err := _DelegatedStaking.contract.UnpackLog(event, "ParameterControllerUpdated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseParameterControllerUpdated is a log parse operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
+//
+// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
+func (_DelegatedStaking *DelegatedStakingFilterer) ParseParameterControllerUpdated(log types.Log) (*DelegatedStakingParameterControllerUpdated, error) {
+	event := new(DelegatedStakingParameterControllerUpdated)
+	if err := _DelegatedStaking.contract.UnpackLog(event, "ParameterControllerUpdated", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log

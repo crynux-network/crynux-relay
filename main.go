@@ -56,6 +56,7 @@ func main() {
 	tm.Start(context.Background())
 
 	service.StartBlockListener(context.Background())
+	service.StartDelegatedSlashRecovery(context.Background(), config.GetDB())
 	go service.StartTaskProcesser(context.Background())
 	go service.StartRelayAccountSync(context.Background(), config.GetDB())
 	go tasks.StartVestingRelease(context.Background())

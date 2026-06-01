@@ -1,6 +1,12 @@
 [
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "slashReceiverAddress",
+        "type": "address"
+      }
+    ],
     "stateMutability": "nonpayable",
     "type": "constructor"
   },
@@ -25,6 +31,31 @@
     ],
     "name": "OwnableUnauthorizedAccount",
     "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "delegatorAddress",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "nodeAddress",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "DelegatorSlashed",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -101,19 +132,6 @@
       {
         "indexed": true,
         "internalType": "address",
-        "name": "nodeAddress",
-        "type": "address"
-      }
-    ],
-    "name": "NodeSlashed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
         "name": "previousOwner",
         "type": "address"
       },
@@ -125,6 +143,19 @@
       }
     ],
     "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "parameterControllerAddress",
+        "type": "address"
+      }
+    ],
+    "name": "ParameterControllerUpdated",
     "type": "event"
   },
   {
@@ -155,7 +186,31 @@
   },
   {
     "inputs": [],
-    "name": "getAllNodeDelegatorShares",
+    "name": "getDelegatableNodeCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "page",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "pageSize",
+        "type": "uint256"
+      }
+    ],
+    "name": "getDelegatableNodes",
     "outputs": [
       {
         "internalType": "address[]",
@@ -278,6 +333,35 @@
         "type": "address"
       }
     ],
+    "name": "getNodeStakingInfoCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "nodeAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "page",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "pageSize",
+        "type": "uint256"
+      }
+    ],
     "name": "getNodeStakingInfos",
     "outputs": [
       {
@@ -336,6 +420,19 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "addr",
+        "type": "address"
+      }
+    ],
+    "name": "setAdminAddress",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint8",
         "name": "share",
         "type": "uint8"
@@ -367,7 +464,7 @@
         "type": "address"
       }
     ],
-    "name": "setNodeStakingAddress",
+    "name": "setParameterController",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -378,9 +475,14 @@
         "internalType": "address",
         "name": "nodeAddress",
         "type": "address"
+      },
+      {
+        "internalType": "address[]",
+        "name": "delegators",
+        "type": "address[]"
       }
     ],
-    "name": "slashNode",
+    "name": "slashNodeDelegations",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

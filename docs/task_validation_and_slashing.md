@@ -174,8 +174,12 @@ A node is slashed when its submitted result does not match the majority in a val
 
 1. **Node status** is set to `NodeStatusQuit`.
 2. **All cached models** associated with the node are deleted from the database.
-3. A **`NodeStaking::slashStaking`** blockchain transaction is queued. This calls the `slashStaking` method on the NodeStaking smart contract, which confiscates the node's entire staked balance.
-4. Two events are emitted: `NodeSlashed` (with the offending task ID commitment) and `NodeQuit` (with the blockchain transaction ID).
+3. A **`NodeStaking::slashStaking`** blockchain transaction is queued. This calls the `slashStaking` method on the `NodeStaking` smart contract and confiscates only the operator stake.
+4. Two Relay events are emitted: `NodeSlashed` with the offending task ID commitment and `NodeQuit` with the blockchain transaction ID.
+5. After the `NodeStaking.NodeSlashed` chain event is confirmed, Relay MUST create or resume a delegated slash job for the node and network.
+6. The delegated slash job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions. Each transaction MUST include no more than `blockchains.<network>.delegated_staking_slash_batch_size` delegator addresses.
+7. Relay MUST process confirmed `DelegatedStaking.DelegatorSlashed` events as the source of truth for delegated slash progress. Relay MUST write one audit row per slashed delegator and MUST mark only confirmed slashed delegations inactive.
+8. Relay MUST complete the delegated slash job only when the `DelegatedStaking` contract reports zero remaining delegations for the node.
 
 ### Normal Quit, Recovery Quit, and Slashed Quit
 

@@ -48,7 +48,8 @@ func setupBlockListenerTestDB(t *testing.T) *gorm.DB {
 		&models.NodeModel{},
 		&models.Delegation{},
 		&models.Event{},
-		&models.DelegatedStakingSlashedEvent{},
+		&models.DelegatedSlashJob{},
+		&models.DelegatedStakingSlashRecord{},
 		&models.NetworkNodeData{},
 		&models.NodeNameCount{},
 	); err != nil {
@@ -172,6 +173,40 @@ func TestDelegatorStakedSkipsMismatchedNetwork(t *testing.T) {
 	}
 }
 
+func TestDelegatorStakedWithZeroShareAffectsEffectiveCache(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockListenerTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+	node := seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
+	if err := db.Model(&node).Update("delegator_share", 0).Error; err != nil {
+		t.Fatalf("failed to seed zero delegator share: %v", err)
+	}
+
+	err := updateDelegatedStaking(ctx, db, &bindings.DelegatedStakingDelegatorStaked{
+		DelegatorAddress: delegatorAddress,
+		NodeAddress:      nodeAddress,
+		Amount:           big.NewInt(15),
+	}, "network-a")
+	if err != nil {
+		t.Fatalf("updateDelegatedStaking failed: %v", err)
+	}
+
+	var delegation models.Delegation
+	if err := db.First(&delegation, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-a").Error; err != nil {
+		t.Fatalf("failed to load delegation: %v", err)
+	}
+	if !delegation.Valid || delegation.Amount.Int.Cmp(big.NewInt(15)) != 0 {
+		t.Fatalf("expected stored delegation amount 15 and valid=true, got amount=%s valid=%v", delegation.Amount.String(), delegation.Valid)
+	}
+	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Cmp(big.NewInt(15)) != 0 {
+		t.Fatalf("expected zero-share delegation to be cached as 15, got %s", amount.String())
+	}
+	if got := globalMaxStaking.stakingMap[nodeAddress.Hex()]; got == nil || got.Cmp(big.NewInt(25)) != 0 {
+		t.Fatalf("expected max-staking cache entry to be total stake 25, got %v", got)
+	}
+}
+
 func TestDelegatorUnstakedSkipsMismatchedNetwork(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockListenerTestDB(t)
@@ -245,7 +280,51 @@ func TestChangeNodeDelegatorShareSkipsMismatchedAndUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestNodeSlashedClearsMatchingNetworkDelegationsForQuitNode(t *testing.T) {
+func TestChangeNodeDelegatorShareZeroKeepsEffectiveDelegation(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockListenerTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
+	if err := db.Create(&models.Delegation{
+		DelegatorAddress: delegatorAddress.Hex(),
+		NodeAddress:      nodeAddress.Hex(),
+		Amount:           models.BigInt{Int: *big.NewInt(15)},
+		Valid:            true,
+		Network:          "network-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to seed delegation: %v", err)
+	}
+	UpdateDelegation(delegatorAddress.Hex(), nodeAddress.Hex(), big.NewInt(15), "network-a")
+	UpdateMaxStaking(nodeAddress.Hex(), big.NewInt(25))
+	SetDelegatorShare(nodeAddress.Hex(), "network-a", 20)
+
+	if err := changeNodeDelegatorShare(ctx, db, &bindings.DelegatedStakingNodeDelegatorShareChanged{
+		NodeAddress: nodeAddress,
+		Share:       0,
+	}, "network-a"); err != nil {
+		t.Fatalf("changeNodeDelegatorShare failed: %v", err)
+	}
+
+	var node models.Node
+	if err := db.First(&node, "address = ? AND network = ?", nodeAddress.Hex(), "network-a").Error; err != nil {
+		t.Fatalf("failed to load node: %v", err)
+	}
+	if node.DelegatorShare != 0 {
+		t.Fatalf("expected delegator share to be 0, got %d", node.DelegatorShare)
+	}
+	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Cmp(big.NewInt(15)) != 0 {
+		t.Fatalf("expected delegation cache to remain 15, got %s", amount.String())
+	}
+	if share := GetDelegatorShare(nodeAddress.Hex(), "network-a"); share != 0 {
+		t.Fatalf("expected delegator share cache to be 0, got %d", share)
+	}
+	if got := globalMaxStaking.stakingMap[nodeAddress.Hex()]; got == nil || got.Cmp(big.NewInt(25)) != 0 {
+		t.Fatalf("expected max-staking cache entry to remain total stake 25, got %v", got)
+	}
+}
+
+func TestDelegatorSlashedClearsMatchingNetworkDelegationForQuitNode(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockListenerTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
@@ -262,8 +341,17 @@ func TestNodeSlashedClearsMatchingNetworkDelegationsForQuitNode(t *testing.T) {
 	}
 	UpdateDelegation(delegatorAddress.Hex(), nodeAddress.Hex(), big.NewInt(15), "network-a")
 
-	if err := slashDelegatedStakingOfNodeAddress(ctx, db, nodeAddress.Hex(), "network-a"); err != nil {
-		t.Fatalf("slashDelegatedStakingOfNodeAddress should process matching quit node: %v", err)
+	if err := slashDelegatedStaking(ctx, db, &bindings.DelegatedStakingDelegatorSlashed{
+		DelegatorAddress: delegatorAddress,
+		NodeAddress:      nodeAddress,
+		Amount:           big.NewInt(15),
+		Raw: types.Log{
+			TxHash:      common.HexToHash("0x01"),
+			BlockNumber: 100,
+			Index:       2,
+		},
+	}, "network-a"); err != nil {
+		t.Fatalf("slashDelegatedStaking should process matching quit node: %v", err)
 	}
 
 	var delegation models.Delegation
@@ -276,12 +364,15 @@ func TestNodeSlashedClearsMatchingNetworkDelegationsForQuitNode(t *testing.T) {
 	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Sign() != 0 {
 		t.Fatalf("expected delegation cache to be cleared, got %s", amount.String())
 	}
-	var slashedEventCount int64
-	if err := db.Model(&models.DelegatedStakingSlashedEvent{}).Count(&slashedEventCount).Error; err != nil {
-		t.Fatalf("failed to count slashed events: %v", err)
+	var auditCount int64
+	if err := db.Model(&models.DelegatedStakingSlashRecord{}).Count(&auditCount).Error; err != nil {
+		t.Fatalf("failed to count slash audits: %v", err)
 	}
-	if slashedEventCount != 1 {
-		t.Fatalf("expected one slashed event, got %d", slashedEventCount)
+	if auditCount != 1 {
+		t.Fatalf("expected one slash audit, got %d", auditCount)
+	}
+	if count := countEvents(t, db); count != 1 {
+		t.Fatalf("expected one relay event, got %d", count)
 	}
 }
 
@@ -356,6 +447,72 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 	}
 	if share := GetDelegatorShare(nodeAddress.Hex(), "network-b"); share != 35 {
 		t.Fatalf("expected delegator share cache to be 35, got %d", share)
+	}
+	var networkNodeData models.NetworkNodeData
+	if err := db.First(&networkNodeData, "address = ?", nodeAddress.Hex()).Error; err != nil {
+		t.Fatalf("failed to load network node data: %v", err)
+	}
+	if networkNodeData.Staking.Int.Cmp(big.NewInt(22)) != 0 {
+		t.Fatalf("expected network node staking to be 22, got %s", networkNodeData.Staking.String())
+	}
+	if got := globalMaxStaking.stakingMap[nodeAddress.Hex()]; got == nil || got.Cmp(big.NewInt(22)) != 0 {
+		t.Fatalf("expected max-staking cache entry to be 22, got %v", got)
+	}
+}
+
+func TestSetNodeStatusJoinWithZeroShareKeepsDelegationsInEffectiveCache(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockListenerTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+	node := seedTestNode(t, db, nodeAddress.Hex(), "network-b", models.NodeStatusQuit, 10)
+
+	originalGetStakingInfo := getStakingInfo
+	originalGetNodeDelegatorShare := getNodeDelegatorShare
+	originalGetNodeStakingInfos := getNodeStakingInfos
+	t.Cleanup(func() {
+		getStakingInfo = originalGetStakingInfo
+		getNodeDelegatorShare = originalGetNodeDelegatorShare
+		getNodeStakingInfos = originalGetNodeStakingInfos
+	})
+	getStakingInfo = func(ctx context.Context, address common.Address, network string) (bindings.NodeStakingStakingInfo, error) {
+		if address != nodeAddress || network != "network-b" {
+			t.Fatalf("unexpected staking info query: %s %s", address.Hex(), network)
+		}
+		return bindings.NodeStakingStakingInfo{
+			StakedBalance: big.NewInt(10),
+			StakedCredits: big.NewInt(0),
+		}, nil
+	}
+	getNodeDelegatorShare = func(ctx context.Context, address common.Address, network string) (uint8, error) {
+		if address != nodeAddress || network != "network-b" {
+			t.Fatalf("unexpected delegator share query: %s %s", address.Hex(), network)
+		}
+		return 0, nil
+	}
+	getNodeStakingInfos = func(ctx context.Context, address common.Address, network string) ([]common.Address, []*big.Int, error) {
+		if address != nodeAddress || network != "network-b" {
+			t.Fatalf("unexpected delegation query: %s %s", address.Hex(), network)
+		}
+		return []common.Address{delegatorAddress}, []*big.Int{big.NewInt(12)}, nil
+	}
+
+	if err := SetNodeStatusJoin(ctx, db, &node, []string{"model-a"}); err != nil {
+		t.Fatalf("SetNodeStatusJoin failed: %v", err)
+	}
+
+	var delegation models.Delegation
+	if err := db.First(&delegation, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-b").Error; err != nil {
+		t.Fatalf("failed to load delegation: %v", err)
+	}
+	if !delegation.Valid || delegation.Amount.Int.Cmp(big.NewInt(12)) != 0 {
+		t.Fatalf("expected stored delegation amount 12 and valid=true, got amount=%s valid=%v", delegation.Amount.String(), delegation.Valid)
+	}
+	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-b"); amount.Cmp(big.NewInt(12)) != 0 {
+		t.Fatalf("expected zero-share delegation to be cached as 12, got %s", amount.String())
+	}
+	if share := GetDelegatorShare(nodeAddress.Hex(), "network-b"); share != 0 {
+		t.Fatalf("expected delegator share cache to be 0, got %d", share)
 	}
 	var networkNodeData models.NetworkNodeData
 	if err := db.First(&networkNodeData, "address = ?", nodeAddress.Hex()).Error; err != nil {
