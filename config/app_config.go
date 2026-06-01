@@ -74,11 +74,13 @@ type AppConfig struct {
 			Credits          string `mapstructure:"credits"`
 			DelegatedStaking string `mapstructure:"delegated_staking"`
 		} `mapstructure:"contracts"`
-		MaxRetries                uint8  `mapstructure:"max_retries"`
-		RetryInterval             uint64 `mapstructure:"retry_interval"`
-		SendWaitTime              uint64 `mapstructure:"send_wait_time"`
-		ReceiptWaitTime           uint64 `mapstructure:"receipt_wait_time"`
-		SentTransactionCountLimit uint64 `mapstructure:"sent_transaction_count_limit"`
+		MaxRetries                     uint8  `mapstructure:"max_retries"`
+		RetryInterval                  uint64 `mapstructure:"retry_interval"`
+		SendWaitTime                   uint64 `mapstructure:"send_wait_time"`
+		ReceiptWaitTime                uint64 `mapstructure:"receipt_wait_time"`
+		SentTransactionCountLimit      uint64 `mapstructure:"sent_transaction_count_limit"`
+		DelegatedStakingSlashBatchSize uint64 `mapstructure:"delegated_staking_slash_batch_size"`
+		DelegatedStakingReadPageSize   uint64 `mapstructure:"delegated_staking_read_page_size"`
 	} `mapstructure:"blockchains"`
 
 	Task struct {

@@ -13,7 +13,7 @@
       },
       {
         "internalType": "address",
-        "name": "delegatedStakingContract",
+        "name": "slashReceiverAddress",
         "type": "address"
       }
     ],
@@ -150,6 +150,19 @@
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "parameterControllerAddress",
+        "type": "address"
+      }
+    ],
+    "name": "ParameterControllerUpdated",
+    "type": "event"
+  },
+  {
     "inputs": [],
     "name": "forceUnstake",
     "outputs": [],
@@ -157,13 +170,37 @@
     "type": "function"
   },
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "page",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "pageSize",
+        "type": "uint256"
+      }
+    ],
     "name": "getAllNodeAddresses",
     "outputs": [
       {
         "internalType": "address[]",
         "name": "",
         "type": "address[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getForceUnstakeDelay",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -283,6 +320,19 @@
       }
     ],
     "name": "setMinStakeAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "addr",
+        "type": "address"
+      }
+    ],
+    "name": "setParameterController",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

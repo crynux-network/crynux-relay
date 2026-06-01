@@ -31,7 +31,7 @@ var (
 
 // CreditsMetaData contains all meta data concerning the Credits contract.
 var CreditsMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"fromAddr\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"toAddr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"CreditsBought\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"CreditsStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"CreditsUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"createCredits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllCreditAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllCredits\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"getCredits\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setStakingAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"stakeCredits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"unstakeCredits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"fromAddr\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"toAddr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"CreditsBought\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"CreditsStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"CreditsUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"parameterControllerAddress\",\"type\":\"address\"}],\"name\":\"ParameterControllerUpdated\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"createCredits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllCreditAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllCredits\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"getCredits\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setParameterController\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setStakingAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"stakeCredits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"unstakeCredits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // CreditsABI is the input ABI used to generate the binding from.
@@ -366,6 +366,27 @@ func (_Credits *CreditsSession) SetAdminAddress(addr common.Address) (*types.Tra
 // Solidity: function setAdminAddress(address addr) returns()
 func (_Credits *CreditsTransactorSession) SetAdminAddress(addr common.Address) (*types.Transaction, error) {
 	return _Credits.Contract.SetAdminAddress(&_Credits.TransactOpts, addr)
+}
+
+// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
+//
+// Solidity: function setParameterController(address addr) returns()
+func (_Credits *CreditsTransactor) SetParameterController(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
+	return _Credits.contract.Transact(opts, "setParameterController", addr)
+}
+
+// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
+//
+// Solidity: function setParameterController(address addr) returns()
+func (_Credits *CreditsSession) SetParameterController(addr common.Address) (*types.Transaction, error) {
+	return _Credits.Contract.SetParameterController(&_Credits.TransactOpts, addr)
+}
+
+// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
+//
+// Solidity: function setParameterController(address addr) returns()
+func (_Credits *CreditsTransactorSession) SetParameterController(addr common.Address) (*types.Transaction, error) {
+	return _Credits.Contract.SetParameterController(&_Credits.TransactOpts, addr)
 }
 
 // SetStakingAddress is a paid mutator transaction binding the contract method 0xf4e0d9ac.
@@ -1043,6 +1064,150 @@ func (_Credits *CreditsFilterer) WatchOwnershipTransferred(opts *bind.WatchOpts,
 func (_Credits *CreditsFilterer) ParseOwnershipTransferred(log types.Log) (*CreditsOwnershipTransferred, error) {
 	event := new(CreditsOwnershipTransferred)
 	if err := _Credits.contract.UnpackLog(event, "OwnershipTransferred", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// CreditsParameterControllerUpdatedIterator is returned from FilterParameterControllerUpdated and is used to iterate over the raw logs and unpacked data for ParameterControllerUpdated events raised by the Credits contract.
+type CreditsParameterControllerUpdatedIterator struct {
+	Event *CreditsParameterControllerUpdated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *CreditsParameterControllerUpdatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(CreditsParameterControllerUpdated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(CreditsParameterControllerUpdated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *CreditsParameterControllerUpdatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *CreditsParameterControllerUpdatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// CreditsParameterControllerUpdated represents a ParameterControllerUpdated event raised by the Credits contract.
+type CreditsParameterControllerUpdated struct {
+	ParameterControllerAddress common.Address
+	Raw                        types.Log // Blockchain specific contextual infos
+}
+
+// FilterParameterControllerUpdated is a free log retrieval operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
+//
+// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
+func (_Credits *CreditsFilterer) FilterParameterControllerUpdated(opts *bind.FilterOpts, parameterControllerAddress []common.Address) (*CreditsParameterControllerUpdatedIterator, error) {
+
+	var parameterControllerAddressRule []interface{}
+	for _, parameterControllerAddressItem := range parameterControllerAddress {
+		parameterControllerAddressRule = append(parameterControllerAddressRule, parameterControllerAddressItem)
+	}
+
+	logs, sub, err := _Credits.contract.FilterLogs(opts, "ParameterControllerUpdated", parameterControllerAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return &CreditsParameterControllerUpdatedIterator{contract: _Credits.contract, event: "ParameterControllerUpdated", logs: logs, sub: sub}, nil
+}
+
+// WatchParameterControllerUpdated is a free log subscription operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
+//
+// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
+func (_Credits *CreditsFilterer) WatchParameterControllerUpdated(opts *bind.WatchOpts, sink chan<- *CreditsParameterControllerUpdated, parameterControllerAddress []common.Address) (event.Subscription, error) {
+
+	var parameterControllerAddressRule []interface{}
+	for _, parameterControllerAddressItem := range parameterControllerAddress {
+		parameterControllerAddressRule = append(parameterControllerAddressRule, parameterControllerAddressItem)
+	}
+
+	logs, sub, err := _Credits.contract.WatchLogs(opts, "ParameterControllerUpdated", parameterControllerAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(CreditsParameterControllerUpdated)
+				if err := _Credits.contract.UnpackLog(event, "ParameterControllerUpdated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseParameterControllerUpdated is a log parse operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
+//
+// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
+func (_Credits *CreditsFilterer) ParseParameterControllerUpdated(log types.Log) (*CreditsParameterControllerUpdated, error) {
+	event := new(CreditsParameterControllerUpdated)
+	if err := _Credits.contract.UnpackLog(event, "ParameterControllerUpdated", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log

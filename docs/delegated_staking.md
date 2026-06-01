@@ -51,6 +51,8 @@ Relay MUST store delegated staking in these places:
 | `user_earnings` | Total delegated staking earnings of one user |
 | `node_stakings` | Historical operator staking and delegated staking snapshots |
 | `node_delegator_counts` | Historical delegator count snapshots |
+| `delegated_slash_jobs` | Durable node-level delegated slash progress |
+| `delegated_staking_slash_records` | Per-delegator slash outcome audit records |
 
 Relay MUST keep delegation identity scoped by network. The same delegator may delegate to the same node address on different networks, and each network MUST use an independent delegation record.
 
@@ -118,11 +120,21 @@ When `delegator_share` changes, Relay MUST update `nodes.delegator_share`.
 
 If `delegator_share` becomes `0`, Relay MUST:
 
-- mark all delegations of that node and network inactive
+- keep existing delegation records active until each delegator exits or is slashed on chain
 - stop treating the node as a delegated staking node
+- keep active delegated staking in total node staking for task selection
 - stop distributing task income to delegators of that node
 
-When delegated staking of a node is slashed, Relay MUST mark all delegations of that node and network inactive.
+When operator slash is confirmed through `NodeStaking.NodeSlashed`, Relay MUST create or resume a delegated slash job for the node and network. The job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions and MUST NOT mark a delegation inactive until the matching `DelegatedStaking.DelegatorSlashed` event is confirmed.
+
+For each confirmed `DelegatorSlashed` event, Relay MUST atomically:
+
+- mark the matching delegation inactive
+- write one `delegated_staking_slash_records` record with node, delegator, network, amount, slash transaction hash, block number, and log index
+- emit the Relay `DelegatedStakingSlashed` event
+- remove the delegation from the in-memory delegation cache
+
+Relay MUST use `(network, slash_tx_hash, log_index)` as the chain-event idempotency key for delegated slash audit records. A delegated slash job MUST be completed only after the contract reports zero remaining delegated staking records for the node.
 
 When a node quits, Relay MUST remove the node from task selection, but Relay MUST NOT invalidate delegations only because of the local quit action. Delegation validity SHALL continue to follow the on-chain delegated staking state.
 
@@ -158,6 +170,7 @@ Relay MUST expose delegated staking through these public APIs:
 | `GET /v2/delegated_staking/nodes` | Delegated staking node list |
 | `GET /v2/delegated_staking/nodes/:address` | Delegated staking node details |
 | `GET /v2/delegated_staking/nodes/:address/delegations` | Delegation list for one delegated staking node and network |
+| `GET /v2/admin/delegated_slash/audits` | Authenticated paginated delegated slash audit lookup |
 | `GET /v1/client/:address/income/stats` | Split of operator income and delegated staking income for one client |
 
 Relay MUST expose delegated staking statistics through these APIs:
@@ -178,5 +191,7 @@ Each blockchain network configuration MUST provide:
 | Key | Description |
 |-----|-------------|
 | `blockchains.<network>.contracts.delegated_staking` | On-chain `DelegatedStaking` contract address |
+| `blockchains.<network>.delegated_staking_slash_batch_size` | Maximum delegator addresses in one delegated slash transaction |
+| `blockchains.<network>.delegated_staking_read_page_size` | Page size for contract delegation reads |
 
 Delegated staking state, earnings, and queries MUST always use the task or event network as the isolation key.

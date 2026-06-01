@@ -52,24 +52,6 @@ func GetStakingInfo(ctx context.Context, nodeAddress common.Address, network str
 	return client.NodeStakingContractInstance.GetStakingInfo(opts, nodeAddress)
 }
 
-// GetAllNodeAddresses gets all staked node addresses
-func GetAllNodeAddresses(ctx context.Context, network string) ([]common.Address, error) {
-	client, err := GetBlockchainClient(network)
-	if err != nil {
-		return nil, err
-	}
-
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	opts := &bind.CallOpts{
-		Pending: false,
-		Context: callCtx,
-	}
-
-	return client.NodeStakingContractInstance.GetAllNodeAddresses(opts)
-}
-
 // GetNodeStakingOwner gets the contract owner address
 func GetNodeStakingOwner(ctx context.Context, network string) (common.Address, error) {
 	client, err := GetBlockchainClient(network)
@@ -102,7 +84,7 @@ func Stake(ctx context.Context, stakedAmount *big.Int, network string) (string, 
 	if err != nil {
 		return "", err
 	}
-	
+
 	auth, err := client.GetAuth(ctx)
 	if err != nil {
 		return "", err
@@ -183,7 +165,7 @@ func Unstake(ctx context.Context, nodeAddress common.Address, network string) (s
 	if err != nil {
 		return "", err
 	}
-	
+
 	auth, err := client.GetAuth(ctx)
 	if err != nil {
 		return "", err
@@ -331,7 +313,7 @@ func SlashStaking(ctx context.Context, nodeAddress common.Address, network strin
 	if err != nil {
 		return "", err
 	}
-	
+
 	client.NonceMu.Lock()
 	defer client.NonceMu.Unlock()
 	nonce, err := client.GetNonce(ctx)

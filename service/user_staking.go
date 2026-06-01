@@ -13,6 +13,8 @@ import (
 
 var globalDelegationCaches map[string]*delegationCache
 
+const initDelegationCacheBatchSize = 1000
+
 type delegationCache struct {
 	sync.RWMutex
 	nodeDelegations map[string]map[string]*big.Int
@@ -97,6 +99,12 @@ func (c *delegationCache) removeNode(nodeAddress string) {
 	if _, ok := c.nodeDelegations[nodeAddress]; ok {
 		for delegatorAddress, amount := range c.nodeDelegations[nodeAddress] {
 			c.userStakeAmount[delegatorAddress].Sub(c.userStakeAmount[delegatorAddress], amount)
+			if nodeStakings, ok := c.userDelegations[delegatorAddress]; ok {
+				delete(nodeStakings, nodeAddress)
+				if len(nodeStakings) == 0 {
+					delete(c.userDelegations, delegatorAddress)
+				}
+			}
 		}
 		delete(c.nodeDelegations, nodeAddress)
 		c.nodeStakeAmount[nodeAddress] = big.NewInt(0)
@@ -178,12 +186,16 @@ func InitDelegationCaches(ctx context.Context, db *gorm.DB) error {
 	defer cancel()
 
 	var userStakings []models.Delegation
-	if err := db.WithContext(dbCtx).Model(&models.Delegation{}).Where("valid = ?", true).Find(&userStakings).Error; err != nil {
+	if err := db.WithContext(dbCtx).
+		Model(&models.Delegation{}).
+		Where("delegations.valid = ?", true).
+		FindInBatches(&userStakings, initDelegationCacheBatchSize, func(tx *gorm.DB, batch int) error {
+			for _, userStaking := range userStakings {
+				UpdateDelegation(userStaking.DelegatorAddress, userStaking.NodeAddress, &userStaking.Amount.Int, userStaking.Network)
+			}
+			return nil
+		}).Error; err != nil {
 		return err
-	}
-
-	for _, userStaking := range userStakings {
-		UpdateDelegation(userStaking.DelegatorAddress, userStaking.NodeAddress, &userStaking.Amount.Int, userStaking.Network)
 	}
 	return nil
 }
