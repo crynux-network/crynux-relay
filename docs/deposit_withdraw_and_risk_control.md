@@ -278,7 +278,8 @@ Serial withdrawal processing prevents multiple wallet-side withdrawal records fr
 | `GET` | `/v1/client/:address/withdraw/list` | Query withdrawals |
 | `GET` | `/v1/client/:address/deposit/list` | Query deposits |
 | `GET` | `/v1/client/:address/task_fee` | Query task fee records |
-| `GET` | `/v1/relay_account/:address/vesting/locked` | Query locked vesting amount |
+| `GET` | `/v2/relay_account/:address/vesting/locked` | Query locked vesting amount |
+| `GET` | `/v2/relay_account/:address/vesting/list` | Query vesting records with pagination |
 
 ### Wallet APIs
 

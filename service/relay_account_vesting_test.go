@@ -116,3 +116,48 @@ func TestReleaseVestingToRelayAccountRejectsDuplicateRange(t *testing.T) {
 		t.Fatalf("expected ErrVestingReleaseRangeInvalid, got %v", err)
 	}
 }
+
+func TestGetAddressLockedVestingAmountOnlyCountsActiveRecords(t *testing.T) {
+	ctx := context.Background()
+	db := newRelayAccountVestingTestDB(t)
+	address := "0xabc"
+	now := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+
+	activeRecord := models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Source:         "airdrop",
+		ExternalID:     "active-1",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+	}
+	completedRecord := models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(4000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Source:         "airdrop",
+		ExternalID:     "completed-1",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusCompleted,
+	}
+	if err := db.Create(&activeRecord).Error; err != nil {
+		t.Fatalf("failed to create active record: %v", err)
+	}
+	if err := db.Create(&completedRecord).Error; err != nil {
+		t.Fatalf("failed to create completed record: %v", err)
+	}
+
+	lockedAmount, err := GetAddressLockedVestingAmount(ctx, db, address, now)
+	if err != nil {
+		t.Fatalf("get locked amount failed: %v", err)
+	}
+
+	if lockedAmount.String() != "800" {
+		t.Fatalf("expected locked amount 800 from active vesting only, got %s", lockedAmount.String())
+	}
+}

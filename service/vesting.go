@@ -272,6 +272,7 @@ func GetAddressLockedVestingAmount(ctx context.Context, db *gorm.DB, address str
 	if err := db.WithContext(ctx).
 		Model(&models.VestingRecord{}).
 		Where("address = ?", address).
+		Where("status = ?", models.VestingStatusActive).
 		Find(&records).Error; err != nil {
 		return nil, err
 	}
