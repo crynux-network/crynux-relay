@@ -39,6 +39,9 @@ func main() {
 	if err := blockchain.Init(context.Background()); err != nil {
 		log.Fatalln(err)
 	}
+	if err := config.DeleteBlockchainPrivateKeyFilesAfterRead(); err != nil {
+		log.Fatalln(err)
+	}
 	if err := service.InitRelayAccountCache(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}

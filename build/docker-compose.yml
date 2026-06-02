@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
     volumes:
       - "./data/crynux_relay:/app/data"
-      - "./config:/app/config"
+      - "./config:/app/config:rw"
     ports:
       - "8080:8080"
     depends_on:
