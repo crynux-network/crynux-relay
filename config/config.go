@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/ecdsa"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -109,6 +110,29 @@ func ReadFromFile(file string) string {
 		panic(err)
 	}
 	return strings.TrimSpace(string(b))
+}
+
+func DeleteBlockchainPrivateKeyFilesAfterRead() error {
+	if appConfig == nil {
+		return nil
+	}
+
+	var files []string
+	for _, blockchain := range appConfig.Blockchains {
+		files = append(files, blockchain.Account.PrivateKeyFile)
+	}
+
+	deletedFiles := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if _, ok := deletedFiles[file]; ok {
+			continue
+		}
+		if err := os.Remove(file); err != nil {
+			return fmt.Errorf("delete blockchain private key file %s: %w", file, err)
+		}
+		deletedFiles[file] = struct{}{}
+	}
+	return nil
 }
 
 func GetTestPrivateKey() string {
