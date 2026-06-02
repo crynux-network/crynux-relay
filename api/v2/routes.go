@@ -6,6 +6,7 @@ import (
 	"crynux_relay/api/v2/middleware"
 	"crynux_relay/api/v2/network"
 	"crynux_relay/api/v2/nodes"
+	relayaccount "crynux_relay/api/v2/relay_account"
 	"crynux_relay/api/v2/response"
 
 	"github.com/loopfz/gadgeto/tonic"
@@ -68,6 +69,21 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("404", "Not found", response.NotFoundErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetDelegations, 200))
+
+	relayAccountGroup := v2g.Group("relay_account", "relay_account", "relay account related APIs")
+	relayAccountGroup.GET("/:address/vesting/locked", []fizz.OperationOption{
+		fizz.ID("relay_account_vesting_locked_v2"),
+		fizz.Summary("Get locked vesting amount"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetLockedVesting, 200))
+	relayAccountGroup.GET("/:address/vesting/list", []fizz.OperationOption{
+		fizz.ID("relay_account_vesting_list_v2"),
+		fizz.Summary("Get vesting records"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetVestingRecords, 200))
+
 	adminGroup := v2g.Group("admin", "admin", "Admin APIs")
 	adminNodesGroup := adminGroup.Group("nodes", "admin nodes", "Admin node management APIs")
 	adminNodesGroup.GET("/qos", []fizz.OperationOption{
