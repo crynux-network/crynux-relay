@@ -1002,6 +1002,13 @@ func releaseVestingToRelayAccount(ctx context.Context, db *gorm.DB, vestingID ui
 	}
 
 	reason := models.BuildVestingReleaseReason(vestingID, fromReleased, toReleased)
+	var existingEventCount int64
+	if err := db.WithContext(ctx).Model(&models.RelayAccountEvent{}).Where("reason = ?", reason).Count(&existingEventCount).Error; err != nil {
+		return nil, err
+	}
+	if existingEventCount > 0 {
+		return nil, ErrVestingReleaseRangeInvalid
+	}
 	if err := createRelayAccountEvent(ctx, db, models.RelayAccountEventTypeVestingRelease, reason, address, releaseAmount); err != nil {
 		return nil, err
 	}

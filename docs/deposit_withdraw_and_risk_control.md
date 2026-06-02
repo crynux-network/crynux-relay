@@ -217,8 +217,11 @@ When Relay Wallet skips applying an event type, it MUST still:
 ### Relay Wallet Controls
 
 - Relay Wallet MUST enforce batch-level risk limits on synced relay account events.
-- Relay Wallet MUST verify local account sufficiency before sending withdrawal transactions.
+- Relay Wallet MUST treat each withdrawal request debit as `amount + withdrawal_fee`, matching the Relay-side `Withdraw` ledger event amount.
+- Relay Wallet MUST process withdrawal records serially. A withdrawal record MUST complete chain execution, Relay fulfill/reject callback, and local finalization before the next withdrawal record starts processing.
 - Relay Wallet MUST re-check local balance before marking a fulfilled withdrawal as deducted.
+
+Serial withdrawal processing prevents multiple wallet-side withdrawal records from queuing or monitoring chain transfers against the same local balance before any confirmed transfer has been deducted. This control preserves a single local balance value without introducing reserved-balance state.
 
 ## Data Models
 

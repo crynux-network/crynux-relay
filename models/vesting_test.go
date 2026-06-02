@@ -43,6 +43,12 @@ func TestComputeVestingShouldReleased(t *testing.T) {
 			expected: "300",
 		},
 		{
+			name:     "non UTC input uses UTC calendar day",
+			now:      time.Date(2026, 1, 2, 7, 59, 59, 0, time.FixedZone("UTC+8", 8*60*60)),
+			duration: 10,
+			expected: "0",
+		},
+		{
 			name:     "final day and beyond",
 			now:      start.Add(15 * 24 * time.Hour),
 			duration: 10,
