@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/models"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -90,5 +91,28 @@ func TestProcessDueVestingReleasesSkipsWhenPendingReleaseExists(t *testing.T) {
 	}
 	if releaseEventCount != 1 {
 		t.Fatalf("expected no new release events, got %d", releaseEventCount)
+	}
+}
+
+func TestReleaseVestingToRelayAccountRejectsDuplicateRange(t *testing.T) {
+	ctx := context.Background()
+	db := newRelayAccountVestingTestDB(t)
+	address := "0xabc"
+
+	relayAccountCache.mu.Lock()
+	relayAccountCache.accounts = make(map[string]*big.Int)
+	relayAccountCache.mu.Unlock()
+
+	commit, err := releaseVestingToRelayAccount(ctx, db, 42, address, big.NewInt(0), big.NewInt(100))
+	if err != nil {
+		t.Fatalf("expected first release to pass, got %v", err)
+	}
+	if err := commit(); err != nil {
+		t.Fatalf("commit first release: %v", err)
+	}
+
+	_, err = releaseVestingToRelayAccount(ctx, db, 42, address, big.NewInt(0), big.NewInt(100))
+	if !errors.Is(err, ErrVestingReleaseRangeInvalid) {
+		t.Fatalf("expected ErrVestingReleaseRangeInvalid, got %v", err)
 	}
 }
