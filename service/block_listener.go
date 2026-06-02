@@ -62,7 +62,7 @@ func runBlockListener(ctx context.Context, db *gorm.DB, network string) error {
 // processNewBlocks processes new blocks
 func processNewBlocks(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient) error {
 	// Get current block height
-	latestBlock, err := client.RpcClient.BlockByNumber(ctx, nil)
+	latestBlockNum, err := client.RpcClient.BlockNumber(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get latest block: %w", err)
 	}
@@ -74,14 +74,14 @@ func processNewBlocks(ctx context.Context, db *gorm.DB, client *blockchain.Block
 	}
 
 	// If already at the latest block, skip
-	if listener.LastBlockNum >= latestBlock.NumberU64() {
+	if listener.LastBlockNum >= latestBlockNum {
 		return nil
 	}
 
 	// Process new blocks
 	processedBlock := listener.LastBlockNum
 	startBlock := listener.LastBlockNum + 1
-	endBlock := latestBlock.NumberU64()
+	endBlock := latestBlockNum
 
 	// Limit the number of blocks processed each time to avoid long processing time
 	if endBlock-startBlock > 10 {
@@ -111,17 +111,37 @@ func processNewBlocks(ctx context.Context, db *gorm.DB, client *blockchain.Block
 
 // processBlock processes a single block
 func processBlock(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient, blockNum uint64) error {
-	block, err := client.RpcClient.BlockByNumber(ctx, big.NewInt(int64(blockNum)))
+	header, err := client.RpcClient.HeaderByNumber(ctx, big.NewInt(int64(blockNum)))
 	if err != nil {
 		return fmt.Errorf("failed to get block %d: %w", blockNum, err)
 	}
 
-	blockTime := time.Unix(int64(block.Time()), 0)
+	txHashes, err := client.GetTransactionHashesFromBlock(ctx, big.NewInt(int64(blockNum)))
+	if err != nil {
+		return fmt.Errorf("failed to get transaction hashes from block %d: %w", blockNum, err)
+	}
 
-	// Check transactions in the block
-	for _, tx := range block.Transactions() {
-		if err := processTransaction(ctx, db, tx, client, blockTime); err != nil {
-			log.Errorf("Failed to process transaction %s: %v", tx.Hash().Hex(), err)
+	blockTime := time.Unix(int64(header.Time), 0)
+
+	for _, txHashText := range txHashes {
+		if !common.IsHexHash(txHashText) {
+			return fmt.Errorf("invalid transaction hash %s in block %d", txHashText, blockNum)
+		}
+		txHash := common.HexToHash(txHashText)
+		receipt, err := client.RpcClient.TransactionReceipt(ctx, txHash)
+		if err != nil {
+			return fmt.Errorf("failed to get transaction receipt of %s, network: %s, error: %w", txHash.Hex(), client.Network, err)
+		}
+		transfer, err := client.GetTransactionTransfer(ctx, txHash)
+		if err != nil {
+			return fmt.Errorf("failed to get transaction transfer %s, network: %s, error: %w", txHash.Hex(), client.Network, err)
+		}
+		if err := processTransactionReceiptLogs(ctx, db, receipt, client, blockTime); err != nil {
+			log.Errorf("Failed to process transaction receipt logs %s: %v", txHash.Hex(), err)
+			return err
+		}
+		if err := processTransactionTransfer(ctx, db, transfer, receipt, client); err != nil {
+			log.Errorf("Failed to process transaction %s: %v", txHash.Hex(), err)
 			return err
 		}
 	}
@@ -129,20 +149,70 @@ func processBlock(ctx context.Context, db *gorm.DB, client *blockchain.Blockchai
 	return nil
 }
 
-func processRelayAccountDepositTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient) error {
-
-	// Check if transaction is successful
-	receipt, err := client.RpcClient.TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		return fmt.Errorf("failed to get transaction receipt of %s, network: %s, error: %w", tx.Hash().Hex(), client.Network, err)
+func processTransactionReceiptLogs(ctx context.Context, db *gorm.DB, receipt *types.Receipt, client *blockchain.BlockchainClient, blockTime time.Time) error {
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return nil
 	}
 
+	appConfig := config.GetConfig()
+	blockchainCfg, ok := appConfig.Blockchains[client.Network]
+	if !ok {
+		return fmt.Errorf("network %s not found", client.Network)
+	}
+
+	var nodeStakingLogs []*types.Log
+	var delegatedStakingLogs []*types.Log
+	nodeStakingLogs, delegatedStakingLogs = filterReceiptLogsByContract(
+		receipt.Logs,
+		blockchainCfg.Contracts.NodeStaking,
+		blockchainCfg.Contracts.DelegatedStaking,
+	)
+
+	if len(nodeStakingLogs) > 0 {
+		if err := processNodeStakingReceiptLogs(nodeStakingLogs, client, nodeStakingReceiptLogHandlers{
+			onNodeStaked: func(event *bindings.NodeStakingNodeStaked) error {
+				return nodeStaked(ctx, db, event, client.Network)
+			},
+			onNodeTryUnstaked: func(event *bindings.NodeStakingNodeTryUnstaked) error {
+				return nodeTryUnstaked(ctx, db, event, client.Network, blockTime)
+			},
+			onNodeSlashed: func(event *bindings.NodeStakingNodeSlashed) error {
+				return createOrResumeDelegatedSlashJob(ctx, db, event.NodeAddress.Hex(), client.Network)
+			},
+		}); err != nil {
+			return err
+		}
+	}
+	if len(delegatedStakingLogs) > 0 {
+		if err := processDelegatedStakingReceiptLogs(ctx, db, delegatedStakingLogs, client); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func filterReceiptLogsByContract(receiptLogs []*types.Log, nodeStakingAddress, delegatedStakingAddress string) ([]*types.Log, []*types.Log) {
+	var nodeStakingLogs []*types.Log
+	var delegatedStakingLogs []*types.Log
+	for _, receiptLog := range receiptLogs {
+		switch {
+		case strings.EqualFold(receiptLog.Address.Hex(), nodeStakingAddress):
+			nodeStakingLogs = append(nodeStakingLogs, receiptLog)
+		case strings.EqualFold(receiptLog.Address.Hex(), delegatedStakingAddress):
+			delegatedStakingLogs = append(delegatedStakingLogs, receiptLog)
+		}
+	}
+	return nodeStakingLogs, delegatedStakingLogs
+}
+
+func processRelayAccountDepositTransfer(ctx context.Context, db *gorm.DB, transfer *blockchain.TransactionTransfer, receipt *types.Receipt, client *blockchain.BlockchainClient) error {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		return nil
 	}
 
 	// Check if already processed
-	event, err := models.GetRelayAccountDepositEvent(ctx, db, tx.Hash().Hex(), client.Network)
+	event, err := models.GetRelayAccountDepositEvent(ctx, db, transfer.Hash.Hex(), client.Network)
 	if err != nil {
 		return err
 	}
@@ -150,20 +220,14 @@ func processRelayAccountDepositTransaction(ctx context.Context, db *gorm.DB, tx 
 		return nil
 	}
 
-	// Get sender address (need to recover from signature)
-	from, err := types.Sender(types.LatestSignerForChainID(client.ChainID), tx)
+	commitFunc, err := depositRelayAccount(ctx, db, transfer.Hash.Hex(), transfer.From.Hex(), transfer.Value, client.Network)
 	if err != nil {
-		return fmt.Errorf("failed to get sender address of %s, network: %s, error: %w", tx.Hash().Hex(), client.Network, err)
-	}
-
-	commitFunc, err := depositRelayAccount(ctx, db, tx.Hash().Hex(), from.Hex(), tx.Value(), client.Network)
-	if err != nil {
-		log.Errorf("Failed to process relay account deposit for %s, network: %s, error: %v", from.Hex(), client.Network, err)
+		log.Errorf("Failed to process relay account deposit for %s, network: %s, error: %v", transfer.From.Hex(), client.Network, err)
 		return err
 	}
 
 	if err := commitFunc(); err != nil {
-		log.Errorf("Failed to process relay account deposit for %s, network: %s, error: %v", from.Hex(), client.Network, err)
+		log.Errorf("Failed to process relay account deposit for %s, network: %s, error: %v", transfer.From.Hex(), client.Network, err)
 		return err
 	}
 	return nil
@@ -383,8 +447,12 @@ func processDelegatedStakingTransaction(ctx context.Context, db *gorm.DB, tx *ty
 		return nil
 	}
 
+	return processDelegatedStakingReceiptLogs(ctx, db, receipt.Logs, client)
+}
+
+func processDelegatedStakingReceiptLogs(ctx context.Context, db *gorm.DB, receiptLogs []*types.Log, client *blockchain.BlockchainClient) error {
 	slashedNodes := make(map[string]struct{})
-	for _, log := range receipt.Logs {
+	for _, log := range receiptLogs {
 		if event, err := client.DelegatedStakingContractInstance.ParseDelegatorStaked(*log); err == nil {
 			if err := updateDelegatedStaking(ctx, db, event, client.Network); err != nil {
 				return err
@@ -741,28 +809,20 @@ func hasOpenDelegatedSlashBatchTransaction(ctx context.Context, db *gorm.DB, job
 	return false, nil
 }
 
-// processTransaction processes a single transaction
-func processTransaction(ctx context.Context, db *gorm.DB, tx *types.Transaction, client *blockchain.BlockchainClient, blockTime time.Time) error {
-	// Only process native token transfers (to field is not empty and data field is empty)
-	if tx.To() == nil || len(tx.Data()) == 0 {
+// processTransactionTransfer processes a transaction using raw RPC transfer fields.
+func processTransactionTransfer(ctx context.Context, db *gorm.DB, transfer *blockchain.TransactionTransfer, receipt *types.Receipt, client *blockchain.BlockchainClient) error {
+	appConfig := config.GetConfig()
+	if !isRelayAccountDepositTransfer(transfer, appConfig.RelayAccount.DepositAddress) {
 		return nil
 	}
 
-	appConfig := config.GetConfig()
-	blockchainCfg, ok := appConfig.Blockchains[client.Network]
-	if !ok {
-		return fmt.Errorf("network %s not found", client.Network)
-	}
+	return processRelayAccountDepositTransfer(ctx, db, transfer, receipt, client)
+}
 
-	// Check if transfer is to the target address
-	toAddress := tx.To().Hex()
-	if strings.EqualFold(tx.To().Hex(), appConfig.RelayAccount.DepositAddress) {
-		return processRelayAccountDepositTransaction(ctx, db, tx, client)
-	} else if strings.EqualFold(toAddress, blockchainCfg.Contracts.NodeStaking) {
-		return processNodeStakingTransaction(ctx, db, tx, client, blockTime)
-	} else if strings.EqualFold(toAddress, blockchainCfg.Contracts.DelegatedStaking) {
-		return processDelegatedStakingTransaction(ctx, db, tx, client)
-	}
-
-	return nil
+func isRelayAccountDepositTransfer(transfer *blockchain.TransactionTransfer, depositAddress string) bool {
+	return transfer.To != nil &&
+		transfer.Value != nil &&
+		transfer.Value.Sign() > 0 &&
+		len(transfer.Input) == 0 &&
+		strings.EqualFold(transfer.To.Hex(), depositAddress)
 }

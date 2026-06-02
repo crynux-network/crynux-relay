@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crynux_relay/blockchain"
 	"crynux_relay/blockchain/bindings"
 	"crynux_relay/models"
 	"math/big"
@@ -34,6 +35,67 @@ func TestProcessNodeStakingReceiptLogsHandlesNodeSlashed(t *testing.T) {
 	}
 	if slashedNode != nodeAddress {
 		t.Fatalf("expected node slash handler to receive node %s, got %s", nodeAddress.Hex(), slashedNode.Hex())
+	}
+}
+
+func TestFilterReceiptLogsByContractRoutesByAddress(t *testing.T) {
+	nodeStakingAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	delegatedStakingAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+	otherAddress := common.HexToAddress("0x00000000000000000000000000000000000000CC")
+
+	nodeLog := &types.Log{Address: nodeStakingAddress}
+	delegatedLog := &types.Log{Address: delegatedStakingAddress}
+	otherLog := &types.Log{Address: otherAddress}
+
+	nodeLogs, delegatedLogs := filterReceiptLogsByContract(
+		[]*types.Log{nodeLog, delegatedLog, otherLog},
+		nodeStakingAddress.Hex(),
+		delegatedStakingAddress.Hex(),
+	)
+
+	if len(nodeLogs) != 1 || nodeLogs[0] != nodeLog {
+		t.Fatalf("expected one node staking log, got %d", len(nodeLogs))
+	}
+	if len(delegatedLogs) != 1 || delegatedLogs[0] != delegatedLog {
+		t.Fatalf("expected one delegated staking log, got %d", len(delegatedLogs))
+	}
+}
+
+func TestRelayAccountDepositTransferRequiresPositiveValueAndEmptyInput(t *testing.T) {
+	depositAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	recipientAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+
+	nativeTransfer := &blockchain.TransactionTransfer{
+		To:    &depositAddress,
+		Value: big.NewInt(10),
+	}
+	if !isRelayAccountDepositTransfer(nativeTransfer, depositAddress.Hex()) {
+		t.Fatal("expected positive native transfer to deposit address to be a relay account deposit")
+	}
+
+	contractCall := &blockchain.TransactionTransfer{
+		To:    &depositAddress,
+		Value: big.NewInt(10),
+		Input: []byte{0x01},
+	}
+	if isRelayAccountDepositTransfer(contractCall, depositAddress.Hex()) {
+		t.Fatal("expected non-empty input transaction to be skipped as a relay account deposit")
+	}
+
+	otherTransfer := &blockchain.TransactionTransfer{
+		To:    &recipientAddress,
+		Value: big.NewInt(10),
+	}
+	if isRelayAccountDepositTransfer(otherTransfer, depositAddress.Hex()) {
+		t.Fatal("expected native transfer to another address to be skipped as a relay account deposit")
+	}
+
+	zeroValueTransfer := &blockchain.TransactionTransfer{
+		To:    &depositAddress,
+		Value: big.NewInt(0),
+	}
+	if isRelayAccountDepositTransfer(zeroValueTransfer, depositAddress.Hex()) {
+		t.Fatal("expected zero-value transfer to be skipped as a relay account deposit")
 	}
 }
 
