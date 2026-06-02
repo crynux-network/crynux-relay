@@ -116,7 +116,6 @@ func statsTaskCount(ctx context.Context) error {
 				return err
 			}
 		}
-		log.Infof("Stats: stats TaskCount success %s", end.Format(time.RFC3339))
 		start = end
 	}
 
@@ -138,6 +137,8 @@ func StartStatsTaskCount(ctx context.Context) {
 				defer cancel()
 				if err := statsTaskCount(ctx1); err != nil {
 					log.Errorf("Stats: stats task count error %v", err)
+				} else {
+					log.Info("Stats: stats task count success")
 				}
 			}()
 		}
@@ -232,7 +233,6 @@ func statsTaskExecutionTimeCount(ctx context.Context) error {
 				return err
 			}
 		}
-		log.Infof("Stats: stats TaskExecutionTimeCount success: %s", end.Format(time.RFC3339))
 		start = end
 	}
 
@@ -255,6 +255,8 @@ func StartStatsTaskExecutionTimeCount(ctx context.Context) {
 				defer cancel()
 				if err := statsTaskExecutionTimeCount(ctx1); err != nil {
 					log.Errorf("Stats: stats task execution time count error %v", err)
+				} else {
+					log.Info("Stats: stats task execution time count success")
 				}
 			}()
 		}
@@ -342,7 +344,6 @@ func statsTaskUploadResultTimeCount(ctx context.Context) error {
 				return err
 			}
 		}
-		log.Infof("Stats: stats TaskUploadResultTimeCount success: %s", end.Format(time.RFC3339))
 		start = end
 	}
 
@@ -364,6 +365,8 @@ func StartStatsTaskUploadResultTimeCount(ctx context.Context) {
 				defer cancel()
 				if err := statsTaskUploadResultTimeCount(ctx1); err != nil {
 					log.Errorf("Stats: stats task upload result time count error %v", err)
+				} else {
+					log.Info("Stats: stats task upload result time count success")
 				}
 			}()
 		}
@@ -450,7 +453,6 @@ func statsTaskWaitingTimeCount(ctx context.Context) error {
 				return err
 			}
 		}
-		log.Infof("Stats: stats TaskWaitingTimeCount success: %s", end.Format(time.RFC3339))
 		start = end
 	}
 
@@ -473,6 +475,8 @@ func StartStatsTaskWaitingTimeCount(ctx context.Context) {
 				defer cancel()
 				if err := statsTaskWaitingTimeCount(ctx1); err != nil {
 					log.Errorf("Stats: stats task waiting time count error %v", err)
+				} else {
+					log.Info("Stats: stats task waiting time count success")
 				}
 			}()
 		}
