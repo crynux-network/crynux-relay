@@ -172,7 +172,7 @@ func (tc *TransactionConfirmer) confirmTransaction(ctx context.Context, transact
 		log.Errorf("Error getting blockchain client: %v", err)
 		return err
 	}
-	
+
 	waitDeadline := transaction.SentAt.Time.Add(time.Duration(blockchain.ReceiptWaitTime) * time.Second)
 	if time.Now().After(waitDeadline) {
 		log.Warnf("Transaction %d has waited too long for receipt", transaction.ID)
@@ -182,9 +182,9 @@ func (tc *TransactionConfirmer) confirmTransaction(ctx context.Context, transact
 		}
 		return nil
 	}
-	
+
 	txHash := common.HexToHash(transaction.TxHash.String)
-	
+
 	// Get transaction receipt
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, txHash)
 	if err != nil {
@@ -231,7 +231,7 @@ func (tc *TransactionConfirmer) handleSuccessfulTransaction(ctx context.Context,
 // handleFailedTransaction handles a failed transaction
 func (tc *TransactionConfirmer) handleFailedTransaction(ctx context.Context, client *BlockchainClient, transaction *models.BlockchainTransaction, receipt *types.Receipt) error {
 	// Get error message from receipt
-	errorMsg, err := client.GetErrorMessageFromReceipt(ctx, receipt)
+	errorMsg, err := client.GetErrorMessageFromTransaction(ctx, receipt, transaction)
 	if err != nil {
 		errorMsg = fmt.Sprintf("Transaction failed with status 0: %v", err)
 	}

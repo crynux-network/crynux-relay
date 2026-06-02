@@ -283,23 +283,19 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			continue
 		}
-		tx, _, err := client.RpcClient.TransactionByHash(ctx, common.HexToHash(txHash))
+		transfer, err := client.GetTransactionTransfer(ctx, common.HexToHash(txHash))
 		if errors.Is(err, ethereum.NotFound) {
 			continue
 		}
 		if err != nil {
 			return nil, nil, err
 		}
-		if tx.To() == nil || !strings.EqualFold(tx.To().Hex(), appConfig.RelayAccount.DepositAddress) {
-			continue
-		}
-		from, err := types.Sender(types.LatestSignerForChainID(client.ChainID), tx)
-		if err != nil {
+		if !isRelayAccountDepositTransfer(transfer, appConfig.RelayAccount.DepositAddress) {
 			continue
 		}
 		validDepositTxs[key] = depositTxData{
-			FromAddress: from.Hex(),
-			Amount:      tx.Value(),
+			FromAddress: transfer.From.Hex(),
+			Amount:      transfer.Value,
 		}
 	}
 

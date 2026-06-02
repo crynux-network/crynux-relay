@@ -6,9 +6,11 @@ import (
 	"crynux_relay/blockchain/bindings"
 	"crynux_relay/config"
 	"errors"
+	"fmt"
 	"math/big"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -360,6 +362,65 @@ func (client *BlockchainClient) GetErrorMessageFromReceipt(ctx context.Context, 
 	return errMsg, err
 }
 
+func (client *BlockchainClient) BuildCallMsgFromTransaction(transaction *models.BlockchainTransaction) (ethereum.CallMsg, error) {
+	value, ok := new(big.Int).SetString(transaction.Value, 10)
+	if !ok {
+		return ethereum.CallMsg{}, fmt.Errorf("invalid transaction value %q", transaction.Value)
+	}
+
+	var data []byte
+	if transaction.Data.Valid && transaction.Data.String != "" {
+		decoded, err := hexutil.Decode(transaction.Data.String)
+		if err != nil {
+			return ethereum.CallMsg{}, err
+		}
+		data = decoded
+	}
+
+	toAddress := common.HexToAddress(transaction.ToAddress)
+	return ethereum.CallMsg{
+		From:     common.HexToAddress(transaction.FromAddress),
+		To:       &toAddress,
+		Gas:      client.GasLimit,
+		GasPrice: client.GasPrice,
+		Value:    value,
+		Data:     data,
+	}, nil
+}
+
+func (client *BlockchainClient) GetErrorMessageFromTransaction(ctx context.Context, receipt *types.Receipt, transaction *models.BlockchainTransaction) (string, error) {
+	msg, err := client.BuildCallMsgFromTransaction(transaction)
+	if err != nil {
+		return "", err
+	}
+
+	blockNumber := big.NewInt(0).Sub(receipt.BlockNumber, big.NewInt(1))
+
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	res, err := client.RpcClient.CallContract(callCtx, msg, blockNumber)
+	if err != nil {
+		return "", err
+	}
+
+	errMsg, err := unpackError(res)
+	if err != nil {
+		errMsg = "Unknown tx error" + hexutil.Encode(res)
+	}
+	return errMsg, err
+}
+
+func IsUnsupportedTransactionTypeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "unsupported transaction type") ||
+		strings.Contains(errText, "transaction type not supported") ||
+		strings.Contains(errText, "invalid transaction type")
+}
+
 var (
 	errorSig     = []byte{0x08, 0xc3, 0x79, 0xa0} // Keccak256("Error(string)")[:4]
 	abiString, _ = abi.NewType("string", "", nil)
@@ -385,6 +446,23 @@ type rpcBlock struct {
 	Transactions []string `json:"transactions"`
 }
 
+type rpcTransactionTransfer struct {
+	Hash  common.Hash     `json:"hash"`
+	From  common.Address  `json:"from"`
+	To    *common.Address `json:"to"`
+	Value *hexutil.Big    `json:"value"`
+	Input hexutil.Bytes   `json:"input"`
+	Data  hexutil.Bytes   `json:"data"`
+}
+
+type TransactionTransfer struct {
+	Hash  common.Hash
+	From  common.Address
+	To    *common.Address
+	Value *big.Int
+	Input []byte
+}
+
 func (client *BlockchainClient) GetTransactionHashesFromBlock(ctx context.Context, blockNumber *big.Int) ([]string, error) {
 	rpcClient, err := rpc.Dial(client.RpcEndpoint)
 	if err != nil {
@@ -393,10 +471,42 @@ func (client *BlockchainClient) GetTransactionHashesFromBlock(ctx context.Contex
 	defer rpcClient.Close()
 
 	var rpcBlock rpcBlock
-	err = rpcClient.CallContext(ctx, &rpcBlock, "eth_getBlockByNumber", blockNumber.String(), false)
+	err = rpcClient.CallContext(ctx, &rpcBlock, "eth_getBlockByNumber", hexutil.EncodeBig(blockNumber), false)
 	if err != nil {
 		return nil, err
 	}
 
 	return rpcBlock.Transactions, nil
+}
+
+func (client *BlockchainClient) GetTransactionTransfer(ctx context.Context, txHash common.Hash) (*TransactionTransfer, error) {
+	rpcClient, err := rpc.Dial(client.RpcEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer rpcClient.Close()
+
+	var rpcTx *rpcTransactionTransfer
+	if err := rpcClient.CallContext(ctx, &rpcTx, "eth_getTransactionByHash", txHash); err != nil {
+		return nil, err
+	}
+	if rpcTx == nil {
+		return nil, ethereum.NotFound
+	}
+	if rpcTx.Value == nil {
+		return nil, fmt.Errorf("transaction %s has no value field", txHash.Hex())
+	}
+
+	input := []byte(rpcTx.Input)
+	if len(input) == 0 && len(rpcTx.Data) > 0 {
+		input = []byte(rpcTx.Data)
+	}
+
+	return &TransactionTransfer{
+		Hash:  rpcTx.Hash,
+		From:  rpcTx.From,
+		To:    rpcTx.To,
+		Value: (*big.Int)(rpcTx.Value),
+		Input: input,
+	}, nil
 }
