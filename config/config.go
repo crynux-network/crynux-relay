@@ -65,7 +65,10 @@ func InitConfig(configPath string) error {
 
 func checkBlockchainAccount() error {
 
-	for _, blockchain := range appConfig.Blockchains {
+	for network, blockchain := range appConfig.Blockchains {
+		blockchain.Account.PrivateKey = NormalizePrivateKey(blockchain.Account.PrivateKey)
+		appConfig.Blockchains[network] = blockchain
+
 		if blockchain.Account.PrivateKey == "" {
 			return errors.New("blockchain account private key not set")
 		}
@@ -74,15 +77,8 @@ func checkBlockchainAccount() error {
 			return errors.New("blockchain account address not set")
 		}
 
-		var pk string
-		if strings.HasPrefix(blockchain.Account.PrivateKey, "0x") {
-			pk = blockchain.Account.PrivateKey[2:]
-		} else {
-			pk = blockchain.Account.PrivateKey
-		}
-
 		// Check private key and address
-		privateKey, err := crypto.HexToECDSA(pk)
+		privateKey, err := crypto.HexToECDSA(blockchain.Account.PrivateKey)
 		if err != nil {
 			return err
 		}
@@ -102,6 +98,14 @@ func checkBlockchainAccount() error {
 	}
 
 	return nil
+}
+
+func NormalizePrivateKey(privateKey string) string {
+	privateKey = strings.TrimSpace(privateKey)
+	if len(privateKey) >= 2 && strings.EqualFold(privateKey[:2], "0x") {
+		return privateKey[2:]
+	}
+	return privateKey
 }
 
 func ReadFromFile(file string) string {

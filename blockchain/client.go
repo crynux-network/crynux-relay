@@ -223,7 +223,7 @@ func (client *BlockchainClient) BalanceAt(ctx context.Context, address common.Ad
 }
 
 func (client *BlockchainClient) GetAuth(ctx context.Context) (*bind.TransactOpts, error) {
-	privateKey, err := crypto.HexToECDSA(client.PrivateKey)
+	privateKey, err := crypto.HexToECDSA(config.NormalizePrivateKey(client.PrivateKey))
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,7 @@ func (client *BlockchainClient) SendETH(ctx context.Context, to common.Address, 
 
 	tx := types.NewTransaction(nonce, to, amount, gasLimit, client.GasPrice, nil)
 
-	privateKey, err := crypto.HexToECDSA(client.PrivateKey)
+	privateKey, err := crypto.HexToECDSA(config.NormalizePrivateKey(client.PrivateKey))
 	if err != nil {
 		return nil, err
 	}
