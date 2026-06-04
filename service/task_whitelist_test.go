@@ -78,6 +78,18 @@ func TestTaskWhitelistAddListDelete(t *testing.T) {
 	if len(cacheAddresses) != 0 {
 		t.Fatalf("cache should be empty after delete: %#v", cacheAddresses)
 	}
+
+	if err := AddTaskWhitelistAddress(ctx, db, address); err != nil {
+		t.Fatalf("add after delete should succeed: %v", err)
+	}
+
+	addresses, err = ListTaskWhitelistAddresses(ctx, db)
+	if err != nil {
+		t.Fatalf("list after re-add should succeed: %v", err)
+	}
+	if len(addresses) != 1 || addresses[0] != normalized {
+		t.Fatalf("unexpected list result after re-add: %#v", addresses)
+	}
 }
 
 func TestTaskWhitelistLazyLoadAndRefresh(t *testing.T) {
