@@ -70,6 +70,9 @@ func TestNodeNameWhitelistCRUDAndCache(t *testing.T) {
 	if err := DeleteNodeNameWhitelist(ctx, db, gpuName, gpuVram, nodeVersion); !errors.Is(err, ErrNodeNameWhitelistMissing) {
 		t.Fatalf("expected ErrNodeNameWhitelistMissing, got %v", err)
 	}
+	if err := AddNodeNameWhitelist(ctx, db, gpuName, gpuVram, nodeVersion); err != nil {
+		t.Fatalf("add whitelist after delete should succeed: %v", err)
+	}
 }
 
 func TestNodeNameCountTxAndCache(t *testing.T) {
@@ -135,5 +138,21 @@ func TestNodeNameCountTxAndCache(t *testing.T) {
 		return DecrementNodeNameCountTx(ctx, tx, node)
 	}); !errors.Is(err, ErrNodeNameCountEntryMissing) {
 		t.Fatalf("expected ErrNodeNameCountEntryMissing, got %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return IncrementNodeNameCountTx(ctx, tx, node)
+	}); err != nil {
+		t.Fatalf("increment after zero-count delete should succeed: %v", err)
+	}
+	if err := RefreshNodeNameCountCache(ctx, db); err != nil {
+		t.Fatalf("refresh count cache after re-increment should succeed: %v", err)
+	}
+	count, err = GetNodeNameActiveCount(ctx, db, node.GPUName, node.GPUVram, nodeVersion)
+	if err != nil {
+		t.Fatalf("get active count after re-increment should succeed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("unexpected active count after re-increment: %d", count)
 	}
 }

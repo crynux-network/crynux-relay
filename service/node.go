@@ -328,9 +328,14 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 		LogNodeStatusChange(node, "quit")
 		return nil
 	case models.NodeStatusPendingPause:
-		if err := node.Update(ctx, db, map[string]interface{}{
-			"status":                     models.NodeStatusPaused,
-			"current_task_id_commitment": sql.NullString{Valid: false},
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := node.Update(ctx, tx, map[string]interface{}{
+				"status":                     models.NodeStatusPaused,
+				"current_task_id_commitment": sql.NullString{Valid: false},
+			}); err != nil {
+				return err
+			}
+			return DecrementNodeNameCountTx(ctx, tx, node)
 		}); err != nil {
 			return err
 		}
