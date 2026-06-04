@@ -1,11 +1,11 @@
 package api
 
 import (
-	v1 "crynux_relay/api/v1"
 	"crynux_relay/api/tools"
+	v1 "crynux_relay/api/v1"
 	responseV1 "crynux_relay/api/v1/response"
-	responseV2 "crynux_relay/api/v2/response"
 	v2 "crynux_relay/api/v2"
+	responseV2 "crynux_relay/api/v2/response"
 	"crynux_relay/config"
 	"reflect"
 	"regexp"
@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/loopfz/gadgeto/tonic"
 	log "github.com/sirupsen/logrus"
-	ginlogrus "github.com/toorop/gin-logrus"
 	"github.com/wI2L/fizz"
 	"github.com/wI2L/fizz/openapi"
 )
@@ -27,12 +26,12 @@ func GetHttpApplication(appConfig *config.AppConfig) *gin.Engine {
 
 	engine := gin.New()
 	engine.Use(cors.New(cors.Config{
-		AllowAllOrigins: true,
+		AllowAllOrigins:  true,
 		AllowCredentials: true,
-		AllowMethods:    []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
-		AllowHeaders:    []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
+		AllowHeaders:     []string{"*"},
 	}))
-	engine.Use(ginlogrus.Logger(log.StandardLogger()), gin.Recovery())
+	engine.Use(AccessLogger(log.StandardLogger()), gin.Recovery())
 	engine.Use(APIVersion())
 
 	// Serve static files under static folder

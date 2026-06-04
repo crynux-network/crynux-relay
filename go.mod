@@ -16,7 +16,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.16.0
-	github.com/toorop/gin-logrus v0.0.0-20210225092905-2c785434f26f
 	github.com/vechain/go-ecvrf v0.0.0-20220525125849-96fa0442e765
 	github.com/wI2L/fizz v0.23.0
 	gonum.org/v1/gonum v0.15.1
