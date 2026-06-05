@@ -41,7 +41,6 @@ type SystemBlockchainConfig struct {
 	DelegatedStakingSlashBatchSize uint64                          `mapstructure:"delegated_staking_slash_batch_size"`
 	DelegatedStakingReadPageSize   uint64                          `mapstructure:"delegated_staking_read_page_size"`
 	WithdrawalFee                  uint64                          `mapstructure:"withdrawal_fee"`
-	DepositMin                     uint64                          `mapstructure:"deposit_min"`
 	WithdrawalMin                  uint64                          `mapstructure:"withdrawal_min"`
 }
 
@@ -58,7 +57,6 @@ type DepositWithdrawNetworkConfig struct {
 	Contracts     DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
 	LogBlockRange uint64                                `mapstructure:"log_block_range"`
 	WithdrawalFee uint64                                `mapstructure:"withdrawal_fee"`
-	DepositMin    uint64                                `mapstructure:"deposit_min"`
 	WithdrawalMin uint64                                `mapstructure:"withdrawal_min"`
 }
 
@@ -73,7 +71,6 @@ type EffectiveFundingNetworkConfig struct {
 	TokenAddress   string
 	LogBlockRange  uint64
 	WithdrawalFee  uint64
-	DepositMin     uint64
 	WithdrawalMin  uint64
 }
 

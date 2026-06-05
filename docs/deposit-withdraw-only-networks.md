@@ -30,7 +30,6 @@ Each node network config MUST include the existing node contract fields, includi
 - `rps`
 - `start_block_num`
 - `withdrawal_fee`
-- `deposit_min`
 - `withdrawal_min`
 
 Each deposit and withdraw only network config MUST include:
@@ -43,7 +42,6 @@ Each deposit and withdraw only network config MUST include:
 - `contracts.token_address`
 - `log_block_range`
 - `withdrawal_fee`
-- `deposit_min`
 - `withdrawal_min`
 
 `rps` limits the number of RPC requests Relay sends to the network per second. Relay MUST apply the network `rps` limiter to log queries, receipt reads, transaction reads, block reads, contract calls, and transaction submission for that network.

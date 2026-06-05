@@ -183,7 +183,7 @@ func processDepositWithdrawNetworkBlockRange(ctx context.Context, db *gorm.DB, c
 	if endBlock-startBlock+1 > networkConfig.LogBlockRange {
 		endBlock = startBlock + networkConfig.LogBlockRange - 1
 	}
-	log.Infof("Processing ERC20 deposit logs from %d to %d on %s", startBlock, endBlock, client.Network)
+	log.Debugf("Processing ERC20 deposit logs from %d to %d on %s", startBlock, endBlock, client.Network)
 	if err := processERC20DepositLogs(ctx, db, client, networkConfig, startBlock, endBlock); err != nil {
 		return err
 	}
@@ -271,7 +271,11 @@ func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain
 	if err != nil {
 		return err
 	}
-	return commitFunc()
+	if err := commitFunc(); err != nil {
+		return err
+	}
+	log.Infof("Processed ERC20 deposit from %s, amount: %s, tx: %s, network: %s", fromAddress, amount.String(), receiptLog.TxHash.Hex(), client.Network)
+	return nil
 }
 
 // processBlock processes a single block
