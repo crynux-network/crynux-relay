@@ -130,7 +130,7 @@ func processNodeNetworkBlockRange(ctx context.Context, db *gorm.DB, client *bloc
 		endBlock = startBlock + 10
 	}
 
-	log.Infof("Processing blocks from %d to %d on %s", startBlock, endBlock, client.Network)
+	log.Debugf("Processing blocks from %d to %d on %s", startBlock, endBlock, client.Network)
 
 	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
 		if err := processBlock(ctx, db, client, blockNum); err != nil {
