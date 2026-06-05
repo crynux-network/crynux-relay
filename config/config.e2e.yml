@@ -55,6 +55,9 @@ blockchains:
     sent_transaction_count_limit: 200
     delegated_staking_slash_batch_size: 20
     delegated_staking_read_page_size: 100
+    withdrawal_fee: 100
+    deposit_min: 1000
+    withdrawal_min: 10000
   near:
     rps: 20
     rpc_endpoint: "https://json-rpc.testnet-near.crynux.io"
@@ -77,6 +80,22 @@ blockchains:
     sent_transaction_count_limit: 200
     delegated_staking_slash_batch_size: 20
     delegated_staking_read_page_size: 100
+    withdrawal_fee: 100
+    deposit_min: 1000
+    withdrawal_min: 10000
+deposit_withdraw_networks:
+  base-sepolia:
+    rps: 20
+    rpc_endpoint: "http://localhost:8545"
+    start_block_num: 0
+    chain_id: 84532
+    contracts:
+      benefit_address: "0x0000000000000000000000000000000000000001"
+      token_address: "0x0000000000000000000000000000000000000002"
+    log_block_range: 1000
+    withdrawal_fee: 100
+    deposit_min: 1000
+    withdrawal_min: 10000
 task:
   stake_amount: 0
   distance_threshold: 0
@@ -89,8 +108,6 @@ task_schema:
   stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-finetune-lora-task.json"
 withdraw:
   relay_wallet_address: ""
-  min_withdrawal_amount: 10000
-  withdrawal_fee: 100
   withdrawal_fee_address: ""
 credits:
   api_auth_address: ""

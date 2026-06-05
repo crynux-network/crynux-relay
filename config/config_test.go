@@ -59,9 +59,15 @@ func TestInitConfigNormalizesPrivateKeyFromFile(t *testing.T) {
 	content := fmt.Sprintf(`environment: debug
 blockchains:
   testnet:
+    rps: 1
+    rpc_endpoint: "http://localhost:8545"
     account:
       address: %q
       private_key_file: %q
+    contracts:
+      benefit_address: "0x0000000000000000000000000000000000000001"
+      node_staking: "0x0000000000000000000000000000000000000002"
+      credits: "0x0000000000000000000000000000000000000003"
 http:
   jwt:
     secret_key_file: %q

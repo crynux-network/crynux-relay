@@ -20,7 +20,11 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	withdrawalFee := utils.EtherToWei(big.NewInt(0).SetUint64(appConfig.Withdraw.WithdrawalFee))
+	networkConfig, ok := appConfig.GetEffectiveFundingNetwork(network)
+	if !ok {
+		return nil, errors.New("unsupported withdraw network")
+	}
+	withdrawalFee := utils.EtherToWei(big.NewInt(0).SetUint64(networkConfig.WithdrawalFee))
 	if address == appConfig.Withdraw.WithdrawalFeeAddress || address == appConfig.Dao.TaskFeeShareAddress {
 		withdrawalFee = big.NewInt(0)
 	}

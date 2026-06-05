@@ -6,6 +6,77 @@ const (
 	EnvTest       = "test"
 )
 
+const (
+	FundingTokenTypeNative = "native"
+	FundingTokenTypeERC20  = "erc20"
+)
+
+type BlockchainAccountConfig struct {
+	Address        string `mapstructure:"address"`
+	PrivateKey     string `mapstructure:"private_key"`
+	PrivateKeyFile string `mapstructure:"private_key_file"`
+}
+
+type SystemBlockchainContractsConfig struct {
+	BenefitAddress   string `mapstructure:"benefit_address"`
+	NodeStaking      string `mapstructure:"node_staking"`
+	Credits          string `mapstructure:"credits"`
+	DelegatedStaking string `mapstructure:"delegated_staking"`
+}
+
+type SystemBlockchainConfig struct {
+	RPS                            uint64                          `mapstructure:"rps"`
+	RpcEndpoint                    string                          `mapstructure:"rpc_endpoint"`
+	StartBlockNum                  uint64                          `mapstructure:"start_block_num"`
+	GasLimit                       uint64                          `mapstructure:"gas_limit"`
+	GasPrice                       uint64                          `mapstructure:"gas_price"`
+	ChainID                        uint64                          `mapstructure:"chain_id"`
+	Account                        BlockchainAccountConfig         `mapstructure:"account"`
+	Contracts                      SystemBlockchainContractsConfig `mapstructure:"contracts"`
+	MaxRetries                     uint8                           `mapstructure:"max_retries"`
+	RetryInterval                  uint64                          `mapstructure:"retry_interval"`
+	SendWaitTime                   uint64                          `mapstructure:"send_wait_time"`
+	ReceiptWaitTime                uint64                          `mapstructure:"receipt_wait_time"`
+	SentTransactionCountLimit      uint64                          `mapstructure:"sent_transaction_count_limit"`
+	DelegatedStakingSlashBatchSize uint64                          `mapstructure:"delegated_staking_slash_batch_size"`
+	DelegatedStakingReadPageSize   uint64                          `mapstructure:"delegated_staking_read_page_size"`
+	WithdrawalFee                  uint64                          `mapstructure:"withdrawal_fee"`
+	DepositMin                     uint64                          `mapstructure:"deposit_min"`
+	WithdrawalMin                  uint64                          `mapstructure:"withdrawal_min"`
+}
+
+type DepositWithdrawNetworkContractsConfig struct {
+	BenefitAddress string `mapstructure:"benefit_address"`
+	TokenAddress   string `mapstructure:"token_address"`
+}
+
+type DepositWithdrawNetworkConfig struct {
+	RPS           uint64                                `mapstructure:"rps"`
+	RpcEndpoint   string                                `mapstructure:"rpc_endpoint"`
+	StartBlockNum uint64                                `mapstructure:"start_block_num"`
+	ChainID       uint64                                `mapstructure:"chain_id"`
+	Contracts     DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
+	LogBlockRange uint64                                `mapstructure:"log_block_range"`
+	WithdrawalFee uint64                                `mapstructure:"withdrawal_fee"`
+	DepositMin    uint64                                `mapstructure:"deposit_min"`
+	WithdrawalMin uint64                                `mapstructure:"withdrawal_min"`
+}
+
+type EffectiveFundingNetworkConfig struct {
+	Network        string
+	TokenType      string
+	RPS            uint64
+	RpcEndpoint    string
+	StartBlockNum  uint64
+	ChainID        uint64
+	BenefitAddress string
+	TokenAddress   string
+	LogBlockRange  uint64
+	WithdrawalFee  uint64
+	DepositMin     uint64
+	WithdrawalMin  uint64
+}
+
 type AppConfig struct {
 	Environment string `mapstructure:"environment"`
 
@@ -56,32 +127,8 @@ type AppConfig struct {
 		SlashedTasks   string `mapstructure:"slashed_tasks"`
 	} `mapstructure:"data_dir"`
 
-	Blockchains map[string]struct {
-		RPS           uint64 `mapstructure:"rps"`
-		RpcEndpoint   string `mapstructure:"rpc_endpoint"`
-		StartBlockNum uint64 `mapstructure:"start_block_num"`
-		GasLimit      uint64 `mapstructure:"gas_limit"`
-		GasPrice      uint64 `mapstructure:"gas_price"`
-		ChainID       uint64 `mapstructure:"chain_id"`
-		Account       struct {
-			Address        string `mapstructure:"address"`
-			PrivateKey     string `mapstructure:"private_key"`
-			PrivateKeyFile string `mapstructure:"private_key_file"`
-		} `mapstructure:"account"`
-		Contracts struct {
-			BenefitAddress   string `mapstructure:"benefit_address"`
-			NodeStaking      string `mapstructure:"node_staking"`
-			Credits          string `mapstructure:"credits"`
-			DelegatedStaking string `mapstructure:"delegated_staking"`
-		} `mapstructure:"contracts"`
-		MaxRetries                     uint8  `mapstructure:"max_retries"`
-		RetryInterval                  uint64 `mapstructure:"retry_interval"`
-		SendWaitTime                   uint64 `mapstructure:"send_wait_time"`
-		ReceiptWaitTime                uint64 `mapstructure:"receipt_wait_time"`
-		SentTransactionCountLimit      uint64 `mapstructure:"sent_transaction_count_limit"`
-		DelegatedStakingSlashBatchSize uint64 `mapstructure:"delegated_staking_slash_batch_size"`
-		DelegatedStakingReadPageSize   uint64 `mapstructure:"delegated_staking_read_page_size"`
-	} `mapstructure:"blockchains"`
+	Blockchains             map[string]SystemBlockchainConfig       `mapstructure:"blockchains"`
+	DepositWithdrawNetworks map[string]DepositWithdrawNetworkConfig `mapstructure:"deposit_withdraw_networks"`
 
 	Task struct {
 		StakeAmount              uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`

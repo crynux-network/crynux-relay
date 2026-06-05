@@ -4,12 +4,15 @@ import (
 	"crynux_relay/api/tools"
 	"crynux_relay/api/v1/middleware"
 	"crynux_relay/api/v1/response"
+	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/service"
 	"crynux_relay/utils"
 	"errors"
 	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
 
 	log "github.com/sirupsen/logrus"
@@ -55,9 +58,22 @@ func CreateWithdrawRequest(c *gin.Context, in *CreateWithdrawInput) (*CreateWith
 	}
 
 	appConfig := config.GetConfig()
-	minWithdrawalAmount := utils.EtherToWei(big.NewInt(0).SetUint64(appConfig.Withdraw.MinWithdrawalAmount))
+	networkConfig, ok := appConfig.GetEffectiveFundingNetwork(in.Network)
+	if !ok {
+		validationErr := response.NewValidationErrorResponse("network", "Unsupported withdraw network")
+		return nil, validationErr
+	}
+	minWithdrawalAmount := utils.EtherToWei(big.NewInt(0).SetUint64(networkConfig.WithdrawalMin))
 	if amount.Cmp(minWithdrawalAmount) < 0 {
 		validationErr := response.NewValidationErrorResponse("amount", "Amount is too small")
+		return nil, validationErr
+	}
+	expectedBenefitAddress, err := blockchain.GetBenefitAddress(c.Request.Context(), common.HexToAddress(in.Address), in.Network)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
+	if !common.IsHexAddress(in.BenefitAddress) || !strings.EqualFold(expectedBenefitAddress.Hex(), in.BenefitAddress) {
+		validationErr := response.NewValidationErrorResponse("benefit_address", "Benefit address mismatch")
 		return nil, validationErr
 	}
 
