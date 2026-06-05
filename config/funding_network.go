@@ -13,7 +13,6 @@ func (cfg *AppConfig) GetEffectiveFundingNetwork(network string) (EffectiveFundi
 			ChainID:        blockchain.ChainID,
 			BenefitAddress: blockchain.Contracts.BenefitAddress,
 			WithdrawalFee:  blockchain.WithdrawalFee,
-			DepositMin:     blockchain.DepositMin,
 			WithdrawalMin:  blockchain.WithdrawalMin,
 		}, true
 	}
@@ -30,7 +29,6 @@ func (cfg *AppConfig) GetEffectiveFundingNetwork(network string) (EffectiveFundi
 			TokenAddress:   networkConfig.Contracts.TokenAddress,
 			LogBlockRange:  networkConfig.LogBlockRange,
 			WithdrawalFee:  networkConfig.WithdrawalFee,
-			DepositMin:     networkConfig.DepositMin,
 			WithdrawalMin:  networkConfig.WithdrawalMin,
 		}, true
 	}

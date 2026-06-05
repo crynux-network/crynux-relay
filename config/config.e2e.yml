@@ -56,7 +56,6 @@ blockchains:
     delegated_staking_slash_batch_size: 20
     delegated_staking_read_page_size: 100
     withdrawal_fee: 100
-    deposit_min: 1000
     withdrawal_min: 10000
   near:
     rps: 20
@@ -81,7 +80,6 @@ blockchains:
     delegated_staking_slash_batch_size: 20
     delegated_staking_read_page_size: 100
     withdrawal_fee: 100
-    deposit_min: 1000
     withdrawal_min: 10000
 deposit_withdraw_networks:
   base-sepolia:
@@ -94,7 +92,6 @@ deposit_withdraw_networks:
       token_address: "0x0000000000000000000000000000000000000002"
     log_block_range: 1000
     withdrawal_fee: 100
-    deposit_min: 1000
     withdrawal_min: 10000
 task:
   stake_amount: 0
