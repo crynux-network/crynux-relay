@@ -97,6 +97,7 @@ func syncNodeNumber(ctx context.Context) error {
 	}
 
 	nodeNumber := models.NetworkNodeNumber{
+		Model:       gorm.Model{ID: 1},
 		BusyNodes:   uint64(busyNodes),
 		AllNodes:    uint64(allNodes),
 		ActiveNodes: uint64(activeNodes),
@@ -105,7 +106,14 @@ func syncNodeNumber(ctx context.Context) error {
 	if err := func() error {
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return config.GetDB().WithContext(dbCtx).Model(&nodeNumber).Where("id = ?", 1).Assign(nodeNumber).FirstOrCreate(&models.NetworkNodeNumber{}).Error
+		return config.GetDB().WithContext(dbCtx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"all_nodes":    nodeNumber.AllNodes,
+				"busy_nodes":   nodeNumber.BusyNodes,
+				"active_nodes": nodeNumber.ActiveNodes,
+			}),
+		}).Create(&nodeNumber).Error
 	}(); err != nil {
 		log.Errorf("SyncNetwork: error update NetworkNodeNumber %v", err)
 		return err
@@ -126,6 +134,7 @@ func syncTaskNumber(ctx context.Context) error {
 	}
 
 	taskNumber := models.NetworkTaskNumber{
+		Model:        gorm.Model{ID: 1},
 		RunningTasks: uint64(runningTasks),
 		QueuedTasks:  uint64(queuedTasks),
 	}
@@ -133,7 +142,13 @@ func syncTaskNumber(ctx context.Context) error {
 	if err := func() error {
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return config.GetDB().WithContext(dbCtx).Model(&taskNumber).Where("id = ?", 1).Assign(taskNumber).FirstOrCreate(&models.NetworkTaskNumber{}).Error
+		return config.GetDB().WithContext(dbCtx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"running_tasks": taskNumber.RunningTasks,
+				"queued_tasks":  taskNumber.QueuedTasks,
+			}),
+		}).Create(&taskNumber).Error
 	}(); err != nil {
 		log.Errorf("SyncNetwork: error update NetworkNodeNumber")
 		log.Error(err)
@@ -207,7 +222,13 @@ func syncNodeData(ctx context.Context) error {
 		}
 
 		networkFLOPS := models.NetworkFLOPS{GFLOPS: totalGFLOPS}
-		if err := config.GetDB().WithContext(ctx1).Model(&networkFLOPS).Where("id = ?", 1).Assign(networkFLOPS).FirstOrCreate(&models.NetworkFLOPS{}).Error; err != nil {
+		networkFLOPS.ID = 1
+		if err := config.GetDB().WithContext(ctx1).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"g_flops": networkFLOPS.GFLOPS,
+			}),
+		}).Create(&networkFLOPS).Error; err != nil {
 			log.Errorf("SyncNetwork: error updating NetworkFLOPS %v", err)
 			select {
 			case errChan <- err:
