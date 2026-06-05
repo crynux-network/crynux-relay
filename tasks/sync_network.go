@@ -107,12 +107,8 @@ func syncNodeNumber(ctx context.Context) error {
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		return config.GetDB().WithContext(dbCtx).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"all_nodes":    nodeNumber.AllNodes,
-				"busy_nodes":   nodeNumber.BusyNodes,
-				"active_nodes": nodeNumber.ActiveNodes,
-			}),
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
 		}).Create(&nodeNumber).Error
 	}(); err != nil {
 		log.Errorf("SyncNetwork: error update NetworkNodeNumber %v", err)
@@ -142,12 +138,9 @@ func syncTaskNumber(ctx context.Context) error {
 	if err := func() error {
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return config.GetDB().WithContext(dbCtx).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"running_tasks": taskNumber.RunningTasks,
-				"queued_tasks":  taskNumber.QueuedTasks,
-			}),
+		return config.GetDB().WithContext(dbCtx).Omit("TotalTasks").Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
 		}).Create(&taskNumber).Error
 	}(); err != nil {
 		log.Errorf("SyncNetwork: error update NetworkNodeNumber")
@@ -224,10 +217,8 @@ func syncNodeData(ctx context.Context) error {
 		networkFLOPS := models.NetworkFLOPS{GFLOPS: totalGFLOPS}
 		networkFLOPS.ID = 1
 		if err := config.GetDB().WithContext(ctx1).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"g_flops": networkFLOPS.GFLOPS,
-			}),
+			Columns:   []clause.Column{{Name: "id"}},
+			UpdateAll: true,
 		}).Create(&networkFLOPS).Error; err != nil {
 			log.Errorf("SyncNetwork: error updating NetworkFLOPS %v", err)
 			select {
