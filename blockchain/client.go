@@ -131,10 +131,51 @@ func initBlockchainClient(ctx context.Context, network string) error {
 	return nil
 }
 
+func initDepositWithdrawNetworkClient(ctx context.Context, network string) error {
+	appConfig := config.GetConfig()
+	networkConfig, exists := appConfig.DepositWithdrawNetworks[network]
+	if !exists {
+		return ErrBlockchainNotFound
+	}
+
+	client, err := ethclient.Dial(networkConfig.RpcEndpoint)
+	if err != nil {
+		return err
+	}
+
+	benefitAddressInstance, err := bindings.NewBenefitAddress(common.HexToAddress(networkConfig.Contracts.BenefitAddress), client)
+	if err != nil {
+		return err
+	}
+
+	chainID, err := initChainID(ctx, client, networkConfig.ChainID)
+	if err != nil {
+		return err
+	}
+
+	limiter := rate.NewLimiter(rate.Limit(networkConfig.RPS), int(networkConfig.RPS))
+
+	blockchainClients[network] = &BlockchainClient{
+		Network:                        network,
+		RpcClient:                      client,
+		RpcEndpoint:                    networkConfig.RpcEndpoint,
+		BenefitAddressContractInstance: benefitAddressInstance,
+		ChainID:                        chainID,
+		NonceMu:                        sync.Mutex{},
+		Limiter:                        limiter,
+	}
+	return nil
+}
+
 func Init(ctx context.Context) error {
 	appConfig := config.GetConfig()
 	for network := range appConfig.Blockchains {
 		if err := initBlockchainClient(ctx, network); err != nil {
+			return err
+		}
+	}
+	for network := range appConfig.DepositWithdrawNetworks {
+		if err := initDepositWithdrawNetworkClient(ctx, network); err != nil {
 			return err
 		}
 	}

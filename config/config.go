@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/viper"
 )
@@ -59,6 +60,9 @@ func InitConfig(configPath string) error {
 	if err := checkBlockchainAccount(); err != nil {
 		return err
 	}
+	if err := checkFundingNetworks(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -97,6 +101,50 @@ func checkBlockchainAccount() error {
 		}
 	}
 
+	return nil
+}
+
+func checkFundingNetworks() error {
+	if _, err := appConfig.AllBlockchainNetworks(); err != nil {
+		return err
+	}
+	for network, blockchain := range appConfig.Blockchains {
+		if blockchain.RPS == 0 {
+			return fmt.Errorf("blockchain %s rps not set", network)
+		}
+		if blockchain.RpcEndpoint == "" {
+			return fmt.Errorf("blockchain %s rpc endpoint not set", network)
+		}
+		if !common.IsHexAddress(blockchain.Contracts.BenefitAddress) {
+			return fmt.Errorf("blockchain %s benefit address contract is invalid", network)
+		}
+		if !common.IsHexAddress(blockchain.Contracts.NodeStaking) {
+			return fmt.Errorf("blockchain %s node staking contract is invalid", network)
+		}
+		if !common.IsHexAddress(blockchain.Contracts.Credits) {
+			return fmt.Errorf("blockchain %s credits contract is invalid", network)
+		}
+		if blockchain.Contracts.DelegatedStaking != "" && !common.IsHexAddress(blockchain.Contracts.DelegatedStaking) {
+			return fmt.Errorf("blockchain %s delegated staking contract is invalid", network)
+		}
+	}
+	for network, fundingNetwork := range appConfig.DepositWithdrawNetworks {
+		if fundingNetwork.RPS == 0 {
+			return fmt.Errorf("deposit withdraw network %s rps not set", network)
+		}
+		if fundingNetwork.RpcEndpoint == "" {
+			return fmt.Errorf("deposit withdraw network %s rpc endpoint not set", network)
+		}
+		if !common.IsHexAddress(fundingNetwork.Contracts.BenefitAddress) {
+			return fmt.Errorf("deposit withdraw network %s benefit address contract is invalid", network)
+		}
+		if !common.IsHexAddress(fundingNetwork.Contracts.TokenAddress) {
+			return fmt.Errorf("deposit withdraw network %s token address is invalid", network)
+		}
+		if fundingNetwork.LogBlockRange == 0 {
+			return fmt.Errorf("deposit withdraw network %s log block range not set", network)
+		}
+	}
 	return nil
 }
 

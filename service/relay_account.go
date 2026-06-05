@@ -32,6 +32,11 @@ var relayAccountCache = &relayAccountCacheType{
 	accounts: make(map[string]*big.Int),
 }
 
+type depositTxData struct {
+	FromAddress string
+	Amount      *big.Int
+}
+
 func splitRelayAccountEventReason(eventType models.RelayAccountEventType, reason string) ([]string, bool) {
 	eventTypeStr := fmt.Sprintf("%d", eventType)
 	if eventType == models.RelayAccountEventTypeDeposit || eventType == models.RelayAccountEventTypeUserDelegation {
@@ -256,10 +261,6 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 		relayBalanceMap[account.Address] = new(big.Int).Set(&account.Balance.Int)
 	}
 
-	type depositTxData struct {
-		FromAddress string
-		Amount      *big.Int
-	}
 	validDepositTxs := make(map[string]depositTxData)
 	appConfig := config.GetConfig()
 	for _, depositReason := range depositReasonByEventID {
@@ -283,20 +284,46 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			continue
 		}
-		transfer, err := client.GetTransactionTransfer(ctx, common.HexToHash(txHash))
-		if errors.Is(err, ethereum.NotFound) {
+		networkConfig, ok := appConfig.GetEffectiveFundingNetwork(network)
+		if !ok {
 			continue
 		}
-		if err != nil {
-			return nil, nil, err
-		}
-		if !isRelayAccountDepositTransfer(transfer, appConfig.RelayAccount.DepositAddress) {
+		var depositTx depositTxData
+		switch networkConfig.TokenType {
+		case config.FundingTokenTypeNative:
+			transfer, err := client.GetTransactionTransfer(ctx, common.HexToHash(txHash))
+			if errors.Is(err, ethereum.NotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			if !isRelayAccountDepositTransfer(transfer, appConfig.RelayAccount.DepositAddress) {
+				continue
+			}
+			depositTx = depositTxData{
+				FromAddress: transfer.From.Hex(),
+				Amount:      transfer.Value,
+			}
+		case config.FundingTokenTypeERC20:
+			depositTx, ok = validateERC20RelayAccountDepositReceipt(receipt, client, networkConfig, appConfig.RelayAccount.DepositAddress)
+			if !ok {
+				continue
+			}
+			transfer, err := client.GetTransactionTransfer(ctx, common.HexToHash(txHash))
+			if errors.Is(err, ethereum.NotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			if !strings.EqualFold(transfer.From.Hex(), depositTx.FromAddress) {
+				continue
+			}
+		default:
 			continue
 		}
-		validDepositTxs[key] = depositTxData{
-			FromAddress: transfer.From.Hex(),
-			Amount:      transfer.Value,
-		}
+		validDepositTxs[key] = depositTx
 	}
 
 	validEvents := make([]models.RelayAccountEvent, 0, len(candidateEvents))
@@ -446,6 +473,28 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 	}
 
 	return validEvents, invalidEvents, nil
+}
+
+func validateERC20RelayAccountDepositReceipt(receipt *types.Receipt, client *blockchain.BlockchainClient, networkConfig config.EffectiveFundingNetworkConfig, depositAddress string) (depositTxData, bool) {
+	var zero depositTxData
+	for _, receiptLog := range receipt.Logs {
+		if len(receiptLog.Topics) != 3 ||
+			receiptLog.Topics[0] != erc20TransferTopic ||
+			!strings.EqualFold(receiptLog.Address.Hex(), networkConfig.TokenAddress) ||
+			receiptLog.Topics[2] != addressTopic(depositAddress) ||
+			len(receiptLog.Data) != 32 {
+			continue
+		}
+		amount := new(big.Int).SetBytes(receiptLog.Data)
+		if amount.Sign() <= 0 {
+			continue
+		}
+		return depositTxData{
+			FromAddress: common.BytesToAddress(receiptLog.Topics[1].Bytes()).Hex(),
+			Amount:      amount,
+		}, true
+	}
+	return zero, false
 }
 
 func mergeRelayAccountEvents(events []models.RelayAccountEvent) map[string]*big.Int {

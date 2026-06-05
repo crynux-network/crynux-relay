@@ -13,32 +13,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	log "github.com/sirupsen/logrus"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// StartBlockListener starts the native token transfer listener
-func StartBlockListener(ctx context.Context) {
+// StartBlockchainProcessors starts one chain processor per configured blockchain network.
+func StartBlockchainProcessors(ctx context.Context) {
 	appConfig := config.GetConfig()
 
-	// Start the listener goroutine
 	for network := range appConfig.Blockchains {
 		go func(network string) {
-			if err := runBlockListener(ctx, config.GetDB(), network); err != nil {
-				log.Errorf("Native token listener failed: %v", err)
+			if err := runNodeBlockchainProcessor(ctx, config.GetDB(), network); err != nil {
+				log.Errorf("Node blockchain processor failed: %v", err)
+			}
+		}(network)
+	}
+	for network := range appConfig.DepositWithdrawNetworks {
+		go func(network string) {
+			if err := runDepositWithdrawBlockchainProcessor(ctx, config.GetDB(), network); err != nil {
+				log.Errorf("Deposit withdraw blockchain processor failed: %v", err)
 			}
 		}(network)
 	}
 
-	log.Info("Native token listener started")
+	log.Info("Blockchain processors started")
 }
 
-// runBlockListener runs the native token transfer listener
-func runBlockListener(ctx context.Context, db *gorm.DB, network string) error {
+// runNodeBlockchainProcessor runs block scanning for a node blockchain network.
+func runNodeBlockchainProcessor(ctx context.Context, db *gorm.DB, network string) error {
 	ticker := time.NewTicker(5 * time.Second) // Check for new blocks every 5 seconds
 	defer ticker.Stop()
 
@@ -52,43 +60,77 @@ func runBlockListener(ctx context.Context, db *gorm.DB, network string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := processNewBlocks(ctx, db, client); err != nil {
-				log.Errorf("Failed to process new blocks: %v", err)
+			if err := processNodeNetworkBlockRange(ctx, db, client); err != nil {
+				log.Errorf("Failed to process node network block range: %v", err)
 			}
 		}
 	}
 }
 
-// processNewBlocks processes new blocks
-func processNewBlocks(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient) error {
+// runDepositWithdrawBlockchainProcessor runs ERC20 log scanning for a deposit and withdraw only network.
+func runDepositWithdrawBlockchainProcessor(ctx context.Context, db *gorm.DB, network string) error {
+	ticker := time.NewTicker(5 * time.Second) // Check for new blocks every 5 seconds
+	defer ticker.Stop()
+
+	client, err := blockchain.GetBlockchainClient(network)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := processDepositWithdrawNetworkBlockRange(ctx, db, client); err != nil {
+				log.Errorf("Failed to process deposit withdraw network block range: %v", err)
+			}
+		}
+	}
+}
+
+func latestBlockNumber(ctx context.Context, client *blockchain.BlockchainClient) (uint64, error) {
 	// Get current block height
 	latestBlockNum, err := client.RpcClient.BlockNumber(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get latest block: %w", err)
+		return 0, fmt.Errorf("failed to get latest block: %w", err)
+	}
+	return latestBlockNum, nil
+}
+
+// processNodeNetworkBlockRange processes the next unprocessed block range for a node network.
+func processNodeNetworkBlockRange(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient) error {
+	latestBlockNum, err := latestBlockNumber(ctx, client)
+	if err != nil {
+		return err
 	}
 
-	// Get listener status
-	listener, err := models.GetBlockListener(ctx, db, client.Network)
+	appConfig := config.GetConfig()
+	networkConfig, ok := appConfig.Blockchains[client.Network]
+	if !ok {
+		return fmt.Errorf("network %s not found", client.Network)
+	}
+
+	cursor, err := models.GetBlockchainCursor(ctx, db, client.Network, networkConfig.StartBlockNum)
 	if err != nil {
 		return err
 	}
 
 	// If already at the latest block, skip
-	if listener.LastBlockNum >= latestBlockNum {
+	if cursor.LastBlockNum >= latestBlockNum {
 		return nil
 	}
 
-	// Process new blocks
-	processedBlock := listener.LastBlockNum
-	startBlock := listener.LastBlockNum + 1
+	processedBlock := cursor.LastBlockNum
+	startBlock := cursor.LastBlockNum + 1
 	endBlock := latestBlockNum
 
-	// Limit the number of blocks processed each time to avoid long processing time
+	// Limit the number of blocks processed each time to avoid long processing time.
 	if endBlock-startBlock > 10 {
 		endBlock = startBlock + 10
 	}
 
-	log.Infof("Processing blocks from %d to %d", startBlock, endBlock)
+	log.Infof("Processing blocks from %d to %d on %s", startBlock, endBlock, client.Network)
 
 	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
 		if err := processBlock(ctx, db, client, blockNum); err != nil {
@@ -98,15 +140,138 @@ func processNewBlocks(ctx context.Context, db *gorm.DB, client *blockchain.Block
 		processedBlock = blockNum
 	}
 
-	// Update listener status
-	if err := db.Model(&listener).Updates(map[string]interface{}{
+	// Update cursor status
+	if err := db.Model(&cursor).Updates(map[string]interface{}{
 		"last_block_num":   processedBlock,
 		"last_update_time": time.Now(),
 	}).Error; err != nil {
-		return fmt.Errorf("failed to update block listener: %w", err)
+		return fmt.Errorf("failed to update blockchain cursor: %w", err)
 	}
 
 	return nil
+}
+
+// processDepositWithdrawNetworkBlockRange processes the next ERC20 log range for a deposit and withdraw only network.
+func processDepositWithdrawNetworkBlockRange(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient) error {
+	latestBlockNum, err := latestBlockNumber(ctx, client)
+	if err != nil {
+		return err
+	}
+
+	appConfig := config.GetConfig()
+	networkConfig, ok := appConfig.DepositWithdrawNetworks[client.Network]
+	if !ok {
+		return fmt.Errorf("deposit withdraw network %s not found", client.Network)
+	}
+
+	cursor, err := models.GetBlockchainCursor(ctx, db, client.Network, networkConfig.StartBlockNum)
+	if err != nil {
+		return err
+	}
+
+	if cursor.LastBlockNum >= latestBlockNum {
+		return nil
+	}
+
+	processedBlock := cursor.LastBlockNum
+	startBlock := cursor.LastBlockNum + 1
+	endBlock := latestBlockNum
+
+	if networkConfig.LogBlockRange == 0 {
+		return fmt.Errorf("deposit withdraw network %s log block range not configured", client.Network)
+	}
+	if endBlock-startBlock+1 > networkConfig.LogBlockRange {
+		endBlock = startBlock + networkConfig.LogBlockRange - 1
+	}
+	log.Infof("Processing ERC20 deposit logs from %d to %d on %s", startBlock, endBlock, client.Network)
+	if err := processERC20DepositLogs(ctx, db, client, networkConfig, startBlock, endBlock); err != nil {
+		return err
+	}
+	processedBlock = endBlock
+
+	if err := db.Model(&cursor).Updates(map[string]interface{}{
+		"last_block_num":   processedBlock,
+		"last_update_time": time.Now(),
+	}).Error; err != nil {
+		return fmt.Errorf("failed to update blockchain cursor: %w", err)
+	}
+
+	return nil
+}
+
+var erc20TransferTopic = crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
+
+func addressTopic(address string) common.Hash {
+	return common.BytesToHash(common.HexToAddress(address).Bytes())
+}
+
+func processERC20DepositLogs(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient, networkConfig config.DepositWithdrawNetworkConfig, startBlock, endBlock uint64) error {
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(startBlock)),
+		ToBlock:   big.NewInt(int64(endBlock)),
+		Addresses: []common.Address{common.HexToAddress(networkConfig.Contracts.TokenAddress)},
+		Topics: [][]common.Hash{
+			{erc20TransferTopic},
+			nil,
+			{addressTopic(config.GetConfig().RelayAccount.DepositAddress)},
+		},
+	}
+	if err := client.Limiter.Wait(ctx); err != nil {
+		return err
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	logs, err := client.RpcClient.FilterLogs(callCtx, query)
+	if err != nil {
+		return err
+	}
+	for _, receiptLog := range logs {
+		if err := processERC20DepositLog(ctx, db, client, networkConfig, receiptLog); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient, networkConfig config.DepositWithdrawNetworkConfig, receiptLog types.Log) error {
+	if len(receiptLog.Topics) != 3 ||
+		receiptLog.Topics[0] != erc20TransferTopic ||
+		!strings.EqualFold(receiptLog.Address.Hex(), networkConfig.Contracts.TokenAddress) ||
+		receiptLog.Topics[2] != addressTopic(config.GetConfig().RelayAccount.DepositAddress) {
+		return nil
+	}
+	amount := new(big.Int).SetBytes(receiptLog.Data)
+	if amount.Sign() <= 0 {
+		return nil
+	}
+	fromAddress := common.BytesToAddress(receiptLog.Topics[1].Bytes()).Hex()
+
+	receipt, err := client.RpcClient.TransactionReceipt(ctx, receiptLog.TxHash)
+	if err != nil {
+		return err
+	}
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return nil
+	}
+	transfer, err := client.GetTransactionTransfer(ctx, receiptLog.TxHash)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(transfer.From.Hex(), fromAddress) {
+		return nil
+	}
+	event, err := models.GetRelayAccountDepositEvent(ctx, db, receiptLog.TxHash.Hex(), client.Network)
+	if err != nil {
+		return err
+	}
+	if event != nil {
+		return nil
+	}
+	commitFunc, err := depositRelayAccount(ctx, db, receiptLog.TxHash.Hex(), fromAddress, amount, client.Network)
+	if err != nil {
+		return err
+	}
+	return commitFunc()
 }
 
 // processBlock processes a single block

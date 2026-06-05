@@ -1,6 +1,6 @@
 # Multi-Chain Event Handling
 
-Relay MUST start one block listener for each configured blockchain network. Each listener MUST process only its own network and MUST advance the `block_listeners.network` cursor for that network independently.
+Relay MUST start one blockchain processor for each configured blockchain network. Each processor MUST process only its own network and MUST advance the `blockchain_cursors.network` cursor for that network independently.
 
 Relay node join is address-scoped. One node address MUST be joined to at most one blockchain network where it can receive and execute tasks, and that joined network is the node row's current `network`. Relay MUST reject a join request for a node address when an existing node row for that address is not `Quit`, including when the requested join network differs from the existing node row's network.
 
@@ -20,7 +20,7 @@ If a node quits one network and later joins another network, the new join MUST r
 
 ## Event Projection Guard
 
-Block listener handlers for node-address events MUST mutate Relay projection state only when the event network matches the node row's current Relay network.
+Blockchain processor handlers for node-address events MUST mutate Relay projection state only when the event network matches the node row's current Relay network.
 
 This guard applies to operator staking, delegated staking, delegated unstaking, delegator share changes, and delegated staking cleanup after node slashing. Matching-network `NodeSlashed` events MUST clear delegated staking projection after chain confirmation even when the node is already locally marked `Quit`.
 

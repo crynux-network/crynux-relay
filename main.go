@@ -58,7 +58,7 @@ func main() {
 	tm := blockchain.NewTransactionManager(config.GetDB())
 	tm.Start(context.Background())
 
-	service.StartBlockListener(context.Background())
+	service.StartBlockchainProcessors(context.Background())
 	service.StartDelegatedSlashRecovery(context.Background(), config.GetDB())
 	go service.StartTaskProcesser(context.Background())
 	go service.StartRelayAccountSync(context.Background(), config.GetDB())

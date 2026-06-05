@@ -99,7 +99,7 @@ func TestRelayAccountDepositTransferRequiresPositiveValueAndEmptyInput(t *testin
 	}
 }
 
-func setupBlockListenerTestDB(t *testing.T) *gorm.DB {
+func setupBlockchainProcessorTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -120,11 +120,11 @@ func setupBlockListenerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("CREATE UNIQUE INDEX idx_network_node_data_address_test ON network_node_data(address)").Error; err != nil {
 		t.Fatalf("failed to create network node data address index: %v", err)
 	}
-	resetBlockListenerTestCaches()
+	resetBlockchainProcessorTestCaches()
 	return db
 }
 
-func resetBlockListenerTestCaches() {
+func resetBlockchainProcessorTestCaches() {
 	globalDelegationCaches = map[string]*delegationCache{
 		"network-a": newTestDelegationCache(),
 		"network-b": newTestDelegationCache(),
@@ -176,7 +176,7 @@ func countEvents(t *testing.T, db *gorm.DB) int64 {
 
 func TestNodeStakedSkipsMismatchedNetwork(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
 
@@ -206,7 +206,7 @@ func TestNodeStakedSkipsMismatchedNetwork(t *testing.T) {
 
 func TestDelegatorStakedSkipsMismatchedNetwork(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
@@ -237,7 +237,7 @@ func TestDelegatorStakedSkipsMismatchedNetwork(t *testing.T) {
 
 func TestDelegatorStakedWithZeroShareAffectsEffectiveCache(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	node := seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
@@ -271,7 +271,7 @@ func TestDelegatorStakedWithZeroShareAffectsEffectiveCache(t *testing.T) {
 
 func TestDelegatorUnstakedSkipsMismatchedNetwork(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
@@ -312,7 +312,7 @@ func TestDelegatorUnstakedSkipsMismatchedNetwork(t *testing.T) {
 
 func TestChangeNodeDelegatorShareSkipsMismatchedAndUnknownNodes(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	unknownAddress := common.HexToAddress("0x00000000000000000000000000000000000000CC")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
@@ -344,7 +344,7 @@ func TestChangeNodeDelegatorShareSkipsMismatchedAndUnknownNodes(t *testing.T) {
 
 func TestChangeNodeDelegatorShareZeroKeepsEffectiveDelegation(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
@@ -388,7 +388,7 @@ func TestChangeNodeDelegatorShareZeroKeepsEffectiveDelegation(t *testing.T) {
 
 func TestDelegatorSlashedClearsMatchingNetworkDelegationForQuitNode(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusQuit, 0)
@@ -440,7 +440,7 @@ func TestDelegatorSlashedClearsMatchingNetworkDelegationForQuitNode(t *testing.T
 
 func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	staleDelegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000CC")
@@ -524,7 +524,7 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 
 func TestSetNodeStatusJoinWithZeroShareKeepsDelegationsInEffectiveCache(t *testing.T) {
 	ctx := context.Background()
-	db := setupBlockListenerTestDB(t)
+	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	node := seedTestNode(t, db, nodeAddress.Hex(), "network-b", models.NodeStatusQuit, 10)
