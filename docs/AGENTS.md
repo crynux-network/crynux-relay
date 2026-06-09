@@ -16,6 +16,7 @@
 | [multi-chain-events.md](./multi-chain-events.md) | Multi-chain blockchain processor guards, address-scoped node membership, and join-time staking state rebuild |
 | [relay_account_event_cache_flow.md](./relay_account_event_cache_flow.md) | End-to-end relay account flow from event creation to in-memory cache mutation and DB projection for task and withdraw paths |
 | [portal_netstats_chart.md](./portal_netstats_chart.md) | Portal netstats chart inventory, data sources, and aggregation logic |
+| [emission.md](./emission.md) | Emission week boundaries, task fee allocation, vesting creation and release, and chart aggregation |
 
 ## Doc Update Requirements
 
