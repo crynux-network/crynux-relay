@@ -69,6 +69,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("404", "Not found", response.NotFoundErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetDelegations, 200))
+	delegatedStakingGroup.GET("/nodes/:address/emission/chart", []fizz.OperationOption{
+		fizz.ID("get_delegated_node_emission_chart_v2"),
+		fizz.Summary("Get weekly emission chart for delegated node"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("403", "access denied", response.ErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.GetNodeEmissionChart, 200))
 
 	relayAccountGroup := v2g.Group("relay_account", "relay_account", "relay account related APIs")
 	relayAccountGroup.GET("/:address/vesting/locked", []fizz.OperationOption{
@@ -83,6 +89,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetVestingRecords, 200))
+	relayAccountGroup.GET("/:address/emission/chart", []fizz.OperationOption{
+		fizz.ID("relay_account_emission_chart_v2"),
+		fizz.Summary("Get weekly emission chart for relay account"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetEmissionChart, 200))
 
 	adminGroup := v2g.Group("admin", "admin", "Admin APIs")
 	adminNodesGroup := adminGroup.Group("nodes", "admin nodes", "Admin node management APIs")

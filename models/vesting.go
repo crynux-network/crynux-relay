@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -129,4 +130,19 @@ func ParseVestingReleaseReason(reason string) (uint, *big.Int, *big.Int, bool) {
 		return 0, nil, nil, false
 	}
 	return uint(vestingID), fromReleased, toReleased, true
+}
+
+func ListVestingRecordsByAddressAndStartTimeRange(ctx context.Context, db *gorm.DB, address string, startTime, endTime time.Time) ([]VestingRecord, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var records []VestingRecord
+	if err := db.WithContext(dbCtx).
+		Model(&VestingRecord{}).
+		Where("address = ?", address).
+		Where("start_time >= ? AND start_time < ?", startTime, endTime).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
 }
