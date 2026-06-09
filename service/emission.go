@@ -9,6 +9,8 @@ import (
 const (
 	emissionWeeksPerYear = 52
 	maxEmissionYear      = 20
+	defaultChartWeeks    = 24
+	maxChartWeeks        = 260
 )
 
 var (
@@ -16,6 +18,7 @@ var (
 	ErrInvalidMainnetStart     = errors.New("dao.mainnet_start_time must be RFC3339 format")
 	ErrNoCompletedEmissionWeek = errors.New("no completed emission week yet")
 	ErrEmissionWeekOutOfRange  = errors.New("emission week is out of Year 1-20 range")
+	ErrInvalidChartWeeks       = errors.New("weeks must be between 1 and 260")
 )
 
 // weeklyEmissionCNXByYear stores tokenomics weekly emissions for Year 1 to Year 20.
@@ -33,6 +36,13 @@ type EmissionWeekInfo struct {
 	WeekEndDate         time.Time
 	WeeklyEmissionCNX   int64
 	NodeEmissionPoolCNX int64
+}
+
+type EmissionChartRange struct {
+	MainnetWeekStart time.Time
+	RangeStart       time.Time
+	RangeEnd         time.Time
+	WeekStarts       []time.Time
 }
 
 func GetPreviousEmissionWeekInfo(now time.Time, mainnetStartTime string) (*EmissionWeekInfo, error) {
@@ -75,7 +85,13 @@ func GetPreviousEmissionWeekInfo(now time.Time, mainnetStartTime string) (*Emiss
 	}, nil
 }
 
-func parseMainnetStartDate(raw string) (time.Time, error) {
+func NormalizeToUTCWeekStart(t time.Time) time.Time {
+	utcDay := t.UTC().Truncate(24 * time.Hour)
+	offset := (int(utcDay.Weekday()) + 6) % 7
+	return utcDay.AddDate(0, 0, -offset)
+}
+
+func ParseMainnetAlignedWeekStart(raw string) (time.Time, error) {
 	if raw == "" {
 		return time.Time{}, ErrMainnetStartTimeNotSet
 	}
@@ -83,5 +99,80 @@ func parseMainnetStartDate(raw string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("%w: %v", ErrInvalidMainnetStart, err)
 	}
-	return t.UTC().Truncate(24 * time.Hour), nil
+	return NormalizeToUTCWeekStart(t), nil
+}
+
+func ClampChartWeeks(weeks *int) (int, error) {
+	value := defaultChartWeeks
+	if weeks != nil {
+		value = *weeks
+	}
+	if value <= 0 || value > maxChartWeeks {
+		return 0, ErrInvalidChartWeeks
+	}
+	return value, nil
+}
+
+func BuildEmissionChartRange(now time.Time, mainnetStartTime string, weeks int) (*EmissionChartRange, error) {
+	if weeks <= 0 || weeks > maxChartWeeks {
+		return nil, ErrInvalidChartWeeks
+	}
+
+	mainnetWeekStart, err := ParseMainnetAlignedWeekStart(mainnetStartTime)
+	if err != nil {
+		return nil, err
+	}
+
+	today := now.UTC().Truncate(24 * time.Hour)
+	elapsedDays := int(today.Sub(mainnetWeekStart) / (24 * time.Hour))
+	if elapsedDays <= 0 {
+		return &EmissionChartRange{
+			MainnetWeekStart: mainnetWeekStart,
+			RangeStart:       mainnetWeekStart,
+			RangeEnd:         mainnetWeekStart,
+			WeekStarts:       []time.Time{},
+		}, nil
+	}
+
+	completedWeeks := elapsedDays / 7
+	currentWeekStart := mainnetWeekStart.AddDate(0, 0, completedWeeks*7)
+	if completedWeeks <= 0 {
+		return &EmissionChartRange{
+			MainnetWeekStart: mainnetWeekStart,
+			RangeStart:       currentWeekStart,
+			RangeEnd:         currentWeekStart,
+			WeekStarts:       []time.Time{},
+		}, nil
+	}
+
+	if weeks > completedWeeks {
+		weeks = completedWeeks
+	}
+	rangeStart := currentWeekStart.AddDate(0, 0, -weeks*7)
+	weekStarts := make([]time.Time, 0, weeks)
+	for i := 0; i < weeks; i++ {
+		weekStarts = append(weekStarts, rangeStart.AddDate(0, 0, i*7))
+	}
+
+	return &EmissionChartRange{
+		MainnetWeekStart: mainnetWeekStart,
+		RangeStart:       rangeStart,
+		RangeEnd:         currentWeekStart,
+		WeekStarts:       weekStarts,
+	}, nil
+}
+
+func AlignToMainnetEmissionWeekStart(vestingStartTime, mainnetWeekStart time.Time) (time.Time, bool) {
+	normalizedVestingStart := NormalizeToUTCWeekStart(vestingStartTime)
+	if normalizedVestingStart.Before(mainnetWeekStart) {
+		return time.Time{}, false
+	}
+
+	elapsedDays := int(normalizedVestingStart.Sub(mainnetWeekStart) / (24 * time.Hour))
+	weekIndex := elapsedDays / 7
+	return mainnetWeekStart.AddDate(0, 0, weekIndex*7), true
+}
+
+func parseMainnetStartDate(raw string) (time.Time, error) {
+	return ParseMainnetAlignedWeekStart(raw)
 }

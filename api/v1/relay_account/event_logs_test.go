@@ -71,6 +71,7 @@ func TestBuildEventPayloadVestingCreatedUsesCreationSnapshot(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(500)},
 		StartTime:      startTime,
 		DurationDays:   10,
+		Type:           models.VestingTypeNode,
 		Source:         "airdrop",
 		ExternalID:     "item-1",
 		AdminSignature: "0xsig",

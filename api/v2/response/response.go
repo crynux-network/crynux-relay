@@ -87,6 +87,11 @@ func TonicErrorResponse(ctx *gin.Context, err error) (int, interface{}) {
 		return 404, notFoundError
 	}
 
+	accessDeniedError := &AccessDeniedErrorResponse{}
+	if errors.As(err, &accessDeniedError) {
+		return 403, accessDeniedError
+	}
+
 	if err, ok := err.(ErrorResponseMessage); ok {
 		return 400, err
 	}

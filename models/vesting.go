@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -17,6 +18,12 @@ const (
 	VestingStatusCompleted
 )
 
+const (
+	VestingTypeNode       = "node"
+	VestingTypeDelegation = "delegation"
+	VestingTypeOther      = "other"
+)
+
 type VestingRecord struct {
 	gorm.Model
 	Address        string        `json:"address" gorm:"not null;index"`
@@ -24,6 +31,7 @@ type VestingRecord struct {
 	ReleasedAmount BigInt        `json:"released_amount" gorm:"not null"`
 	StartTime      time.Time     `json:"start_time" gorm:"not null;index"`
 	DurationDays   uint          `json:"duration_days" gorm:"not null"`
+	Type           string        `json:"type" gorm:"not null;size:32;index"`
 	Source         string        `json:"source" gorm:"not null;size:64;uniqueIndex:idx_vesting_source_external_id"`
 	ExternalID     string        `json:"external_id" gorm:"not null;size:128;uniqueIndex:idx_vesting_source_external_id"`
 	AdminSignature string        `json:"admin_signature" gorm:"not null;size:255"`
@@ -37,6 +45,7 @@ type VestingCreatedReasonPayload struct {
 	ReleasedAmount string `json:"released_amount"`
 	StartTime      int64  `json:"start_time"`
 	DurationDays   uint   `json:"duration_days"`
+	Type           string `json:"type"`
 	Source         string `json:"source"`
 	ExternalID     string `json:"external_id"`
 	AdminSignature string `json:"admin_signature"`
@@ -86,6 +95,7 @@ func BuildVestingCreatedPayload(record VestingRecord) VestingCreatedReasonPayloa
 		ReleasedAmount: "0",
 		StartTime:      record.StartTime.Unix(),
 		DurationDays:   record.DurationDays,
+		Type:           record.Type,
 		Source:         record.Source,
 		ExternalID:     record.ExternalID,
 		AdminSignature: record.AdminSignature,
@@ -129,4 +139,54 @@ func ParseVestingReleaseReason(reason string) (uint, *big.Int, *big.Int, bool) {
 		return 0, nil, nil, false
 	}
 	return uint(vestingID), fromReleased, toReleased, true
+}
+
+func ListVestingRecordsByAddressAndStartTimeRange(ctx context.Context, db *gorm.DB, address string, startTime, endTime time.Time) ([]VestingRecord, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var records []VestingRecord
+	if err := db.WithContext(dbCtx).
+		Model(&VestingRecord{}).
+		Where("address = ?", address).
+		Where("start_time >= ? AND start_time < ?", startTime, endTime).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func ListVestingRecordsByAddressAndTypeAndStartTimeRange(ctx context.Context, db *gorm.DB, address, vestingType string, startTime, endTime time.Time) ([]VestingRecord, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var records []VestingRecord
+	if err := db.WithContext(dbCtx).
+		Model(&VestingRecord{}).
+		Where("address = ?", address).
+		Where("type = ?", vestingType).
+		Where("start_time >= ? AND start_time < ?", startTime, endTime).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func ListVestingRecordsByAddressAndTypesAndStartTimeRange(ctx context.Context, db *gorm.DB, address string, vestingTypes []string, startTime, endTime time.Time) ([]VestingRecord, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	query := db.WithContext(dbCtx).
+		Model(&VestingRecord{}).
+		Where("address = ?", address).
+		Where("start_time >= ? AND start_time < ?", startTime, endTime)
+	if len(vestingTypes) > 0 {
+		query = query.Where("type IN (?)", vestingTypes)
+	}
+
+	var records []VestingRecord
+	if err := query.Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
 }

@@ -137,7 +137,7 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 		}
 		participants = append(participants, emissionTaskFeeParticipant{
 			Address: row.Address,
-			Type:    "delegator",
+			Type:    models.VestingTypeDelegation,
 			TaskFee: taskFee,
 		})
 	}
