@@ -33,11 +33,27 @@ func TestNormalizeVestingInputRejectsAmountAboveUint256(t *testing.T) {
 		TotalAmount:  tooLargeAmount.String(),
 		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		DurationDays: 10,
+		Type:         models.VestingTypeNode,
 		Source:       "airdrop",
 		ExternalID:   "item-1",
 	})
 	if err != ErrInvalidVestingAmount {
 		t.Fatalf("expected ErrInvalidVestingAmount, got %v", err)
+	}
+}
+
+func TestNormalizeVestingInputRejectsInvalidType(t *testing.T) {
+	_, _, err := normalizeVestingInput(CreateVestingRecordInput{
+		Address:      "0x0000000000000000000000000000000000000001",
+		TotalAmount:  "1000",
+		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		DurationDays: 10,
+		Type:         "invalid",
+		Source:       "airdrop",
+		ExternalID:   "item-1",
+	})
+	if err != ErrInvalidVestingType {
+		t.Fatalf("expected ErrInvalidVestingType, got %v", err)
 	}
 }
 
@@ -51,6 +67,7 @@ func TestProcessDueVestingReleasesSkipsWhenPendingReleaseExists(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(200)},
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
+		Type:           models.VestingTypeNode,
 		Source:         "airdrop",
 		ExternalID:     "item-1",
 		AdminSignature: "0xsig",
@@ -129,6 +146,7 @@ func TestGetAddressLockedVestingAmountOnlyCountsActiveRecords(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
+		Type:           models.VestingTypeNode,
 		Source:         "airdrop",
 		ExternalID:     "active-1",
 		AdminSignature: "0xsig",
@@ -140,6 +158,7 @@ func TestGetAddressLockedVestingAmountOnlyCountsActiveRecords(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
+		Type:           models.VestingTypeNode,
 		Source:         "airdrop",
 		ExternalID:     "completed-1",
 		AdminSignature: "0xsig",

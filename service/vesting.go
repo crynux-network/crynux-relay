@@ -22,6 +22,7 @@ var (
 	ErrInvalidVestingDuration        = errors.New("invalid vesting duration")
 	ErrInvalidVestingSignature       = errors.New("invalid vesting signature")
 	ErrInvalidVestingSigner          = errors.New("invalid vesting signer")
+	ErrInvalidVestingType            = errors.New("invalid vesting type")
 	ErrInvalidVestingSource          = errors.New("invalid vesting source")
 	ErrInvalidVestingExternalID      = errors.New("invalid vesting external id")
 	ErrVestingSignerAddressNotSet    = errors.New("vesting signer address not set")
@@ -35,6 +36,7 @@ type CreateVestingRecordInput struct {
 	TotalAmount    string `json:"total_amount"`
 	StartTime      int64  `json:"start_time"`
 	DurationDays   uint   `json:"duration_days"`
+	Type           string `json:"type"`
 	Source         string `json:"source"`
 	ExternalID     string `json:"external_id"`
 	AdminSignature string `json:"admin_signature"`
@@ -45,6 +47,7 @@ type vestingSignPayload struct {
 	TotalAmount  string `json:"total_amount"`
 	StartTime    int64  `json:"start_time"`
 	DurationDays uint   `json:"duration_days"`
+	Type         string `json:"type"`
 	Source       string `json:"source"`
 	ExternalID   string `json:"external_id"`
 }
@@ -55,14 +58,24 @@ func isValidUint256Amount(amount *big.Int) bool {
 
 func buildVestingSignMessage(payload vestingSignPayload) string {
 	return fmt.Sprintf(
-		"Crynux Relay Vesting\nAddress: %s\nTotalAmount: %s\nStartTime: %d\nDurationDays: %d\nSource: %s\nExternalID: %s",
+		"Crynux Relay Vesting\nAddress: %s\nTotalAmount: %s\nStartTime: %d\nDurationDays: %d\nType: %s\nSource: %s\nExternalID: %s",
 		payload.Address,
 		payload.TotalAmount,
 		payload.StartTime,
 		payload.DurationDays,
+		payload.Type,
 		payload.Source,
 		payload.ExternalID,
 	)
+}
+
+func isValidVestingType(vestingType string) bool {
+	switch vestingType {
+	case models.VestingTypeNode, models.VestingTypeDelegation, models.VestingTypeOther:
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeVestingInput(input CreateVestingRecordInput) (vestingSignPayload, *big.Int, error) {
@@ -79,6 +92,10 @@ func normalizeVestingInput(input CreateVestingRecordInput) (vestingSignPayload, 
 	if input.DurationDays == 0 {
 		return vestingSignPayload{}, nil, ErrInvalidVestingDuration
 	}
+	normalizedType := strings.TrimSpace(input.Type)
+	if !isValidVestingType(normalizedType) {
+		return vestingSignPayload{}, nil, ErrInvalidVestingType
+	}
 	amount, ok := big.NewInt(0).SetString(strings.TrimSpace(input.TotalAmount), 10)
 	if !ok || !isValidUint256Amount(amount) {
 		return vestingSignPayload{}, nil, ErrInvalidVestingAmount
@@ -88,6 +105,7 @@ func normalizeVestingInput(input CreateVestingRecordInput) (vestingSignPayload, 
 		TotalAmount:  amount.String(),
 		StartTime:    input.StartTime,
 		DurationDays: input.DurationDays,
+		Type:         normalizedType,
 		Source:       strings.TrimSpace(input.Source),
 		ExternalID:   strings.TrimSpace(input.ExternalID),
 	}
@@ -140,6 +158,7 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 				ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
 				StartTime:      time.Unix(payload.StartTime, 0).UTC(),
 				DurationDays:   payload.DurationDays,
+				Type:           payload.Type,
 				Source:         payload.Source,
 				ExternalID:     payload.ExternalID,
 				AdminSignature: input.AdminSignature,

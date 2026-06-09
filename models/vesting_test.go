@@ -75,6 +75,7 @@ func TestVestingReasonRoundTrip(t *testing.T) {
 		ReleasedAmount: BigInt{Int: *big.NewInt(500)},
 		StartTime:      start,
 		DurationDays:   10,
+		Type:           VestingTypeNode,
 		Source:         "airdrop",
 		ExternalID:     "item-1",
 		AdminSignature: "0xsig",
@@ -90,6 +91,7 @@ func TestVestingReasonRoundTrip(t *testing.T) {
 		createdPayload.ReleasedAmount != "0" ||
 		createdPayload.StartTime != start.Unix() ||
 		createdPayload.DurationDays != record.DurationDays ||
+		createdPayload.Type != record.Type ||
 		createdPayload.Source != record.Source ||
 		createdPayload.ExternalID != record.ExternalID ||
 		createdPayload.AdminSignature != record.AdminSignature {

@@ -15,6 +15,7 @@ type CreateVestingItem struct {
 	TotalAmount    string `json:"total_amount" validate:"required"`
 	StartTime      int64  `json:"start_time" validate:"required"`
 	DurationDays   uint   `json:"duration_days" validate:"required"`
+	Type           string `json:"type" validate:"required"`
 	Source         string `json:"source" validate:"required"`
 	ExternalID     string `json:"external_id" validate:"required"`
 	AdminSignature string `json:"admin_signature" validate:"required"`
@@ -41,6 +42,7 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 			TotalAmount:    item.TotalAmount,
 			StartTime:      item.StartTime,
 			DurationDays:   item.DurationDays,
+			Type:           item.Type,
 			Source:         item.Source,
 			ExternalID:     item.ExternalID,
 			AdminSignature: item.AdminSignature,
@@ -52,6 +54,7 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 		if errors.Is(err, service.ErrInvalidVestingAddress) ||
 			errors.Is(err, service.ErrInvalidVestingAmount) ||
 			errors.Is(err, service.ErrInvalidVestingDuration) ||
+			errors.Is(err, service.ErrInvalidVestingType) ||
 			errors.Is(err, service.ErrInvalidVestingSource) ||
 			errors.Is(err, service.ErrInvalidVestingExternalID) ||
 			errors.Is(err, service.ErrInvalidVestingSignature) ||

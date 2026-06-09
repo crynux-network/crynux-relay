@@ -31,6 +31,7 @@ type VestingRecord struct {
 	TotalAmount     string               `json:"total_amount"`
 	StartTime       int64                `json:"start_time"`
 	DurationDays    uint                 `json:"duration_days"`
+	Type            string               `json:"type"`
 	ReleasedAmount  string               `json:"released_amount"`
 	RemainingAmount string               `json:"remaining_amount"`
 	LockedAmount    string               `json:"locked_amount"`
@@ -75,6 +76,7 @@ func buildVestingRecord(record models.VestingRecord, now time.Time) VestingRecor
 		TotalAmount:     record.TotalAmount.String(),
 		StartTime:       record.StartTime.Unix(),
 		DurationDays:    record.DurationDays,
+		Type:            record.Type,
 		ReleasedAmount:  record.ReleasedAmount.String(),
 		RemainingAmount: remainingAmount.String(),
 		LockedAmount:    record.LockedAmountAt(now).String(),

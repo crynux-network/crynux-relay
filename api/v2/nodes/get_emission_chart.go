@@ -19,8 +19,8 @@ type GetNodeEmissionChartInput struct {
 }
 
 type NodeEmissionChartData struct {
-	Timestamps     []int64         `json:"timestamps"`
-	EmissionIncome []models.BigInt `json:"emission_income"`
+	Timestamps         []int64         `json:"timestamps"`
+	NodeEmissionIncome []models.BigInt `json:"node_emission_income"`
 }
 
 type GetNodeEmissionChartOutput struct {
@@ -69,10 +69,11 @@ func GetNodeEmissionChart(c *gin.Context, input *GetNodeEmissionChartInput) (*Ge
 
 	records := make([]models.VestingRecord, 0)
 	if len(chartRange.WeekStarts) > 0 {
-		records, err = models.ListVestingRecordsByAddressAndStartTimeRange(
+		records, err = models.ListVestingRecordsByAddressAndTypeAndStartTimeRange(
 			c.Request.Context(),
 			config.GetDB(),
 			node.Address,
+			models.VestingTypeNode,
 			chartRange.RangeStart,
 			chartRange.RangeEnd,
 		)
@@ -84,8 +85,8 @@ func GetNodeEmissionChart(c *gin.Context, input *GetNodeEmissionChartInput) (*Ge
 	timestamps, emissionIncome := service.BuildEmissionIncomeSeries(records, chartRange)
 	return &GetNodeEmissionChartOutput{
 		Data: &NodeEmissionChartData{
-			Timestamps:     timestamps,
-			EmissionIncome: emissionIncome,
+			Timestamps:         timestamps,
+			NodeEmissionIncome: emissionIncome,
 		},
 	}, nil
 }

@@ -50,6 +50,7 @@ func TestQueryAddressVestingRecordsSortsByCreatedAtDescAndIDDesc(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(200)},
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
+		Type:           models.VestingTypeNode,
 		Source:         "airdrop",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
@@ -81,6 +82,9 @@ func TestQueryAddressVestingRecordsSortsByCreatedAtDescAndIDDesc(t *testing.T) {
 	if records[0].ID != rec3.ID || records[1].ID != rec2.ID || records[2].ID != rec1.ID {
 		t.Fatalf("unexpected order: [%d, %d, %d]", records[0].ID, records[1].ID, records[2].ID)
 	}
+	if records[0].Type != models.VestingTypeNode {
+		t.Fatalf("expected type %s, got %s", models.VestingTypeNode, records[0].Type)
+	}
 }
 
 func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
@@ -94,6 +98,7 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
+		Type:           models.VestingTypeNode,
 		Source:         "airdrop",
 		ExternalID:     "item-a",
 		AdminSignature: "0xsig",
@@ -105,6 +110,7 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(1100)},
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
+		Type:           models.VestingTypeDelegation,
 		Source:         "airdrop",
 		ExternalID:     "item-b",
 		AdminSignature: "0xsig",
@@ -129,6 +135,9 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 	if records[0].LockedAmount != "500" {
 		t.Fatalf("expected locked amount 500, got %s", records[0].LockedAmount)
 	}
+	if records[0].Type != models.VestingTypeNode {
+		t.Fatalf("expected type %s, got %s", models.VestingTypeNode, records[0].Type)
+	}
 
 	records, _, err = queryAddressVestingRecords(context.Background(), db, address, 2, 1, now)
 	if err != nil {
@@ -139,5 +148,8 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 	}
 	if records[0].RemainingAmount != "0" {
 		t.Fatalf("expected clamped remaining amount 0, got %s", records[0].RemainingAmount)
+	}
+	if records[0].Type != models.VestingTypeDelegation {
+		t.Fatalf("expected type %s, got %s", models.VestingTypeDelegation, records[0].Type)
 	}
 }
