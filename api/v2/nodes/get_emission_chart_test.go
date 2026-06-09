@@ -14,7 +14,7 @@ func TestHasNodeEmissionAccessReturnsFalseWhenDelegatorShareDisabled(t *testing.
 		DelegatorShare: 0,
 	}
 
-	if hasNodeEmissionAccess(node, "ethereum-sepolia") {
+	if hasNodeEmissionAccess(node) {
 		t.Fatal("expected access denied when delegator share is disabled")
 	}
 }

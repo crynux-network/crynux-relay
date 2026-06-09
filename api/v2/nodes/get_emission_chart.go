@@ -14,7 +14,6 @@ import (
 
 type GetNodeEmissionChartInput struct {
 	Address string `path:"address" json:"address" description:"node address" validate:"required"`
-	Network string `query:"network" json:"network" description:"network of the node" validate:"required"`
 	Weeks   *int   `query:"weeks" description:"Number of completed weeks to return"`
 }
 
@@ -28,11 +27,8 @@ type GetNodeEmissionChartOutput struct {
 	Data *NodeEmissionChartData `json:"data"`
 }
 
-func hasNodeEmissionAccess(node *models.Node, network string) bool {
+func hasNodeEmissionAccess(node *models.Node) bool {
 	if node == nil {
-		return false
-	}
-	if node.Network != network {
 		return false
 	}
 	if node.DelegatorShare == 0 {
@@ -50,7 +46,7 @@ func GetNodeEmissionChart(c *gin.Context, input *GetNodeEmissionChartInput) (*Ge
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	if !hasNodeEmissionAccess(node, input.Network) {
+	if !hasNodeEmissionAccess(node) {
 		return nil, response.NewAccessDeniedErrorResponse()
 	}
 
