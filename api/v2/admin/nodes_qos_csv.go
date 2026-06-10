@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,9 +35,10 @@ func ExportNodeQosCSV(c *gin.Context) {
 	}
 
 	rows := make([]exportNodeQosCSVRow, 0, len(nodes))
+	now := time.Now().UTC()
 	for _, node := range nodes {
 		qosLong, qosShort, qosScore := service.CalculateQosComponents(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-		stakingScore, _, probWeight := service.CalculateSelectingProb(&node.StakeAmount.Int, service.GetMaxStaking(), qosScore)
+		stakingScore, _, probWeight := service.CalculateSelectingProb(service.GetNodeScoreStakeAmount(node, now), service.GetMaxStaking(), qosScore)
 		rows = append(rows, exportNodeQosCSVRow{
 			Address:      node.Address,
 			Card:         fmt.Sprintf("%s + %dGB", node.GPUName, node.GPUVram),

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -107,5 +108,39 @@ func TestVestingReasonRoundTrip(t *testing.T) {
 	}
 	if parsedID != 42 || parsedFrom.Cmp(from) != 0 || parsedTo.Cmp(to) != 0 {
 		t.Fatalf("release reason mismatch: id=%d from=%s to=%s", parsedID, parsedFrom.String(), parsedTo.String())
+	}
+}
+
+func TestVestingRecordSlashedDefaultsFalse(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	if err := db.AutoMigrate(&VestingRecord{}); err != nil {
+		t.Fatalf("failed to migrate vesting records: %v", err)
+	}
+
+	record := VestingRecord{
+		Address:        "0xabc",
+		TotalAmount:    BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: BigInt{Int: *big.NewInt(0)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Type:           VestingTypeNode,
+		Source:         "airdrop",
+		ExternalID:     "item-1",
+		AdminSignature: "0xsig",
+		Status:         VestingStatusActive,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatalf("failed to create vesting record: %v", err)
+	}
+
+	var stored VestingRecord
+	if err := db.First(&stored, record.ID).Error; err != nil {
+		t.Fatalf("failed to load vesting record: %v", err)
+	}
+	if stored.Slashed {
+		t.Fatal("expected slashed to default to false")
 	}
 }

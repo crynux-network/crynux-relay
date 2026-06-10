@@ -18,7 +18,7 @@ func newRelayAccountVestingTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.VestingRecord{}, &models.RelayAccountEvent{}, &models.RelayAccount{}); err != nil {
+	if err := db.AutoMigrate(&models.Node{}, &models.VestingRecord{}, &models.RelayAccountEvent{}, &models.RelayAccount{}); err != nil {
 		t.Fatalf("failed to migrate test db: %v", err)
 	}
 	return db
@@ -178,5 +178,139 @@ func TestGetAddressLockedVestingAmountOnlyCountsActiveRecords(t *testing.T) {
 
 	if lockedAmount.String() != "800" {
 		t.Fatalf("expected locked amount 800 from active vesting only, got %s", lockedAmount.String())
+	}
+}
+
+func TestGetAddressLockedVestingAmountExcludesSlashedRecords(t *testing.T) {
+	ctx := context.Background()
+	db := newRelayAccountVestingTestDB(t)
+	address := "0xabc"
+	now := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+
+	records := []models.VestingRecord{
+		{
+			Address:        address,
+			TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			DurationDays:   10,
+			Type:           models.VestingTypeNode,
+			Source:         "airdrop",
+			ExternalID:     "active-1",
+			AdminSignature: "0xsig",
+			Status:         models.VestingStatusActive,
+		},
+		{
+			Address:        address,
+			TotalAmount:    models.BigInt{Int: *big.NewInt(4000)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			DurationDays:   10,
+			Type:           models.VestingTypeNode,
+			Source:         "airdrop",
+			ExternalID:     "slashed-1",
+			AdminSignature: "0xsig",
+			Status:         models.VestingStatusActive,
+			Slashed:        true,
+		},
+	}
+	if err := db.Create(&records).Error; err != nil {
+		t.Fatalf("failed to create vesting records: %v", err)
+	}
+
+	lockedAmount, err := GetAddressLockedVestingAmount(ctx, db, address, now)
+	if err != nil {
+		t.Fatalf("get locked amount failed: %v", err)
+	}
+	if lockedAmount.String() != "800" {
+		t.Fatalf("expected locked amount 800 from unslashed vesting only, got %s", lockedAmount.String())
+	}
+}
+
+func TestProcessDueVestingReleasesSkipsSlashedRecords(t *testing.T) {
+	ctx := context.Background()
+	db := newRelayAccountVestingTestDB(t)
+	record := models.VestingRecord{
+		Address:        "0x0000000000000000000000000000000000000001",
+		TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Type:           models.VestingTypeNode,
+		Source:         "airdrop",
+		ExternalID:     "slashed-1",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+		Slashed:        true,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatalf("failed to create vesting record: %v", err)
+	}
+
+	if err := ProcessDueVestingReleases(ctx, db, record.StartTime.Add(3*24*time.Hour), 100); err != nil {
+		t.Fatalf("release processing failed: %v", err)
+	}
+
+	var updated models.VestingRecord
+	if err := db.First(&updated, record.ID).Error; err != nil {
+		t.Fatalf("failed to load vesting record: %v", err)
+	}
+	if updated.ReleasedAmount.String() != "0" {
+		t.Fatalf("expected released amount to stay 0, got %s", updated.ReleasedAmount.String())
+	}
+
+	var releaseEventCount int64
+	if err := db.Model(&models.RelayAccountEvent{}).
+		Where("type = ?", models.RelayAccountEventTypeVestingRelease).
+		Count(&releaseEventCount).Error; err != nil {
+		t.Fatalf("failed to count release events: %v", err)
+	}
+	if releaseEventCount != 0 {
+		t.Fatalf("expected no release events, got %d", releaseEventCount)
+	}
+}
+
+func TestRestoredSlashedVestingCatchesUpRelease(t *testing.T) {
+	ctx := context.Background()
+	db := newRelayAccountVestingTestDB(t)
+	address := "0x0000000000000000000000000000000000000001"
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	record := models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
+		StartTime:      start,
+		DurationDays:   10,
+		Type:           models.VestingTypeNode,
+		Source:         "airdrop",
+		ExternalID:     "restore-1",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+		Slashed:        true,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatalf("failed to create vesting record: %v", err)
+	}
+
+	relayAccountCache.mu.Lock()
+	relayAccountCache.accounts = map[string]*big.Int{address: big.NewInt(0)}
+	relayAccountCache.mu.Unlock()
+
+	if err := RestoreNodeVestings(ctx, db, address, start.Add(5*24*time.Hour)); err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if err := ProcessDueVestingReleases(ctx, db, start.Add(5*24*time.Hour), 100); err != nil {
+		t.Fatalf("release processing failed: %v", err)
+	}
+
+	var updated models.VestingRecord
+	if err := db.First(&updated, record.ID).Error; err != nil {
+		t.Fatalf("failed to load vesting record: %v", err)
+	}
+	if updated.Slashed {
+		t.Fatal("expected restored record to be unslashed")
+	}
+	if updated.ReleasedAmount.String() != "500" {
+		t.Fatalf("expected released amount to catch up to 500, got %s", updated.ReleasedAmount.String())
 	}
 }

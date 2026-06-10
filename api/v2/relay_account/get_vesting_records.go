@@ -36,6 +36,7 @@ type VestingRecord struct {
 	RemainingAmount string               `json:"remaining_amount"`
 	LockedAmount    string               `json:"locked_amount"`
 	Status          models.VestingStatus `json:"status"`
+	Slashed         bool                 `json:"slashed"`
 	Source          string               `json:"source"`
 	ExternalID      string               `json:"external_id"`
 }
@@ -68,6 +69,10 @@ func buildVestingRecord(record models.VestingRecord, now time.Time) VestingRecor
 	if remainingAmount.Sign() < 0 {
 		remainingAmount = big.NewInt(0)
 	}
+	lockedAmount := record.LockedAmountAt(now)
+	if record.Slashed {
+		lockedAmount = big.NewInt(0)
+	}
 
 	return VestingRecord{
 		ID:              record.ID,
@@ -79,8 +84,9 @@ func buildVestingRecord(record models.VestingRecord, now time.Time) VestingRecor
 		Type:            record.Type,
 		ReleasedAmount:  record.ReleasedAmount.String(),
 		RemainingAmount: remainingAmount.String(),
-		LockedAmount:    record.LockedAmountAt(now).String(),
+		LockedAmount:    lockedAmount.String(),
 		Status:          record.Status,
+		Slashed:         record.Slashed,
 		Source:          record.Source,
 		ExternalID:      record.ExternalID,
 	}

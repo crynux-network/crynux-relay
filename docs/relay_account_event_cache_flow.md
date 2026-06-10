@@ -191,6 +191,12 @@ Release task path:
 
 Release processing is catch-up and idempotent. Missed runs are recovered by releasing accumulated delta; repeated runs for the same checkpoint do not create duplicate balance credits.
 
+### Vesting Slash and Restore
+
+Vesting slash and restore update `vesting_records.slashed` only. They MUST NOT create relay account events and MUST NOT mutate relay account balance cache. A slashed vesting record MUST stay visible in vesting list APIs, MUST be excluded from locked amount calculations, and MUST NOT be selected by vesting release processing.
+
+When a slashed vesting record is restored, the original schedule remains authoritative. The next vesting release run creates a `VestingRelease` event only for the schedule delta between `released_amount` and the current `should_released` value.
+
 ## Consistency Characteristics
 
 Current implementation characteristics are:

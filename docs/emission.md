@@ -96,9 +96,11 @@ Relay MUST store created records in `vesting_records` with `released_amount = 0`
 
 The `(source, external_id)` pair MUST identify the external emission item and MUST remain unique.
 
+Node vesting records MAY be marked with `slashed = true` when the node address is slashed. The `status` field MUST continue to represent only the release lifecycle. The `slashed` field MUST represent slash eligibility and release eligibility.
+
 ## Vesting Release
 
-Relay MUST run vesting release processing periodically. For each active vesting record, Relay MUST compute the amount that should have been released by the schedule:
+Relay MUST run vesting release processing periodically. For each active unslashed vesting record, Relay MUST compute the amount that should have been released by the schedule:
 
 ```text
 should_released = floor(total_amount * elapsed_days / duration_days)
@@ -115,9 +117,13 @@ When `should_released > released_amount`, Relay MUST:
 
 The `VestingRelease` event and the vesting record update MUST be committed in one transaction. Release processing MUST be catch-up and idempotent; missed runs MUST release accumulated delta, and repeated runs at the same checkpoint MUST NOT create duplicate credits.
 
+Slashed vesting records MUST NOT release and MUST NOT contribute to relay account locked amount calculations. Slashing MUST NOT change `released_amount`, `start_time`, `duration_days`, `total_amount`, `type`, `source`, or `external_id`.
+
+The admin endpoint `POST /v2/admin/vesting/restore` MUST restore slashed node vesting records for the submitted `node_address` by setting `slashed = false`. Restore MUST keep the original schedule and `released_amount`. After restore, the next release run MUST release the catch-up delta when the schedule requires `should_released > released_amount`.
+
 ## Emission Chart Aggregation
 
-Emission chart APIs MUST aggregate from `vesting_records.total_amount`. Chart data represents emission grants by vesting start week, not released vesting balance.
+Emission chart APIs MUST aggregate from `vesting_records.total_amount`. Chart data represents emission grants by vesting start week, not released vesting balance. Slashed vesting records MUST remain included in emission chart totals because slashing does not remove the historical grant.
 
 Each vesting record MUST be assigned to the emission week containing `vesting_records.start_time`, using the exact `emission_week_anchor + n * 7 days` week boundaries. Vesting records before the emission week anchor MUST be excluded from emission chart buckets.
 
@@ -140,6 +146,8 @@ The endpoint MUST require JWT authentication and MUST reject address mismatch. T
 - `timestamps`: emission week start Unix timestamps
 - `node_emission_income`: node-type vesting totals per week
 - `delegation_emission_income`: delegation-type vesting totals per week
+
+The relay account vesting list endpoint MUST include slashed records and MUST expose the `slashed` boolean field. Clients MUST display a slashed record as inactive before applying the numeric release status label.
 
 The stakeable node chart endpoint is:
 
