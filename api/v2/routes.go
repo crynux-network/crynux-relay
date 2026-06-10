@@ -140,11 +140,11 @@ func InitRoutes(r *fizz.Fizz) {
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.RestoreNodeVestings, 200))
 	adminGroup.GET("/delegated_slash/audits", []fizz.OperationOption{
 		fizz.ID("admin_delegated_slash_audits_v2"),
-		fizz.Summary("List delegated slash audit records"),
+		fizz.Summary("Export delegated slash audit records as CSV"),
 		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
-	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListDelegatedSlashAudits, 200))
+	}, middleware.AdminAuthMiddleware(), admin.ExportDelegatedSlashAuditsCSV)
 	adminGroup.POST("/nodes/slash", []fizz.OperationOption{
 		fizz.ID("admin_node_slash_v2"),
 		fizz.Summary("Queue a node slash transaction"),
