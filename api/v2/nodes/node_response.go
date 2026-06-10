@@ -56,7 +56,7 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 	qos := service.CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
 	totalStakeAmount := big.NewInt(0)
 	if node.Status != models.NodeStatusQuit {
-		totalStakeAmount = new(big.Int).Add(&node.StakeAmount.Int, service.GetNodeTotalStakeAmount(node.Address, node.Network))
+		totalStakeAmount = service.GetNodeScoreStakeAmount(*node, time.Now().UTC())
 	}
 	stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), qos)
 

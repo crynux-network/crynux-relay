@@ -36,6 +36,7 @@ type VestingRecord struct {
 	ExternalID     string        `json:"external_id" gorm:"not null;size:128;uniqueIndex:idx_vesting_source_external_id"`
 	AdminSignature string        `json:"admin_signature" gorm:"not null;size:255"`
 	Status         VestingStatus `json:"status" gorm:"not null;default:0;index"`
+	Slashed        bool          `json:"slashed" gorm:"not null;default:false;index"`
 }
 
 type VestingCreatedReasonPayload struct {

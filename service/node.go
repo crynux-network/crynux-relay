@@ -99,7 +99,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
 	applyNodeDelegationsToCache(node.Address, node.Network, chainDelegations)
 	SetDelegatorShare(node.Address, node.Network, delegatorShare)
-	UpdateMaxStaking(node.Address, totalStakingAmount)
+	UpdateMaxStaking(node.Address, GetNodeScoreStakeAmount(*node, time.Now().UTC()))
 	LogNodeStatusChange(node, "join")
 	return nil
 }
@@ -168,6 +168,11 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 		return err
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	if slashed {
+		if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -209,6 +214,11 @@ func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, sl
 				return false, err
 			}
 			txID = blockchainTransaction.ID
+		}
+	}
+	if slashed {
+		if _, err := SlashNodeVestingsTx(ctx, tx, node.Address); err != nil {
+			return false, err
 		}
 	}
 	if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: txID, Network: node.Network}); err != nil {
@@ -367,6 +377,9 @@ func nodeSlash(ctx context.Context, db *gorm.DB, node *models.Node) error {
 		return err
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
+		return err
+	}
 	LogNodeStatusChange(node, "slashed")
 	return nil
 }

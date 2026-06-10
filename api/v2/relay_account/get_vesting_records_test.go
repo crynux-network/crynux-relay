@@ -153,3 +153,38 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 		t.Fatalf("expected type %s, got %s", models.VestingTypeDelegation, records[0].Type)
 	}
 }
+
+func TestQueryAddressVestingRecordsIncludesSlashedRecords(t *testing.T) {
+	db := newVestingRecordsTestDB(t)
+	address := "0xabc"
+	now := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
+
+	record := models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Type:           models.VestingTypeNode,
+		Source:         "airdrop",
+		ExternalID:     "slashed-a",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+		Slashed:        true,
+	}
+	_ = createVestingRecord(t, db, record, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+
+	records, total, err := queryAddressVestingRecords(context.Background(), db, address, 1, 20, now)
+	if err != nil {
+		t.Fatalf("query vesting records failed: %v", err)
+	}
+	if total != 1 || len(records) != 1 {
+		t.Fatalf("expected one slashed record, total=%d len=%d", total, len(records))
+	}
+	if !records[0].Slashed {
+		t.Fatal("expected slashed flag in response")
+	}
+	if records[0].LockedAmount != "0" {
+		t.Fatalf("expected slashed locked amount 0, got %s", records[0].LockedAmount)
+	}
+}

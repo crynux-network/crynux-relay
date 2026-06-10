@@ -19,8 +19,13 @@ func StartVestingRelease(ctx context.Context) {
 	defer ticker.Stop()
 
 	run := func() {
-		if err := service.ProcessDueVestingReleases(ctx, config.GetDB(), time.Now().UTC(), vestingReleaseBatchSize); err != nil {
+		now := time.Now().UTC()
+		if err := service.ProcessDueVestingReleases(ctx, config.GetDB(), now, vestingReleaseBatchSize); err != nil {
 			log.Errorf("failed to process vesting releases: %v", err)
+			return
+		}
+		if err := service.RefreshNodeVestingScoreStakes(ctx, config.GetDB(), now); err != nil {
+			log.Errorf("failed to refresh node vesting score stakes: %v", err)
 		}
 	}
 

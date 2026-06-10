@@ -33,8 +33,10 @@ StakingScore = sqrt(staking / maxStaking)
 ```
 
 Where:
-- `staking`: the node's staked amount.
-- `maxStaking`: the maximum staked amount among all nodes in the network.
+- `staking`: the node score stake. Score stake is the sum of operator stake, active delegated stake, and active unslashed locked node vesting for the node address.
+- `maxStaking`: the maximum score stake among all non-quit nodes.
+
+Vesting contributes only to staking score and selection probability. Displayed staking token amounts MUST use operator stake plus delegated stake and MUST NOT include vesting amounts.
 
 ### QoS Score
 

@@ -532,7 +532,8 @@ func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNod
 	}
 
 	// Update value in memory
-	totalStakeAmount := new(big.Int).Add(stakingAmount, GetNodeTotalStakeAmount(address, network))
+	node.StakeAmount = models.BigInt{Int: *stakingAmount}
+	totalStakeAmount := GetNodeScoreStakeAmount(*node, time.Now().UTC())
 	if totalStakeAmount.Sign() > 0 {
 		UpdateMaxStaking(address, totalStakeAmount)
 	}
@@ -708,8 +709,7 @@ func updateDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.De
 	}
 
 	UpdateDelegation(delegatorAddress, nodeAddress, event.Amount, network)
-	totalStakeAmount := new(big.Int).Add(&node.StakeAmount.Int, GetNodeTotalStakeAmount(nodeAddress, network))
-	UpdateMaxStaking(nodeAddress, totalStakeAmount)
+	UpdateMaxStaking(nodeAddress, GetNodeScoreStakeAmount(*node, time.Now().UTC()))
 
 	log.Infof("UpdateUserStaking: successfully updated user %s stake amount to node %s: %s",
 		delegatorAddress, nodeAddress, event.Amount.String())
@@ -764,7 +764,7 @@ func unstakeDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.D
 
 	if unstaked {
 		UnstakeDelegation(delegatorAddress, nodeAddress, network)
-		totalStakeAmount := new(big.Int).Add(&node.StakeAmount.Int, GetNodeTotalStakeAmount(nodeAddress, network))
+		totalStakeAmount := GetNodeScoreStakeAmount(*node, time.Now().UTC())
 		if totalStakeAmount.Sign() > 0 {
 			UpdateMaxStaking(nodeAddress, totalStakeAmount)
 		}
@@ -823,6 +823,9 @@ func createOrResumeDelegatedSlashJob(ctx context.Context, db *gorm.DB, nodeAddre
 		return err
 	} else if node == nil {
 		return nil
+	}
+	if err := SlashNodeVestings(ctx, db, nodeAddress, time.Now().UTC()); err != nil {
+		return err
 	}
 	return sendNextDelegatedSlashBatch(dbCtx, db, nodeAddress, network)
 }
@@ -887,7 +890,13 @@ func slashDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.Del
 
 	if slashed {
 		UnstakeDelegation(delegatorAddress, nodeAddress, network)
-		UpdateMaxStaking(nodeAddress, GetNodeTotalStakeAmount(nodeAddress, network))
+		if node, err := models.GetNodeByAddress(ctx, db, nodeAddress); err == nil {
+			UpdateMaxStaking(nodeAddress, GetNodeScoreStakeAmount(*node, time.Now().UTC()))
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			UpdateMaxStaking(nodeAddress, big.NewInt(0))
+		} else {
+			return err
+		}
 	}
 	log.Infof("DelegatorSlashed: successfully processed delegated slash %s -> %s", delegatorAddress, nodeAddress)
 	return nil

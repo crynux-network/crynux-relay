@@ -177,6 +177,20 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
+	refreshedNodeAddresses := make(map[string]struct{})
+	for _, record := range created {
+		if record.Type != models.VestingTypeNode {
+			continue
+		}
+		if _, ok := refreshedNodeAddresses[record.Address]; ok {
+			continue
+		}
+		if err := RefreshNodeScoreStake(ctx, db, record.Address, now); err != nil {
+			return nil, err
+		}
+		refreshedNodeAddresses[record.Address] = struct{}{}
+	}
 	return created, nil
 }
 
@@ -200,6 +214,7 @@ func ProcessDueVestingReleases(ctx context.Context, db *gorm.DB, now time.Time, 
 		if err := db.WithContext(ctx).
 			Model(&models.VestingRecord{}).
 			Where("status = ?", models.VestingStatusActive).
+			Where("slashed = ?", false).
 			Where("id > ?", startID).
 			Order("id ASC").
 			Limit(batchSize).
@@ -251,6 +266,9 @@ func processSingleVestingRelease(ctx context.Context, db *gorm.DB, vestingID uin
 		if record.Status != models.VestingStatusActive {
 			return nil
 		}
+		if record.Slashed {
+			return nil
+		}
 
 		shouldReleased := models.ComputeVestingShouldReleased(&record.TotalAmount.Int, record.StartTime, record.DurationDays, now)
 		if shouldReleased.Cmp(&record.ReleasedAmount.Int) <= 0 {
@@ -292,6 +310,7 @@ func GetAddressLockedVestingAmount(ctx context.Context, db *gorm.DB, address str
 		Model(&models.VestingRecord{}).
 		Where("address = ?", address).
 		Where("status = ?", models.VestingStatusActive).
+		Where("slashed = ?", false).
 		Find(&records).Error; err != nil {
 		return nil, err
 	}
@@ -301,4 +320,67 @@ func GetAddressLockedVestingAmount(ctx context.Context, db *gorm.DB, address str
 		totalLocked.Add(totalLocked, record.LockedAmountAt(now))
 	}
 	return totalLocked, nil
+}
+
+func SlashNodeVestingsTx(ctx context.Context, tx *gorm.DB, nodeAddress string) (bool, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result := tx.WithContext(dbCtx).
+		Model(&models.VestingRecord{}).
+		Where("address = ?", nodeAddress).
+		Where("type = ?", models.VestingTypeNode).
+		Where("status = ?", models.VestingStatusActive).
+		Where("slashed = ?", false).
+		Update("slashed", true)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func SlashNodeVestings(ctx context.Context, db *gorm.DB, nodeAddress string, now time.Time) error {
+	var refresh bool
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		refresh, err = SlashNodeVestingsTx(ctx, tx, nodeAddress)
+		return err
+	}); err != nil {
+		return err
+	}
+	if refresh {
+		return RefreshNodeScoreStake(ctx, db, nodeAddress, now)
+	}
+	return nil
+}
+
+func RestoreNodeVestings(ctx context.Context, db *gorm.DB, nodeAddress string, now time.Time) error {
+	verifier := blockchain.NewSignatureVerifier()
+	if err := verifier.ValidateAddress(nodeAddress); err != nil {
+		return ErrInvalidVestingAddress
+	}
+
+	var refresh bool
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		result := tx.WithContext(dbCtx).
+			Model(&models.VestingRecord{}).
+			Where("address = ?", nodeAddress).
+			Where("type = ?", models.VestingTypeNode).
+			Where("slashed = ?", true).
+			Update("slashed", false)
+		if result.Error != nil {
+			return result.Error
+		}
+		refresh = result.RowsAffected > 0
+		return nil
+	}); err != nil {
+		return err
+	}
+	if refresh {
+		return RefreshNodeScoreStake(ctx, db, nodeAddress, now)
+	}
+	return nil
 }

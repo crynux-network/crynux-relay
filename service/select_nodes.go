@@ -4,7 +4,6 @@ import (
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
-	"math/big"
 	"strings"
 	"time"
 
@@ -198,10 +197,11 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 	}
 
 	maxStaking := GetMaxStaking()
+	now := time.Now().UTC()
 	scores := make([]float64, len(nodes))
 	for i, node := range nodes {
 		qos := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-		totalStakeAmount := new(big.Int).Add(&node.StakeAmount.Int, GetNodeTotalStakeAmount(node.Address, node.Network))
+		totalStakeAmount := GetNodeScoreStakeAmount(node, now)
 		_, _, prob := CalculateSelectingProb(totalStakeAmount, maxStaking, qos)
 		scores[i] = prob
 	}
@@ -287,10 +287,11 @@ func selectNodesForDownloadTask(ctx context.Context, task *models.InferenceTask,
 	}
 
 	maxStaking := GetMaxStaking()
+	now := time.Now().UTC()
 	scores := make([]float64, len(validNodes))
 	for i, node := range validNodes {
 		qos := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-		totalStakeAmount := new(big.Int).Add(&node.StakeAmount.Int, GetNodeTotalStakeAmount(node.Address, node.Network))
+		totalStakeAmount := GetNodeScoreStakeAmount(node, now)
 		_, _, prob := CalculateSelectingProb(totalStakeAmount, maxStaking, qos)
 		scores[i] = prob
 	}

@@ -27,10 +27,10 @@ func InitSelectingProb(ctx context.Context, db *gorm.DB) error {
 	}
 
 	stakingMap := make(map[string]*big.Int)
+	now := time.Now().UTC()
 	for _, node := range nodes {
 		addr := node.Address
-		amount := big.NewInt(0).Add(&node.StakeAmount.Int, GetNodeTotalStakeAmount(addr, node.Network))
-		stakingMap[addr] = amount
+		stakingMap[addr] = GetNodeScoreStakeAmount(node, now)
 	}
 
 	globalMaxStaking.init(stakingMap)

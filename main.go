@@ -51,6 +51,9 @@ func main() {
 	if err := service.InitDelegationCaches(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
+	if err := service.InitNodeVestingStakeCache(context.Background(), config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
 	if err := service.InitSelectingProb(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
