@@ -2,14 +2,12 @@ package admin
 
 import (
 	"crynux_relay/api/v2/response"
-	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
@@ -105,7 +103,7 @@ func TriggerNodeSlash(c *gin.Context, in *TriggerNodeSlashInput) (*TriggerNodeSl
 		return nil, &response.ErrorResponse{Response: response.Response{Message: "invalid node address"}}
 	}
 
-	nodeAddress, node, err := getNodeByAdminAddress(c, in.NodeAddress)
+	_, node, err := getNodeByAdminAddress(c, in.NodeAddress)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &response.ErrorResponse{Response: response.Response{Message: "node not found"}}
@@ -113,26 +111,14 @@ func TriggerNodeSlash(c *gin.Context, in *TriggerNodeSlashInput) (*TriggerNodeSl
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	var blockchainTransaction *models.BlockchainTransaction
-	err = config.GetDB().WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var err error
-		blockchainTransaction, err = blockchain.QueueSlashStaking(c.Request.Context(), tx, common.HexToAddress(nodeAddress), node.Network)
-		if err != nil {
-			return err
-		}
-		_, err = service.SlashNodeVestingsTx(c.Request.Context(), tx, nodeAddress)
-		return err
-	})
+	blockchainTransactionID, err := service.SlashNode(c.Request.Context(), config.GetDB(), node, "")
 	if err != nil {
-		return nil, response.NewExceptionResponse(err)
-	}
-	if err := service.RefreshNodeScoreStake(c.Request.Context(), config.GetDB(), nodeAddress, time.Now().UTC()); err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 
 	return &TriggerNodeSlashResponse{
 		Data: TriggerNodeSlashData{
-			BlockchainTransactionID: blockchainTransaction.ID,
+			BlockchainTransactionID: blockchainTransactionID,
 		},
 	}, nil
 }

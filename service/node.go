@@ -161,7 +161,7 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 	var wasActiveBeforeQuit bool
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var err error
-		wasActiveBeforeQuit, err = setNodeStatusQuitTx(ctx, tx, node, slashed)
+		wasActiveBeforeQuit, _, err = setNodeStatusQuitTx(ctx, tx, node, slashed)
 		return err
 	})
 	if err != nil {
@@ -176,12 +176,12 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 	return nil
 }
 
-func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, slashed bool) (bool, error) {
+func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, slashed bool) (bool, uint, error) {
 	wasActiveBeforeQuit := IsNodeStatusActiveForNodeNameCount(node.Status)
 	// delete all node local models
 	err := tx.Where("node_address = ?", node.Address).Delete(&models.NodeModel{}).Error
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	if err := node.Update(ctx, tx, map[string]interface{}{
@@ -189,42 +189,42 @@ func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, sl
 		"current_task_id_commitment": sql.NullString{Valid: false},
 		"stake_amount":               models.BigInt{Int: *big.NewInt(0)},
 	}); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if wasActiveBeforeQuit {
 		if err := DecrementNodeNameCountTx(ctx, tx, node); err != nil {
-			return false, err
+			return false, 0, err
 		}
 	}
 	var txID uint
 	stakingInfo, err := blockchain.GetStakingInfo(ctx, common.HexToAddress(node.Address), node.Network)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if stakingInfo.Status != 0 { // not unstaked
 		if slashed {
 			blockchainTransaction, err := blockchain.QueueSlashStaking(ctx, tx, common.HexToAddress(node.Address), node.Network)
 			if err != nil {
-				return false, err
+				return false, 0, err
 			}
 			txID = blockchainTransaction.ID
 		} else {
 			blockchainTransaction, err := blockchain.QueueUnstake(ctx, tx, common.HexToAddress(node.Address), node.Network)
 			if err != nil {
-				return false, err
+				return false, 0, err
 			}
 			txID = blockchainTransaction.ID
 		}
 	}
 	if slashed {
 		if _, err := SlashNodeVestingsTx(ctx, tx, node.Address); err != nil {
-			return false, err
+			return false, 0, err
 		}
 	}
 	if err := emitEvent(ctx, tx, &models.NodeQuitEvent{NodeAddress: node.Address, BlockchainTransactionID: txID, Network: node.Network}); err != nil {
-		return false, err
+		return false, 0, err
 	}
-	return wasActiveBeforeQuit, nil
+	return wasActiveBeforeQuit, txID, nil
 }
 
 func applyNodeQuitPostCommit(node *models.Node, wasActiveBeforeQuit bool) {
@@ -308,7 +308,7 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 		var wasActiveBeforeQuit bool
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			var err error
-			wasActiveBeforeQuit, err = setNodeStatusQuitTx(ctx, tx, node, false)
+			wasActiveBeforeQuit, _, err = setNodeStatusQuitTx(ctx, tx, node, false)
 			if err != nil {
 				return err
 			}
@@ -356,32 +356,32 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 	return nil
 }
 
-func nodeSlash(ctx context.Context, db *gorm.DB, node *models.Node) error {
-	if !(node.Status == models.NodeStatusBusy || node.Status == models.NodeStatusPendingPause || node.Status == models.NodeStatusPendingQuit) {
-		return errors.New("illegal node status")
+func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommitment string) (uint, error) {
+	if node.Status == models.NodeStatusQuit {
+		return 0, errors.New("node has already quit")
 	}
-	if !node.CurrentTaskIDCommitment.Valid {
-		return errors.New("task id commitment is not valid")
+	if taskIDCommitment == "" {
+		taskIDCommitment = "0x"
 	}
-	taskIDCommitment := node.CurrentTaskIDCommitment.String
 	slashedAmount := node.StakeAmount
+	var blockchainTransactionID uint
 	var wasActiveBeforeQuit bool
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var err error
-		wasActiveBeforeQuit, err = setNodeStatusQuitTx(ctx, tx, node, true)
+		wasActiveBeforeQuit, blockchainTransactionID, err = setNodeStatusQuitTx(ctx, tx, node, true)
 		if err != nil {
 			return err
 		}
 		return emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network})
 	}); err != nil {
-		return err
+		return 0, err
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
 	if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
-		return err
+		return 0, err
 	}
 	LogNodeStatusChange(node, "slashed")
-	return nil
+	return blockchainTransactionID, nil
 }
 
 func updateNodeQosScore(ctx context.Context, db *gorm.DB, node *models.Node, qos uint64) error {

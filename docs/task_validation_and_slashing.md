@@ -150,7 +150,7 @@ Long-term QoS scoring for tasks already in `TaskEndAborted` follows these rules:
 - If the group contains at least one non-aborted task, each task aborted due to `TaskAbortTimeout` MUST contribute a Task QoS score of `0` to its selected node's long-term QoS rolling average.
 - If all 3 tasks in the group are already aborted, all 3 Task QoS scores MUST be treated as NULL and MUST NOT update any node's long-term QoS rolling average.
 
-A task reaching `EndInvalidated` triggers the **node slash** for its assigned node.
+A task reaching `EndInvalidated` triggers the **node slash** for its assigned node through `SlashNode`.
 
 ### Payment Distribution in Groups
 
@@ -168,18 +168,20 @@ Tasks in `GroupRefund` status have their task fee refunded to the creator since 
 
 ### When Slashing Occurs
 
-A node is slashed when its submitted result does not match the majority in a validation group. Specifically, the task transitions to `TaskEndInvalidated`, which calls `nodeSlash`.
+A node is slashed when its submitted result does not match the majority in a validation group. Specifically, the task transitions to `TaskEndInvalidated`, which calls `SlashNode` with the offending task ID commitment.
+
+The authenticated admin API `POST /v2/admin/nodes/slash` also calls `SlashNode`. Admin-triggered slash uses the node row's current network and does not have an offending task ID commitment, so the emitted `NodeSlashed` Relay event MUST use `0x` as the task ID commitment placeholder.
 
 ### Slash Execution Flow
 
 1. **Node status** is set to `NodeStatusQuit`.
 2. **All cached models** associated with the node are deleted from the database.
 3. Active node vesting records for the node address are marked with `slashed = true`.
-4. A **`NodeStaking::slashStaking`** blockchain transaction is queued. This calls the `slashStaking` method on the `NodeStaking` smart contract and confiscates only the operator stake.
-5. Two Relay events are emitted: `NodeSlashed` with the offending task ID commitment and `NodeQuit` with the blockchain transaction ID.
+4. A **`NodeStaking::slashStaking`** blockchain transaction is queued when the node has active operator staking on its Relay network. This calls the `slashStaking` method on the `NodeStaking` smart contract and confiscates only the operator stake.
+5. Two Relay events are emitted in order: `NodeQuit` with the blockchain transaction ID, then `NodeSlashed` with the offending task ID commitment or the admin slash placeholder.
 6. After the `NodeStaking.NodeSlashed` chain event is confirmed, Relay MUST mark active node vesting records as slashed as an idempotent backstop and MUST create or resume a delegated slash job for the node and network.
 7. The delegated slash job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions. Each transaction MUST include no more than `blockchains.<network>.delegated_staking_slash_batch_size` delegator addresses.
-8. Relay MUST process confirmed `DelegatedStaking.DelegatorSlashed` events as the source of truth for delegated slash progress. Relay MUST write one audit row per slashed delegator and MUST mark only confirmed slashed delegations inactive.
+8. Relay MUST process confirmed `DelegatedStaking.DelegatorSlashed` events as the source of truth for delegated slash progress. Relay MUST write one audit row per slashed delegator, mark only confirmed slashed delegations inactive, and emit one generic `DelegatedStakingSlashed` Relay event per confirmed slashed delegator.
 9. Relay MUST complete the delegated slash job only when the `DelegatedStaking` contract reports zero remaining delegations for the node.
 
 ### Normal Quit, Recovery Quit, and Slashed Quit
@@ -229,7 +231,7 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 |------|-------------|
 | `service/validate_task.go` | Core validation logic: VRF verification, task ID commitment check, group result comparison |
 | `service/task_status.go` | Task state transitions, slash trigger (`SetTaskStatusEndInvalidated`), abort handling |
-| `service/node.go` | Node lifecycle: `nodeSlash`, `nodeFinishTask`, `SetNodeStatusQuit` |
+| `service/node.go` | Node lifecycle: `SlashNode`, `nodeFinishTask`, `SetNodeStatusQuit` |
 | `service/qos.go` | QoS scoring, health penalty/boost, permanent kickout check |
 | `service/start_task.go` | Task queue processing and node dispatch |
 | `service/select_nodes.go` | Node selection for task assignment (weighted by QoS and staking) |

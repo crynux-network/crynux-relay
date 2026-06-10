@@ -294,7 +294,8 @@ func SetTaskStatusEndInvalidated(ctx context.Context, db *gorm.DB, originTask *m
 		if err := emitEvent(ctx, tx, &models.TaskEndInvalidatedEvent{TaskIDCommitment: task.TaskIDCommitment, SelectedNode: task.SelectedNode}); err != nil {
 			return err
 		}
-		return nodeSlash(ctx, tx, node)
+		_, err := SlashNode(ctx, tx, node, task.TaskIDCommitment)
+		return err
 	}); err != nil {
 		return err
 	}
