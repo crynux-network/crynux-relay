@@ -7,6 +7,7 @@
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
+| [node_event_stream.md](./node_event_stream.md) | Relay `events` table, v1 event APIs, and node watcher polling protocol |
 | [model_predownload.md](./model_predownload.md) | Pre-download scheduling, node notification, and model availability tracking |
 | [deposit_withdraw_and_risk_control.md](./deposit_withdraw_and_risk_control.md) | Deposit and withdrawal lifecycle across Relay and Wallet, relay account ledger, and risk control checks |
 | [deposit-withdraw-only-networks.md](./deposit-withdraw-only-networks.md) | Deposit and withdrawal only network configuration, processing, BenefitAddress |
