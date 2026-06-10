@@ -6,6 +6,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -45,7 +46,6 @@ type ListDelegatedSlashAuditsResponse struct {
 
 type TriggerNodeSlashInput struct {
 	NodeAddress string `json:"node_address" validate:"required"`
-	Network     string `json:"network" validate:"required"`
 }
 
 type TriggerNodeSlashData struct {
@@ -119,20 +119,29 @@ func TriggerNodeSlash(c *gin.Context, in *TriggerNodeSlashInput) (*TriggerNodeSl
 		return nil, &response.ErrorResponse{Response: response.Response{Message: "invalid node address"}}
 	}
 
+	nodeAddress := common.HexToAddress(in.NodeAddress).Hex()
+	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), nodeAddress)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &response.ErrorResponse{Response: response.Response{Message: "node not found"}}
+		}
+		return nil, response.NewExceptionResponse(err)
+	}
+
 	var blockchainTransaction *models.BlockchainTransaction
-	err := config.GetDB().WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = config.GetDB().WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
-		blockchainTransaction, err = blockchain.QueueSlashStaking(c.Request.Context(), tx, common.HexToAddress(in.NodeAddress), in.Network)
+		blockchainTransaction, err = blockchain.QueueSlashStaking(c.Request.Context(), tx, common.HexToAddress(nodeAddress), node.Network)
 		if err != nil {
 			return err
 		}
-		_, err = service.SlashNodeVestingsTx(c.Request.Context(), tx, in.NodeAddress)
+		_, err = service.SlashNodeVestingsTx(c.Request.Context(), tx, nodeAddress)
 		return err
 	})
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
-	if err := service.RefreshNodeScoreStake(c.Request.Context(), config.GetDB(), in.NodeAddress, time.Now().UTC()); err != nil {
+	if err := service.RefreshNodeScoreStake(c.Request.Context(), config.GetDB(), nodeAddress, time.Now().UTC()); err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 
