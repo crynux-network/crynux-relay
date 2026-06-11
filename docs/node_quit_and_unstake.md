@@ -70,3 +70,5 @@ This recovery path is a fallback. When Relay is operating normally, Relay unstak
 Relay kickout does not require the node owner to call `tryUnstake`. When Relay removes a node for a non-slashed reason, Relay MUST send `NodeStaking::unstake` on chain if the node still has active stake.
 
 Slashing has priority over normal unstake. If Relay determines that a node must be slashed while the node is `Staked` or `PendingUnstaked`, Relay MUST send `NodeStaking::slashStaking` instead of `NodeStaking::unstake`.
+
+After a slashed quit, the node address MUST NOT join another blockchain network until all delegated slash jobs for that node address are completed. This restriction applies across all blockchain networks configured for Relay.

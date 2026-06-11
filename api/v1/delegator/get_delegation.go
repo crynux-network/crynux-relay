@@ -53,15 +53,26 @@ func GetDelegation(c *gin.Context, input *GetDelegationInput) (*GetDelegationOut
 		todayEarningAmount.Set(&todayEarnings[0].Earning.Int)
 	}
 
+	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), input.NodeAddress)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, response.NewExceptionResponse(err)
+	}
+	nodeNetwork := ""
+	if node != nil {
+		nodeNetwork = node.Network
+	}
+
 	return &GetDelegationOutput{
 		Data: &DelegationInfo{
-			UserAddress:   userStaking.DelegatorAddress,
-			NodeAddress:   userStaking.NodeAddress,
-			Network:       userStaking.Network,
-			StakingAmount: userStaking.Amount.String(),
-			StakedAt:      userStaking.UpdatedAt.Unix(),
-			TotalEarnings: models.BigInt{Int: *totalEarningAmount},
-			TodayEarnings: models.BigInt{Int: *todayEarningAmount},
+			UserAddress:                  userStaking.DelegatorAddress,
+			NodeAddress:                  userStaking.NodeAddress,
+			Network:                      userStaking.Network,
+			NodeCurrentBlockchainNetwork: nodeNetwork,
+			Status:                       delegationStatus(*userStaking, node),
+			StakingAmount:                userStaking.Amount.String(),
+			StakedAt:                     userStaking.UpdatedAt.Unix(),
+			TotalEarnings:                models.BigInt{Int: *totalEarningAmount},
+			TodayEarnings:                models.BigInt{Int: *todayEarningAmount},
 		},
 	}, nil
 }

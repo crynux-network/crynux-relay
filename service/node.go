@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	getStakingInfo        = blockchain.GetStakingInfo
-	getNodeDelegatorShare = blockchain.GetNodeDelegatorShare
-	getNodeStakingInfos   = blockchain.GetNodeStakingInfos
+	ErrDelegatedSlashJobInProgress = errors.New("delegated slash job in progress")
+	getStakingInfo                 = blockchain.GetStakingInfo
+	getNodeDelegatorShare          = blockchain.GetNodeDelegatorShare
+	getNodeStakingInfos            = blockchain.GetNodeStakingInfos
 )
 
 type chainDelegation struct {
@@ -27,6 +28,14 @@ type chainDelegation struct {
 }
 
 func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, modelIDs []string) error {
+	unfinishedSlashJob, err := models.HasUnfinishedDelegatedSlashJobForNode(ctx, db, node.Address)
+	if err != nil {
+		return err
+	}
+	if unfinishedSlashJob {
+		return ErrDelegatedSlashJobInProgress
+	}
+
 	nodeAddress := common.HexToAddress(node.Address)
 	stakingInfo, err := getStakingInfo(ctx, nodeAddress, node.Network)
 	if err != nil {
@@ -129,7 +138,9 @@ func syncNodeDelegationsFromChainTx(tx *gorm.DB, nodeAddress, network string, de
 	if err := tx.Model(&models.Delegation{}).
 		Where("node_address = ?", nodeAddress).
 		Where("network = ?", network).
-		Update("valid", false).Error; err != nil {
+		Where("slashed = ?", false).
+		Unscoped().
+		Delete(&models.Delegation{}).Error; err != nil {
 		return err
 	}
 	for _, delegation := range delegations {
@@ -137,12 +148,12 @@ func syncNodeDelegationsFromChainTx(tx *gorm.DB, nodeAddress, network string, de
 			DelegatorAddress: delegation.DelegatorAddress,
 			NodeAddress:      nodeAddress,
 			Amount:           models.BigInt{Int: *delegation.Amount},
-			Valid:            true,
+			Slashed:          false,
 			Network:          network,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "delegator_address"}, {Name: "node_address"}, {Name: "network"}},
-			DoUpdates: clause.AssignmentColumns([]string{"amount", "valid", "updated_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"amount", "slashed", "updated_at"}),
 		}).Create(&row).Error; err != nil {
 			return err
 		}

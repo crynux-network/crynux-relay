@@ -89,13 +89,13 @@ For each settled payment unit `payment`:
    `dao_income = floor(payment * dao_percent / 100)`
 2. Compute node-side income before delegation:
    `node_income_before_delegation = payment - dao_income`
-3. If the selected node has `delegator_share > 0` and at least one active delegation on the task network, compute delegator pool:
+3. If the selected node has `delegator_share > 0` and at least one non-slashed delegation row on the selected node's current blockchain network, compute delegator pool:
    `delegator_pool = floor(node_income_before_delegation * delegator_share / 100)`
 4. Compute operator income:
    `operator_income = node_income_before_delegation - delegator_pool`
 5. Create `TaskIncome` event for node address with `operator_income`.
 6. Create `DaoTaskShare` event for DAO address with `dao_income`.
-7. When delegated staking distribution is active, create one `UserDelegation` event per participating delegator by proportional split over active delegation amounts.
+7. When delegated staking distribution is active, create one `UserDelegation` event per participating delegator by proportional split over non-slashed delegation amounts on the selected node's current blockchain network.
 8. Increase balances for all recipient addresses by their event amounts.
 
 If delegated staking distribution is inactive, `delegator_pool` MUST be `0` and no `UserDelegation` event may be created.

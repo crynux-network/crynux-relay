@@ -91,7 +91,7 @@ Relay writes `events` rows from these producer paths:
 | Node staking chain processor | `NodeStaking` |
 | Delegated staking chain processor | `DelegatorStaking`, `DelegatorUnstaking`, `NodeDelegatorShareChanged`, `DelegatedStakingSlashed` |
 
-The `NodeSlashed` Relay event is emitted when Relay executes the node slash service flow. The `DelegatedStakingSlashed` Relay event is emitted once for each confirmed `DelegatedStaking.DelegatorSlashed` chain event that invalidates a delegation row.
+The `NodeSlashed` Relay event is emitted when Relay executes the node slash service flow. The `DelegatedStakingSlashed` Relay event is emitted once for each confirmed `DelegatedStaking.DelegatorSlashed` chain event that marks a delegation row `slashed = true`.
 
 ## Event Runtime Use
 

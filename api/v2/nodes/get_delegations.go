@@ -54,7 +54,7 @@ func getDelegationsOfNode(ctx context.Context, db *gorm.DB, nodeAddress string, 
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	dbi := db.WithContext(dbCtx).Model(&models.Delegation{}).Where("delegations.node_address = ?", nodeAddress).Where("delegations.valid = ?", true)
+	dbi := db.WithContext(dbCtx).Model(&models.Delegation{}).Where("delegations.node_address = ?", nodeAddress).Where("delegations.slashed = ?", false)
 	if network != nil {
 		dbi = dbi.Where("delegations.network = ?", network)
 	}

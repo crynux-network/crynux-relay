@@ -188,7 +188,7 @@ func InitDelegationCaches(ctx context.Context, db *gorm.DB) error {
 	var userStakings []models.Delegation
 	if err := db.WithContext(dbCtx).
 		Model(&models.Delegation{}).
-		Where("delegations.valid = ?", true).
+		Where("delegations.slashed = ?", false).
 		FindInBatches(&userStakings, initDelegationCacheBatchSize, func(tx *gorm.DB, batch int) error {
 			for _, userStaking := range userStakings {
 				UpdateDelegation(userStaking.DelegatorAddress, userStaking.NodeAddress, &userStaking.Amount.Int, userStaking.Network)

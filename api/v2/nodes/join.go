@@ -105,6 +105,9 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 	node.StakeAmount = models.BigInt{Int: *stakeAmount}
 
 	if err := service.SetNodeStatusJoin(c.Request.Context(), config.GetDB(), node, in.ModelIDs); err != nil {
+		if errors.Is(err, service.ErrDelegatedSlashJobInProgress) {
+			return nil, response.NewValidationErrorResponse("address", "Delegated slash job in progress")
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 	return &response.Response{}, nil

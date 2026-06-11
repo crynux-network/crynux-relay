@@ -22,13 +22,15 @@ type GetDelegationsInput struct {
 }
 
 type DelegationInfo struct {
-	UserAddress   string        `json:"user_address"`
-	NodeAddress   string        `json:"node_address"`
-	Network       string        `json:"network"`
-	StakingAmount string        `json:"staking_amount"`
-	StakedAt      int64         `json:"staked_at"`
-	TotalEarnings models.BigInt `json:"total_earnings"`
-	TodayEarnings models.BigInt `json:"today_earnings"`
+	UserAddress                  string        `json:"user_address"`
+	NodeAddress                  string        `json:"node_address"`
+	Network                      string        `json:"network"`
+	NodeCurrentBlockchainNetwork string        `json:"node_current_blockchain_network"`
+	Status                       string        `json:"status"`
+	StakingAmount                string        `json:"staking_amount"`
+	StakedAt                     int64         `json:"staked_at"`
+	TotalEarnings                models.BigInt `json:"total_earnings"`
+	TodayEarnings                models.BigInt `json:"today_earnings"`
 }
 
 type DelegationsResult struct {
@@ -46,7 +48,7 @@ func getDelegationsOfUser(ctx context.Context, db *gorm.DB, userAddress string, 
 	defer cancel()
 
 	var userStakings []models.Delegation
-	dbi := db.WithContext(dbCtx).Model(&models.Delegation{}).Where("delegator_address = ?", userAddress).Where("valid = ?", true)
+	dbi := db.WithContext(dbCtx).Model(&models.Delegation{}).Where("delegator_address = ?", userAddress)
 	if network != nil {
 		dbi = dbi.Where("network = ?", network)
 	}
@@ -60,6 +62,20 @@ func getDelegationsOfUser(ctx context.Context, db *gorm.DB, userAddress string, 
 		return nil, 0, err
 	}
 	return userStakings, total, nil
+}
+
+func delegationEarningsKey(nodeAddress, network string) string {
+	return nodeAddress + "\x00" + network
+}
+
+func delegationStatus(delegation models.Delegation, node *models.Node) string {
+	if delegation.Slashed {
+		return "slashed"
+	}
+	if node != nil && node.Network == delegation.Network {
+		return "active"
+	}
+	return "inactive"
 }
 
 func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegationsOutput, error) {
@@ -108,7 +124,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 				totalEarningAmount.Set(&totalEarning.Earning.Int)
 			}
 			mu.Lock()
-			totalEarningsMap[us.NodeAddress] = models.BigInt{Int: *totalEarningAmount}
+			totalEarningsMap[delegationEarningsKey(us.NodeAddress, us.Network)] = models.BigInt{Int: *totalEarningAmount}
 			mu.Unlock()
 
 			todayEarnings, err := models.GetUserStakingEarnings(c.Request.Context(), config.GetDB(), input.UserAddress, us.NodeAddress, us.Network, start, end)
@@ -118,9 +134,9 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 			}
 			mu.Lock()
 			if len(todayEarnings) > 0 {
-				todayEarningsMap[us.NodeAddress] = models.BigInt{Int: todayEarnings[0].Earning.Int}
+				todayEarningsMap[delegationEarningsKey(us.NodeAddress, us.Network)] = models.BigInt{Int: todayEarnings[0].Earning.Int}
 			} else {
-				todayEarningsMap[us.NodeAddress] = models.BigInt{Int: *big.NewInt(0)}
+				todayEarningsMap[delegationEarningsKey(us.NodeAddress, us.Network)] = models.BigInt{Int: *big.NewInt(0)}
 			}
 			mu.Unlock()
 		}()
@@ -133,16 +149,44 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 		}
 	}
 
+	nodeAddresses := make([]string, 0, len(userStakings))
+	seenNodeAddresses := make(map[string]struct{})
+	for _, userStaking := range userStakings {
+		if _, ok := seenNodeAddresses[userStaking.NodeAddress]; ok {
+			continue
+		}
+		seenNodeAddresses[userStaking.NodeAddress] = struct{}{}
+		nodeAddresses = append(nodeAddresses, userStaking.NodeAddress)
+	}
+	nodeMap := make(map[string]*models.Node, len(nodeAddresses))
+	if len(nodeAddresses) > 0 {
+		nodes, err := models.GetNodesByAddresses(c.Request.Context(), config.GetDB(), nodeAddresses)
+		if err != nil {
+			return nil, response.NewExceptionResponse(err)
+		}
+		for _, node := range nodes {
+			nodeMap[node.Address] = node
+		}
+	}
+
 	res := make([]DelegationInfo, 0)
 	for _, userStaking := range userStakings {
+		key := delegationEarningsKey(userStaking.NodeAddress, userStaking.Network)
+		node := nodeMap[userStaking.NodeAddress]
+		nodeNetwork := ""
+		if node != nil {
+			nodeNetwork = node.Network
+		}
 		res = append(res, DelegationInfo{
-			UserAddress:   userStaking.DelegatorAddress,
-			NodeAddress:   userStaking.NodeAddress,
-			Network:       userStaking.Network,
-			StakingAmount: userStaking.Amount.Int.String(),
-			StakedAt:      userStaking.UpdatedAt.Unix(),
-			TotalEarnings: totalEarningsMap[userStaking.NodeAddress],
-			TodayEarnings: todayEarningsMap[userStaking.NodeAddress],
+			UserAddress:                  userStaking.DelegatorAddress,
+			NodeAddress:                  userStaking.NodeAddress,
+			Network:                      userStaking.Network,
+			NodeCurrentBlockchainNetwork: nodeNetwork,
+			Status:                       delegationStatus(userStaking, node),
+			StakingAmount:                userStaking.Amount.Int.String(),
+			StakedAt:                     userStaking.UpdatedAt.Unix(),
+			TotalEarnings:                totalEarningsMap[key],
+			TodayEarnings:                todayEarningsMap[key],
 		})
 	}
 
