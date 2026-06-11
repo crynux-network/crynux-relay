@@ -25,6 +25,8 @@ func initSelectionPolicyTestConfig(t *testing.T, minCount uint64, whitelistEnabl
 		"    level: info\n" +
 		"    output: stdout\n" +
 		"blockchains: {}\n" +
+		"stats:\n" +
+		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  minimum_node_name_number: " + strconv.FormatUint(minCount, 10) + "\n" +
 		"  node_name_whitelist_enabled: " + whitelistFlag + "\n"

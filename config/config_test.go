@@ -73,6 +73,8 @@ http:
     secret_key_file: %q
 mac:
   secret_key_file: %q
+stats:
+  init_start_time: "2026-01-01T00:00:00Z"
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 

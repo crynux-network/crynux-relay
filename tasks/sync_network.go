@@ -118,6 +118,11 @@ func syncNodeNumber(ctx context.Context) error {
 }
 
 func syncTaskNumber(ctx context.Context) error {
+	totalTasks, err := models.GetTotalTaskCount(ctx, config.GetDB())
+	if err != nil {
+		log.Errorf("SyncNetwork: error getting total task count %v", err)
+		return err
+	}
 	runningTasks, err := models.GetRunningTaskCount(ctx, config.GetDB())
 	if err != nil {
 		log.Errorf("SyncNetwork: error getting running task count %v", err)
@@ -131,6 +136,7 @@ func syncTaskNumber(ctx context.Context) error {
 
 	taskNumber := models.NetworkTaskNumber{
 		Model:        gorm.Model{ID: 1},
+		TotalTasks:   uint64(totalTasks),
 		RunningTasks: uint64(runningTasks),
 		QueuedTasks:  uint64(queuedTasks),
 	}
@@ -138,7 +144,7 @@ func syncTaskNumber(ctx context.Context) error {
 	if err := func() error {
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return config.GetDB().WithContext(dbCtx).Omit("TotalTasks").Clauses(clause.OnConflict{
+		return config.GetDB().WithContext(dbCtx).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
 			UpdateAll: true,
 		}).Create(&taskNumber).Error
