@@ -15,8 +15,14 @@ import (
 	"gorm.io/gorm"
 )
 
-var initStartTime time.Time = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 var statsDuration time.Duration = time.Hour
+
+const statsProgressMarkerSeconds int64 = -1
+
+func getStatsInitStartTime() time.Time {
+	t, _ := time.Parse(time.RFC3339, config.GetConfig().Stats.InitStartTime)
+	return t.UTC()
+}
 
 func getTaskCounts(ctx context.Context, start, end time.Time) ([]*models.TaskCount, error) {
 	var results []*models.TaskCount
@@ -93,7 +99,7 @@ func statsTaskCount(ctx context.Context) error {
 	if taskCount.ID > 0 {
 		start = taskCount.End
 	} else {
-		start = initStartTime
+		start = getStatsInitStartTime()
 	}
 
 	for {
@@ -189,6 +195,15 @@ func getTaskExecutionTimeCount(ctx context.Context, start, end time.Time) ([]*mo
 			}
 		}
 	}
+	if len(results) == 0 {
+		results = append(results, &models.TaskExecutionTimeCount{
+			Start:    start,
+			End:      end,
+			TaskType: models.TaskTypeSD,
+			Seconds:  statsProgressMarkerSeconds,
+			Count:    0,
+		})
+	}
 	return results, nil
 }
 
@@ -209,7 +224,7 @@ func statsTaskExecutionTimeCount(ctx context.Context) error {
 	if taskExecutionTimeCount.ID > 0 {
 		start = taskExecutionTimeCount.End
 	} else {
-		start = initStartTime
+		start = getStatsInitStartTime()
 	}
 
 	for {
@@ -300,6 +315,15 @@ func getTaskUploadResultTimeCount(ctx context.Context, start, end time.Time) ([]
 			})
 		}
 	}
+	if len(results) == 0 {
+		results = append(results, &models.TaskUploadResultTimeCount{
+			Start:    start,
+			End:      end,
+			TaskType: models.TaskTypeSD,
+			Seconds:  statsProgressMarkerSeconds,
+			Count:    0,
+		})
+	}
 	return results, nil
 }
 
@@ -320,7 +344,7 @@ func statsTaskUploadResultTimeCount(ctx context.Context) error {
 	if taskUploadResultTimeCount.ID > 0 {
 		start = taskUploadResultTimeCount.End
 	} else {
-		start = initStartTime
+		start = getStatsInitStartTime()
 	}
 
 	for {
@@ -409,6 +433,15 @@ func getTaskWaitingTimeCount(ctx context.Context, start, end time.Time) ([]*mode
 			})
 		}
 	}
+	if len(results) == 0 {
+		results = append(results, &models.TaskWaitingTimeCount{
+			Start:    start,
+			End:      end,
+			TaskType: models.TaskTypeSD,
+			Seconds:  statsProgressMarkerSeconds,
+			Count:    0,
+		})
+	}
 	return results, nil
 }
 
@@ -429,7 +462,7 @@ func statsTaskWaitingTimeCount(ctx context.Context) error {
 	if taskWaitingTimeCount.ID > 0 {
 		start = taskWaitingTimeCount.End
 	} else {
-		start = initStartTime
+		start = getStatsInitStartTime()
 	}
 
 	for {

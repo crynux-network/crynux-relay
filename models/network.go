@@ -33,7 +33,7 @@ func AddTotalTask(ctx context.Context, db *gorm.DB) error {
 	if err := db.WithContext(dbCtx).Clauses(
 		clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{"total_tasks": gorm.Expr("total_tasks + 1")}),
+			DoUpdates: clause.Assignments(map[string]interface{}{"total_tasks": gorm.Expr("COALESCE(total_tasks, 0) + 1")}),
 		},
 	).Model(&taskNumber).Create(&taskNumber).Error; err != nil {
 		return err

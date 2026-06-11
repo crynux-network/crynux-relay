@@ -37,7 +37,7 @@ func GetTaskUploadResultTimeHistogram(_ *gin.Context, input *GetTaskUploadResult
 	}
 
 	timeout := 300
-	subQuery := config.GetDB().Model(&models.TaskUploadResultTimeCount{}).Select("seconds, count").Where("start >= ?", start).Where("seconds < ?", timeout)
+	subQuery := config.GetDB().Model(&models.TaskUploadResultTimeCount{}).Select("seconds, count").Where("start >= ?", start).Where("seconds >= ?", 0).Where("seconds < ?", timeout)
 	switch input.TaskType {
 	case ImageTaskType:
 		subQuery = subQuery.Where("task_type = ?", models.TaskTypeSD)

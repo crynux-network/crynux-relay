@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -61,6 +62,9 @@ func InitConfig(configPath string) error {
 		return err
 	}
 	if err := checkFundingNetworks(); err != nil {
+		return err
+	}
+	if err := checkStatsConfig(); err != nil {
 		return err
 	}
 
@@ -145,6 +149,18 @@ func checkFundingNetworks() error {
 			return fmt.Errorf("deposit withdraw network %s log block range not set", network)
 		}
 	}
+	return nil
+}
+
+func checkStatsConfig() error {
+	raw := strings.TrimSpace(appConfig.Stats.InitStartTime)
+	if raw == "" {
+		return errors.New("stats.init_start_time is not set")
+	}
+	if _, err := time.Parse(time.RFC3339, raw); err != nil {
+		return fmt.Errorf("stats.init_start_time must be RFC3339: %w", err)
+	}
+	appConfig.Stats.InitStartTime = raw
 	return nil
 }
 

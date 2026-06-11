@@ -141,6 +141,10 @@ type AppConfig struct {
 		StableDiffusionFinetuneLora string `mapstructure:"stable_diffusion_finetune_lora"`
 	} `mapstructure:"task_schema"`
 
+	Stats struct {
+		InitStartTime string `mapstructure:"init_start_time"`
+	} `mapstructure:"stats"`
+
 	Withdraw struct {
 		RelayWalletAddress   string `mapstructure:"relay_wallet_address"`
 		MinWithdrawalAmount  uint64 `mapstructure:"min_withdrawal_amount"`
