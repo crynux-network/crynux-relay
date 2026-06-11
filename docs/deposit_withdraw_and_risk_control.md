@@ -86,7 +86,7 @@ On successful settlement, Relay MUST:
 1. Split task fee by DAO ratio.
 2. Create one `DaoTaskShare` event for the DAO address.
 3. Create one `TaskIncome` event for the node operator address with the operator-retained amount.
-4. When delegated staking is enabled and the node has active delegations on the task network, create `UserDelegation` events for delegators by proportional stake split of the configured delegator pool.
+4. When delegated staking is enabled and the node has active delegations on the selected node's current blockchain network, create `UserDelegation` events for delegators by proportional stake split of the configured delegator pool.
 5. Increase all recipient balances by their split amounts.
 
 ## Withdraw

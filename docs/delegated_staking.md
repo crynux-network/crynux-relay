@@ -18,8 +18,11 @@ This specification covers:
 - Operator staking: the stake owned by the node operator and stored in `nodes.stake_amount`.
 - Delegated staking: the stake provided by third-party delegators through the `DelegatedStaking` contract.
 - Delegator share: the integer percentage stored in `nodes.delegator_share` that defines how much of node-side task income is redistributed to delegators.
-- Active delegation: a `delegations` row with `valid = true`.
-- Total node staking: operator staking plus the sum of all active delegated staking for the same node and network.
+- Current delegation: a `delegations` row with `slashed = false`. The row represents stake currently locked in the `DelegatedStaking` contract on the row's blockchain network.
+- Slashed delegation: a `delegations` row with `slashed = true`. The row is a read-only user-visible record for confiscated delegated stake and MUST NOT participate in staking logic.
+- Active delegation: a current delegation whose blockchain network matches the node's current blockchain network.
+- Inactive delegation: a current delegation whose blockchain network differs from the node's current blockchain network.
+- Total node staking: operator staking plus the sum of current delegated staking for the same node and the node's current blockchain network.
 
 ## Business Requirements
 
@@ -44,7 +47,7 @@ Relay MUST store delegated staking in these places:
 | Storage | Purpose |
 |---------|---------|
 | `nodes.delegator_share` | Current delegator income percentage of the node |
-| `delegations` | Current delegation rows keyed by delegator, node, and network |
+| `delegations` | User-visible delegation records keyed by delegator, node, and blockchain network |
 | `relay_account_events` type `UserDelegation` | Delegator income ledger entries |
 | `node_earnings` | Operator-side and delegator-side earnings of a node |
 | `user_staking_earnings` | Earnings of one delegation tuple `(user, node, network)` |
@@ -55,6 +58,8 @@ Relay MUST store delegated staking in these places:
 | `delegated_staking_slash_records` | Per-delegator slash outcome audit records |
 
 Relay MUST keep delegation identity scoped by network. The same delegator may delegate to the same node address on different networks, and each network MUST use an independent delegation record.
+
+In `delegations`, `slashed = false` rows MUST represent current locked delegated stake. `slashed = true` rows MUST represent read-only slashed state. A missing row MUST represent no current or user-visible delegation record, including after normal unstake.
 
 ## Selection Rules
 
@@ -91,7 +96,7 @@ operator_income = node_income_before_delegation - delegator_pool
 Relay MUST apply delegated staking distribution only when both conditions are true:
 
 - `delegator_share > 0`
-- the node has at least one active delegation on the task network
+- the node has at least one non-slashed delegation row on the selected node's current blockchain network
 
 If either condition is false, Relay MUST:
 
@@ -101,7 +106,7 @@ If either condition is false, Relay MUST:
 
 When delegated staking distribution is active, Relay MUST:
 
-1. Sum all active delegation amounts for the node on the task network.
+1. Sum all non-slashed delegation amounts for the node on the selected node's current blockchain network.
 2. Split `delegator_pool` proportionally by stake.
 3. Assign any integer remainder to one delegator so the total dispatched amount equals `delegator_pool`.
 4. Create one `TaskIncome` event for the operator.
@@ -112,31 +117,62 @@ When delegated staking distribution is active, Relay MUST:
 
 Relay MUST keep delegated staking state aligned with the `DelegatedStaking` contract.
 
-When a delegation is created or increased, Relay MUST update the corresponding `(delegator, node, network)` record and mark it active.
+When a delegation is created or increased, Relay MUST upsert the corresponding `(delegator, node, network)` record, set `slashed = false`, and update the amount and timestamps.
 
-When a delegation is unstaked, Relay MUST mark the corresponding delegation record inactive.
+When a delegation is unstaked, Relay MUST delete the corresponding non-slashed delegation row.
 
 When `delegator_share` changes, Relay MUST update `nodes.delegator_share`.
 
 If `delegator_share` becomes `0`, Relay MUST:
 
-- keep existing delegation records active until each delegator exits or is slashed on chain
+- keep existing non-slashed delegation rows until each delegator exits or is slashed on chain
 - stop treating the node as a delegated staking node
 - keep active delegated staking in total node staking for task selection
 - stop distributing task income to delegators of that node
 
-When operator slash is confirmed through `NodeStaking.NodeSlashed`, Relay MUST create or resume a delegated slash job for the node and network. The job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions and MUST NOT mark a delegation inactive until the matching `DelegatedStaking.DelegatorSlashed` event is confirmed.
+When operator slash is confirmed through `NodeStaking.NodeSlashed`, Relay MUST create or resume a delegated slash job for the node and network. The job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions and MUST NOT mark a delegation slashed until the matching `DelegatedStaking.DelegatorSlashed` event is confirmed.
 
 For each confirmed `DelegatorSlashed` event, Relay MUST atomically:
 
-- mark the matching delegation inactive
+- mark the matching non-slashed delegation row `slashed = true` and update its amount to the slashed amount
 - write one `delegated_staking_slash_records` record with node, delegator, network, amount, slash transaction hash, block number, and log index
 - emit the Relay `DelegatedStakingSlashed` event
 - remove the delegation from the in-memory delegation cache
 
 Relay MUST use `(network, slash_tx_hash, log_index)` as the chain-event idempotency key for delegated slash audit records. A delegated slash job MUST be completed only after the contract reports zero remaining delegated staking records for the node.
 
-When a node quits, Relay MUST remove the node from task selection, but Relay MUST NOT invalidate delegations only because of the local quit action. Delegation validity SHALL continue to follow the on-chain delegated staking state.
+When a node quits, Relay MUST remove the node from task selection, but Relay MUST NOT delete or mark delegations slashed only because of the local quit action. Current delegation rows SHALL continue to follow the on-chain delegated staking state.
+
+## Multi-Chain Delegation Handling
+
+Delegation visibility for users MUST follow the on-chain delegated staking state on each network. A delegation MUST remain visible to the delegator while the corresponding stake remains locked in the `DelegatedStaking` contract on its network, even when the node address is no longer joined to that network in Relay.
+
+Relay and Portal MUST distinguish user-visible delegation state from node selection state:
+
+- Active user delegation: the non-slashed delegation row exists and its blockchain network matches the node's current blockchain network.
+- Inactive user delegation: the non-slashed delegation row exists and its blockchain network differs from the node's current blockchain network.
+- Slashed user delegation: the delegation row has `slashed = true`.
+- Removed user delegation: no delegation row exists because the delegation was normally unstaked.
+
+Portal MUST include active, inactive, and slashed user delegations in the delegator's delegated staking list. Portal MUST label each record as `Active`, `Inactive`, or `Slashed`, and MUST show the delegation network and the node's current blockchain network when they differ. Inactive and slashed delegations MUST NOT be presented as contributing to the node's current staking score or task selection weight.
+
+Portal MUST allow a delegator to unstake an inactive delegation from the delegation's own network. After the unstake is confirmed on that network, the delegation MUST no longer appear in the delegator's delegated staking list. Unstaked delegations MUST NOT remain visible as historical delegation records in Portal and MUST NOT be required as current delegation records in Relay.
+
+When a node quits network `A` and later joins network `B`, delegations that remain locked on network `A` MUST remain visible to their delegators as inactive delegations. Those delegations MUST NOT contribute to the node's staking score, task selection weight, node delegated staking total, node delegator count, or task income distribution while the node's current blockchain network is `B`.
+
+When a delegator unstakes from network `A` after the node has joined network `B`, Portal MUST remove that network `A` delegation from the delegator's delegated staking list after the network `A` unstake is confirmed. The node's current blockchain network MUST NOT prevent the user-visible delegation state for network `A` from reflecting the confirmed unstake.
+
+When a node quits network `A` and later joins network `A` again, Relay MUST rebuild the node's network `A` delegated staking state from the network `A` contract. Portal MUST show only delegations that still exist on network `A` after that rebuild as active delegations.
+
+When a delegation is slashed, Relay MUST preserve a user-visible `slashed = true` delegation row for the delegator. The slashed record MUST NOT be counted as an active or inactive delegation, MUST NOT be unstakable, and MUST NOT contribute to staking score, task selection weight, node delegated staking total, node delegator count, or task income distribution.
+
+Examples:
+
+1. A user delegates to node `N` on network `A` while node `N` is joined to network `A`. Portal shows the delegation as active, and the delegation contributes to node `N` on network `A`.
+2. Node `N` quits network `A` and joins network `B`. The user's network `A` delegation remains visible in Portal as inactive while the stake remains locked on network `A`. It does not contribute to node `N` on network `B`.
+3. The user unstakes the inactive network `A` delegation after node `N` has joined network `B`. After the network `A` unstake is confirmed, Portal no longer shows that delegation.
+4. Node `N` later joins network `A` again. Portal shows the user's delegation as active only if the network `A` contract still contains that delegation.
+5. A user's delegation is slashed. Portal shows a slashed record for the user, but the record has no unstake action and no staking or task-selection effect.
 
 ## Earnings and Statistics
 
@@ -184,6 +220,8 @@ Relay MUST expose delegated staking statistics through these APIs:
 
 The delegated-staking-only node APIs and statistics APIs MUST return `404` when `delegator_share = 0`.
 
+`GET /v1/delegator/:user_address/delegation` and `GET /v1/delegator/:user_address/delegations` MUST return user-visible delegation records with `status = active`, `status = inactive`, or `status = slashed`. They MUST include the delegation blockchain network and the node current blockchain network. Earnings lookup for these APIs MUST be keyed by `(node_address, network)`.
+
 ## Configuration
 
 Each blockchain network configuration MUST provide:
@@ -194,4 +232,4 @@ Each blockchain network configuration MUST provide:
 | `blockchains.<network>.delegated_staking_slash_batch_size` | Maximum delegator addresses in one delegated slash transaction |
 | `blockchains.<network>.delegated_staking_read_page_size` | Page size for contract delegation reads |
 
-Delegated staking state, earnings, and queries MUST always use the task or event network as the isolation key.
+Delegated staking state, earnings, and queries MUST always use the delegation blockchain network as the isolation key. Selection and settlement MUST use the selected node's current blockchain network.

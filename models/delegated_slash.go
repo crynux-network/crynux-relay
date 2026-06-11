@@ -48,3 +48,17 @@ func GetDelegatedSlashJob(ctx context.Context, db *gorm.DB, nodeAddress, network
 	}
 	return &job, nil
 }
+
+func HasUnfinishedDelegatedSlashJobForNode(ctx context.Context, db *gorm.DB, nodeAddress string) (bool, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var count int64
+	if err := db.WithContext(dbCtx).
+		Model(&DelegatedSlashJob{}).
+		Where("node_address = ? AND status <> ?", nodeAddress, DelegatedSlashJobStatusCompleted).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

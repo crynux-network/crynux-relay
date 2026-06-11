@@ -2,6 +2,7 @@
 
 | Document | Description |
 |----------|-------------|
+| [architecture.md](./architecture.md) | Single Relay service boundary, configured blockchain networks, node current blockchain network, and terminology rules |
 | [node_selection.md](./node_selection.md) | Hard filters, base weight, model locality boost, and weighted sampling for task-to-node assignment |
 | [qos.md](./qos.md) | Long-term performance score (`Q_long`) and short-term reliability factor (`H`) that compose the runtime QoS |
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
@@ -49,6 +50,16 @@ Documentation MUST NOT include:
 Documentation MUST use definitive language that can be implemented and tested:
 - Requirement keywords: MUST, MUST NOT, SHALL, SHOULD. Use SHOULD only when a requirement level is intended.
 - Exact behavior, constraints, and interfaces.
+
+## Architecture Terminology Requirements
+
+Documentation MUST follow [architecture.md](./architecture.md) for system boundary and terminology.
+
+Crynux Relay is one off-chain Relay service that works with multiple configured blockchain networks. Documentation MUST NOT describe this as multiple Relay networks.
+
+The term `network` in blockchain-facing features MUST mean blockchain network unless the document explicitly defines another scope. Documentation MUST use `blockchain network` or `node current blockchain network` when precision is required.
+
+Documentation MUST NOT use `Relay network`, `current Relay network`, `node Relay network`, or `task network` to mean a blockchain network. Tasks are scheduled and dispatched by Relay and are not partitioned by blockchain network.
 
 ## Chat Content Isolation
 

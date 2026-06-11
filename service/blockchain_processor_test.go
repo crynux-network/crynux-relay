@@ -204,7 +204,7 @@ func TestNodeStakedSkipsMismatchedNetwork(t *testing.T) {
 	}
 }
 
-func TestDelegatorStakedSkipsMismatchedNetwork(t *testing.T) {
+func TestDelegatorStakedProcessesPreviousNetworkUserState(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
@@ -217,21 +217,24 @@ func TestDelegatorStakedSkipsMismatchedNetwork(t *testing.T) {
 		Amount:           big.NewInt(15),
 	}, "network-b")
 	if err != nil {
-		t.Fatalf("updateDelegatedStaking should skip mismatched network without error: %v", err)
+		t.Fatalf("updateDelegatedStaking failed: %v", err)
 	}
 
 	var count int64
 	if err := db.Model(&models.Delegation{}).Count(&count).Error; err != nil {
 		t.Fatalf("failed to count delegations: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("expected no delegation rows, got %d", count)
+	if count != 1 {
+		t.Fatalf("expected one delegation row, got %d", count)
 	}
-	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-b"); amount.Sign() != 0 {
-		t.Fatalf("expected network-b delegation cache to remain empty, got %s", amount.String())
+	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-b"); amount.Cmp(big.NewInt(15)) != 0 {
+		t.Fatalf("expected network-b delegation cache to be 15, got %s", amount.String())
 	}
-	if count := countEvents(t, db); count != 0 {
-		t.Fatalf("expected no events, got %d", count)
+	if count := countEvents(t, db); count != 1 {
+		t.Fatalf("expected one event, got %d", count)
+	}
+	if _, ok := globalMaxStaking.stakingMap[nodeAddress.Hex()]; ok {
+		t.Fatal("expected max-staking cache to remain unchanged")
 	}
 }
 
@@ -258,8 +261,8 @@ func TestDelegatorStakedWithZeroShareAffectsEffectiveCache(t *testing.T) {
 	if err := db.First(&delegation, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-a").Error; err != nil {
 		t.Fatalf("failed to load delegation: %v", err)
 	}
-	if !delegation.Valid || delegation.Amount.Int.Cmp(big.NewInt(15)) != 0 {
-		t.Fatalf("expected stored delegation amount 15 and valid=true, got amount=%s valid=%v", delegation.Amount.String(), delegation.Valid)
+	if delegation.Slashed || delegation.Amount.Int.Cmp(big.NewInt(15)) != 0 {
+		t.Fatalf("expected stored delegation amount 15 and slashed=false, got amount=%s slashed=%v", delegation.Amount.String(), delegation.Slashed)
 	}
 	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Cmp(big.NewInt(15)) != 0 {
 		t.Fatalf("expected zero-share delegation to be cached as 15, got %s", amount.String())
@@ -269,17 +272,17 @@ func TestDelegatorStakedWithZeroShareAffectsEffectiveCache(t *testing.T) {
 	}
 }
 
-func TestDelegatorUnstakedSkipsMismatchedNetwork(t *testing.T) {
+func TestDelegatorUnstakedDeletesPreviousNetworkUserState(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
-	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
+	seedTestNode(t, db, nodeAddress.Hex(), "network-b", models.NodeStatusAvailable, 10)
 	if err := db.Create(&models.Delegation{
 		DelegatorAddress: delegatorAddress.Hex(),
 		NodeAddress:      nodeAddress.Hex(),
 		Amount:           models.BigInt{Int: *big.NewInt(15)},
-		Valid:            true,
+		Slashed:          false,
 		Network:          "network-a",
 	}).Error; err != nil {
 		t.Fatalf("failed to seed delegation: %v", err)
@@ -290,23 +293,23 @@ func TestDelegatorUnstakedSkipsMismatchedNetwork(t *testing.T) {
 		DelegatorAddress: delegatorAddress,
 		NodeAddress:      nodeAddress,
 		Amount:           big.NewInt(15),
-	}, "network-b")
+	}, "network-a")
 	if err != nil {
-		t.Fatalf("unstakeDelegatedStaking should skip mismatched network without error: %v", err)
+		t.Fatalf("unstakeDelegatedStaking failed: %v", err)
 	}
 
-	var delegation models.Delegation
-	if err := db.First(&delegation, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-a").Error; err != nil {
-		t.Fatalf("failed to load delegation: %v", err)
+	var count int64
+	if err := db.Model(&models.Delegation{}).Where("delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-a").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count delegations: %v", err)
 	}
-	if !delegation.Valid {
-		t.Fatal("expected existing same-network delegation to stay valid")
+	if count != 0 {
+		t.Fatalf("expected previous-network delegation to be deleted, got %d", count)
 	}
-	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Cmp(big.NewInt(15)) != 0 {
-		t.Fatalf("expected network-a cache to remain 15, got %s", amount.String())
+	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Sign() != 0 {
+		t.Fatalf("expected network-a cache to be cleared, got %s", amount.String())
 	}
-	if count := countEvents(t, db); count != 0 {
-		t.Fatalf("expected no events, got %d", count)
+	if count := countEvents(t, db); count != 1 {
+		t.Fatalf("expected one event, got %d", count)
 	}
 }
 
@@ -352,7 +355,7 @@ func TestChangeNodeDelegatorShareZeroKeepsEffectiveDelegation(t *testing.T) {
 		DelegatorAddress: delegatorAddress.Hex(),
 		NodeAddress:      nodeAddress.Hex(),
 		Amount:           models.BigInt{Int: *big.NewInt(15)},
-		Valid:            true,
+		Slashed:          false,
 		Network:          "network-a",
 	}).Error; err != nil {
 		t.Fatalf("failed to seed delegation: %v", err)
@@ -386,7 +389,7 @@ func TestChangeNodeDelegatorShareZeroKeepsEffectiveDelegation(t *testing.T) {
 	}
 }
 
-func TestDelegatorSlashedClearsMatchingNetworkDelegationForQuitNode(t *testing.T) {
+func TestDelegatorSlashedMarksMatchingNetworkDelegationForQuitNode(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockchainProcessorTestDB(t)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
@@ -396,7 +399,7 @@ func TestDelegatorSlashedClearsMatchingNetworkDelegationForQuitNode(t *testing.T
 		DelegatorAddress: delegatorAddress.Hex(),
 		NodeAddress:      nodeAddress.Hex(),
 		Amount:           models.BigInt{Int: *big.NewInt(15)},
-		Valid:            true,
+		Slashed:          false,
 		Network:          "network-a",
 	}).Error; err != nil {
 		t.Fatalf("failed to seed delegation: %v", err)
@@ -420,8 +423,8 @@ func TestDelegatorSlashedClearsMatchingNetworkDelegationForQuitNode(t *testing.T
 	if err := db.First(&delegation, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-a").Error; err != nil {
 		t.Fatalf("failed to load delegation: %v", err)
 	}
-	if delegation.Valid {
-		t.Fatal("expected matching-network delegation to be invalidated")
+	if !delegation.Slashed || delegation.Amount.Int.Cmp(big.NewInt(15)) != 0 {
+		t.Fatalf("expected matching-network delegation to be marked slashed with amount 15, got amount=%s slashed=%v", delegation.Amount.String(), delegation.Slashed)
 	}
 	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Sign() != 0 {
 		t.Fatalf("expected delegation cache to be cleared, got %s", amount.String())
@@ -449,7 +452,7 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 		DelegatorAddress: staleDelegatorAddress.Hex(),
 		NodeAddress:      nodeAddress.Hex(),
 		Amount:           models.BigInt{Int: *big.NewInt(99)},
-		Valid:            true,
+		Slashed:          false,
 		Network:          "network-b",
 	}).Error; err != nil {
 		t.Fatalf("failed to seed stale delegation: %v", err)
@@ -490,19 +493,19 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 		t.Fatalf("SetNodeStatusJoin failed: %v", err)
 	}
 
-	var stale models.Delegation
-	if err := db.First(&stale, "delegator_address = ? AND node_address = ? AND network = ?", staleDelegatorAddress.Hex(), nodeAddress.Hex(), "network-b").Error; err != nil {
-		t.Fatalf("failed to load stale delegation: %v", err)
+	var staleCount int64
+	if err := db.Model(&models.Delegation{}).Where("delegator_address = ? AND node_address = ? AND network = ?", staleDelegatorAddress.Hex(), nodeAddress.Hex(), "network-b").Count(&staleCount).Error; err != nil {
+		t.Fatalf("failed to count stale delegations: %v", err)
 	}
-	if stale.Valid {
-		t.Fatal("expected stale delegation to be invalidated")
+	if staleCount != 0 {
+		t.Fatalf("expected stale delegation to be deleted, got %d", staleCount)
 	}
 	var current models.Delegation
 	if err := db.First(&current, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-b").Error; err != nil {
 		t.Fatalf("failed to load current delegation: %v", err)
 	}
-	if !current.Valid || current.Amount.Int.Cmp(big.NewInt(12)) != 0 {
-		t.Fatalf("expected current delegation amount 12 and valid=true, got amount=%s valid=%v", current.Amount.String(), current.Valid)
+	if current.Slashed || current.Amount.Int.Cmp(big.NewInt(12)) != 0 {
+		t.Fatalf("expected current delegation amount 12 and slashed=false, got amount=%s slashed=%v", current.Amount.String(), current.Slashed)
 	}
 	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-b"); amount.Cmp(big.NewInt(12)) != 0 {
 		t.Fatalf("expected delegation cache to be rebuilt to 12, got %s", amount.String())
@@ -567,8 +570,8 @@ func TestSetNodeStatusJoinWithZeroShareKeepsDelegationsInEffectiveCache(t *testi
 	if err := db.First(&delegation, "delegator_address = ? AND node_address = ? AND network = ?", delegatorAddress.Hex(), nodeAddress.Hex(), "network-b").Error; err != nil {
 		t.Fatalf("failed to load delegation: %v", err)
 	}
-	if !delegation.Valid || delegation.Amount.Int.Cmp(big.NewInt(12)) != 0 {
-		t.Fatalf("expected stored delegation amount 12 and valid=true, got amount=%s valid=%v", delegation.Amount.String(), delegation.Valid)
+	if delegation.Slashed || delegation.Amount.Int.Cmp(big.NewInt(12)) != 0 {
+		t.Fatalf("expected stored delegation amount 12 and slashed=false, got amount=%s slashed=%v", delegation.Amount.String(), delegation.Slashed)
 	}
 	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-b"); amount.Cmp(big.NewInt(12)) != 0 {
 		t.Fatalf("expected zero-share delegation to be cached as 12, got %s", amount.String())

@@ -2,6 +2,10 @@
 
 This document specifies batched delegated staking slash processing in Relay.
 
+## What is Delegated Staking Slash
+
+Slash is the penalty applied when a staked node cheats by submitting a forged task result. The node operator stake and all user delegated stake on that node MUST be confiscated and transferred to the slash receiver address as the penalty for the cheating behavior. Delegated stake MUST be penalized together with the node operator stake because it increases the economic cost of cheating: a malicious node loses more funds when it cheats, and honest nodes with more delegated user stake make it harder for other malicious nodes to increase their task selection probability without committing more slashable funds. From the delegator's perspective, delegated staking slash means the delegated stake is lost as part of the penalty applied to the cheating node.
+
 ## Scale Assumptions
 
 A single node MAY have a very large number of delegators. A single delegator is not expected to have a very large number of delegations.
@@ -28,9 +32,11 @@ Relay MUST create or resume a durable delegated slash job after a confirmed `Nod
 
 Relay MUST select delegator address batches from the `DelegatedStaking` contract, queue `DelegatedStaking::slashNodeDelegations` transactions, and keep the job open while the contract reports remaining delegators for the node.
 
-Relay MUST process `DelegatedStaking.DelegatorSlashed` events as the source of truth for delegated slash progress. For each event, Relay MUST atomically invalidate the matching delegation row and write one delegated slash audit row.
+Relay MUST process `DelegatedStaking.DelegatorSlashed` events as the source of truth for delegated slash progress. For each event, Relay MUST atomically mark the matching non-slashed delegation row `slashed = true`, update the row amount to the slashed amount, and write one delegated slash audit row.
 
-Relay MUST update the delegation cache only after the database transaction that invalidates the delegation and writes the audit row succeeds.
+Relay MUST remove the delegation from the active delegation cache only after the database transaction that marks the delegation slashed and writes the audit row succeeds. The slashed delegation row MUST remain visible to the delegator as a read-only record and MUST NOT be counted as active or inactive stake.
+
+Relay MUST reject node join for a node address while any delegated slash job for that node address is pending, processing, failed, or otherwise not completed on any blockchain network.
 
 Relay MUST resume unfinished delegated slash jobs on startup and periodically while running. Recovery MUST NOT queue a new batch when a pending or sent batch transaction already exists for the job.
 
