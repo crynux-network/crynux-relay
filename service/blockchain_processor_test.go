@@ -218,6 +218,81 @@ func countEvents(t *testing.T, db *gorm.DB) int64 {
 	return count
 }
 
+func TestGetOrCreateDelegatedSlashJobCreatesNewJobAfterCompletedJob(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockchainProcessorTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	if err := db.Create(&models.DelegatedSlashJob{
+		NodeAddress: nodeAddress.Hex(),
+		Network:     "network-a",
+		Status:      models.DelegatedSlashJobStatusCompleted,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed completed delegated slash job: %v", err)
+	}
+
+	job, err := getOrCreateDelegatedSlashJob(ctx, db, &bindings.NodeStakingNodeSlashed{
+		NodeAddress: nodeAddress,
+		Raw: types.Log{
+			TxHash: common.HexToHash("0x01"),
+			Index:  2,
+		},
+	}, "network-a")
+	if err != nil {
+		t.Fatalf("getOrCreateDelegatedSlashJob failed: %v", err)
+	}
+	if job.Status != models.DelegatedSlashJobStatusPending {
+		t.Fatalf("expected new job to be pending, got %s", job.Status)
+	}
+
+	var jobs []models.DelegatedSlashJob
+	if err := db.Order("id").Find(&jobs, "node_address = ? AND network = ?", nodeAddress.Hex(), "network-a").Error; err != nil {
+		t.Fatalf("failed to load delegated slash jobs: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected completed history job and new pending job, got %d", len(jobs))
+	}
+	if jobs[0].Status != models.DelegatedSlashJobStatusCompleted || jobs[1].Status != models.DelegatedSlashJobStatusPending {
+		t.Fatalf("expected completed then pending jobs, got %s then %s", jobs[0].Status, jobs[1].Status)
+	}
+}
+
+func TestGetOrCreateDelegatedSlashJobReusesSameNodeSlashEventJob(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockchainProcessorTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	event := &bindings.NodeStakingNodeSlashed{
+		NodeAddress: nodeAddress,
+		Raw: types.Log{
+			TxHash: common.HexToHash("0x01"),
+			Index:  2,
+		},
+	}
+
+	firstJob, err := getOrCreateDelegatedSlashJob(ctx, db, event, "network-a")
+	if err != nil {
+		t.Fatalf("first getOrCreateDelegatedSlashJob failed: %v", err)
+	}
+	if err := db.Model(firstJob).Update("status", models.DelegatedSlashJobStatusCompleted).Error; err != nil {
+		t.Fatalf("failed to complete delegated slash job: %v", err)
+	}
+
+	secondJob, err := getOrCreateDelegatedSlashJob(ctx, db, event, "network-a")
+	if err != nil {
+		t.Fatalf("second getOrCreateDelegatedSlashJob failed: %v", err)
+	}
+	if secondJob.ID != firstJob.ID {
+		t.Fatalf("expected repeated node slash event to reuse job %d, got %d", firstJob.ID, secondJob.ID)
+	}
+
+	var count int64
+	if err := db.Model(&models.DelegatedSlashJob{}).Where("node_address = ? AND network = ?", nodeAddress.Hex(), "network-a").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count delegated slash jobs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one job for repeated node slash event, got %d", count)
+	}
+}
+
 func TestNodeStakedSkipsMismatchedNetwork(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockchainProcessorTestDB(t)
@@ -439,6 +514,21 @@ func TestDelegatorSlashedMarksMatchingNetworkDelegationForQuitNode(t *testing.T)
 	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
 	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
 	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusQuit, 0)
+	if err := db.Create(&models.DelegatedSlashJob{
+		NodeAddress: nodeAddress.Hex(),
+		Network:     "network-a",
+		Status:      models.DelegatedSlashJobStatusCompleted,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed completed delegated slash job: %v", err)
+	}
+	activeJob := models.DelegatedSlashJob{
+		NodeAddress: nodeAddress.Hex(),
+		Network:     "network-a",
+		Status:      models.DelegatedSlashJobStatusProcessing,
+	}
+	if err := db.Create(&activeJob).Error; err != nil {
+		t.Fatalf("failed to seed active delegated slash job: %v", err)
+	}
 	if err := db.Create(&models.Delegation{
 		DelegatorAddress: delegatorAddress.Hex(),
 		NodeAddress:      nodeAddress.Hex(),
@@ -479,6 +569,13 @@ func TestDelegatorSlashedMarksMatchingNetworkDelegationForQuitNode(t *testing.T)
 	}
 	if auditCount != 1 {
 		t.Fatalf("expected one slash audit, got %d", auditCount)
+	}
+	var audit models.DelegatedStakingSlashRecord
+	if err := db.First(&audit).Error; err != nil {
+		t.Fatalf("failed to load slash audit: %v", err)
+	}
+	if !audit.SlashJobID.Valid || audit.SlashJobID.Int64 != int64(activeJob.ID) {
+		t.Fatalf("expected slash audit to use active job id %d, got valid=%v id=%d", activeJob.ID, audit.SlashJobID.Valid, audit.SlashJobID.Int64)
 	}
 	if count := countEvents(t, db); count != 1 {
 		t.Fatalf("expected one relay event, got %d", count)

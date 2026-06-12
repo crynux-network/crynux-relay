@@ -42,7 +42,7 @@ func recoverDelegatedSlashJobs(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 	for _, job := range jobs {
-		if err := sendNextDelegatedSlashBatch(dbCtx, db, job.NodeAddress, job.Network); err != nil {
+		if err := sendNextDelegatedSlashBatch(dbCtx, db, job); err != nil {
 			return err
 		}
 	}

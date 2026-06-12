@@ -130,7 +130,7 @@ If `delegator_share` becomes `0`, Relay MUST:
 - keep active delegated staking in total node staking for task selection
 - stop distributing task income to delegators of that node
 
-When operator slash is confirmed through `NodeStaking.NodeSlashed`, Relay MUST create or resume a delegated slash job for the node and network. The job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions and MUST NOT mark a delegation slashed until the matching `DelegatedStaking.DelegatorSlashed` event is confirmed.
+When operator slash is confirmed through `NodeStaking.NodeSlashed`, Relay MUST create or resume the delegated slash job for that confirmed chain event. The job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions and MUST NOT mark a delegation slashed until the matching `DelegatedStaking.DelegatorSlashed` event is confirmed. A later confirmed `NodeStaking.NodeSlashed` event for the same node address MUST use a new delegated slash job after previous jobs are completed.
 
 For each confirmed `DelegatorSlashed` event, Relay MUST atomically:
 

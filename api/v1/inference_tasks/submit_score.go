@@ -73,6 +73,8 @@ func SubmitScore(c *gin.Context, in *SubmitScoreInputWithSignature) (*response.R
 			if err := task.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
 				return nil, response.NewExceptionResponse(err)
 			}
+		} else if errors.Is(err, service.ErrWrongNodeCurrentTask) {
+			return nil, response.NewValidationErrorResponse("task_id_commitment", err.Error())
 		} else {
 			return nil, response.NewExceptionResponse(err)
 		}

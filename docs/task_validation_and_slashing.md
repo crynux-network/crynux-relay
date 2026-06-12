@@ -179,10 +179,12 @@ The authenticated admin API `POST /v2/admin/nodes/slash` also calls `SlashNode`.
 3. Active node vesting records for the node address are marked with `slashed = true`.
 4. A **`NodeStaking::slashStaking`** blockchain transaction is queued when the node has active operator staking on its current blockchain network. This calls the `slashStaking` method on the `NodeStaking` smart contract and confiscates only the operator stake.
 5. Two Relay events are emitted in order: `NodeQuit` with the blockchain transaction ID, then `NodeSlashed` with the offending task ID commitment or the admin slash placeholder.
-6. After the `NodeStaking.NodeSlashed` chain event is confirmed, Relay MUST mark active node vesting records as slashed as an idempotent backstop and MUST create or resume a delegated slash job for the node and network.
+6. After the `NodeStaking.NodeSlashed` chain event is confirmed, Relay MUST mark active node vesting records as slashed as an idempotent backstop and MUST create or resume the delegated slash job for that confirmed chain event.
 7. The delegated slash job MUST queue bounded `DelegatedStaking::slashNodeDelegations` transactions. Each transaction MUST include no more than `blockchains.<network>.delegated_staking_slash_batch_size` delegator addresses.
 8. Relay MUST process confirmed `DelegatedStaking.DelegatorSlashed` events as the source of truth for delegated slash progress. Relay MUST write one audit row per slashed delegator, mark only confirmed non-slashed delegation rows `slashed = true`, remove them from active delegation caches, and emit one generic `DelegatedStakingSlashed` Relay event per confirmed slashed delegator.
 9. Relay MUST complete the delegated slash job only when the `DelegatedStaking` contract reports zero remaining delegations for the node.
+
+Each confirmed `NodeStaking.NodeSlashed` chain event MUST have a distinct delegated slash job. Reprocessing the same chain event MUST resume the existing job for that event. A later slash of the same node address after a completed delegated slash job MUST create a new delegated slash job.
 
 The node address MUST NOT join another blockchain network while any delegated slash job for that node address is not completed.
 

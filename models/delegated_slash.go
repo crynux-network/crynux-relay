@@ -19,11 +19,13 @@ const (
 
 type DelegatedSlashJob struct {
 	gorm.Model
-	NodeAddress              string                  `json:"node_address" gorm:"not null;size:191;uniqueIndex:idx_delegated_slash_job_node_network"`
-	Network                  string                  `json:"network" gorm:"not null;size:191;uniqueIndex:idx_delegated_slash_job_node_network;index"`
+	NodeAddress              string                  `json:"node_address" gorm:"not null;size:191;index:idx_delegated_slash_job_node_network"`
+	Network                  string                  `json:"network" gorm:"not null;size:191;index:idx_delegated_slash_job_node_network;index;uniqueIndex:idx_delegated_slash_job_node_slash_event"`
 	Status                   DelegatedSlashJobStatus `json:"status" gorm:"not null;size:32;index"`
 	LatestBatchTransactionID sql.NullInt64           `json:"latest_batch_transaction_id" gorm:"index"`
 	LastError                sql.NullString          `json:"last_error"`
+	NodeSlashTxHash          sql.NullString          `json:"node_slash_tx_hash" gorm:"size:191;uniqueIndex:idx_delegated_slash_job_node_slash_event"`
+	NodeSlashLogIndex        sql.NullInt64           `json:"node_slash_log_index" gorm:"uniqueIndex:idx_delegated_slash_job_node_slash_event"`
 }
 
 type DelegatedStakingSlashRecord struct {
@@ -38,12 +40,15 @@ type DelegatedStakingSlashRecord struct {
 	LogIndex         uint          `json:"log_index" gorm:"not null;uniqueIndex:idx_delegated_staking_slash_record_event"`
 }
 
-func GetDelegatedSlashJob(ctx context.Context, db *gorm.DB, nodeAddress, network string) (*DelegatedSlashJob, error) {
+func GetUnfinishedDelegatedSlashJob(ctx context.Context, db *gorm.DB, nodeAddress, network string) (*DelegatedSlashJob, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var job DelegatedSlashJob
-	if err := db.WithContext(dbCtx).Where("node_address = ? AND network = ?", nodeAddress, network).First(&job).Error; err != nil {
+	if err := db.WithContext(dbCtx).
+		Where("node_address = ? AND network = ? AND status <> ?", nodeAddress, network, DelegatedSlashJobStatusCompleted).
+		Order("id DESC").
+		First(&job).Error; err != nil {
 		return nil, err
 	}
 	return &job, nil
