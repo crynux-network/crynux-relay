@@ -183,8 +183,6 @@ func processDepositWithdrawNetworkBlockRange(ctx context.Context, db *gorm.DB, c
 	if endBlock-startBlock+1 > networkConfig.LogBlockRange {
 		endBlock = startBlock + networkConfig.LogBlockRange - 1
 	}
-	log.Infof("Scanning ERC20 deposit logs on %s from block %d to %d, latest block: %d, token: %s, deposit address: %s, log block range: %d",
-		client.Network, startBlock, endBlock, latestBlockNum, networkConfig.Contracts.TokenAddress, appConfig.RelayAccount.DepositAddress, networkConfig.LogBlockRange)
 	if err := processERC20DepositLogs(ctx, db, client, networkConfig, startBlock, endBlock); err != nil {
 		return err
 	}
@@ -226,7 +224,10 @@ func processERC20DepositLogs(ctx context.Context, db *gorm.DB, client *blockchai
 	if err != nil {
 		return err
 	}
-	log.Infof("ERC20 deposit log scan result on %s from block %d to %d: %d log(s)", client.Network, startBlock, endBlock, len(logs))
+	if len(logs) > 0 {
+		log.Infof("ERC20 deposit log scan result on %s from block %d to %d: %d log(s), token: %s, deposit address: %s",
+			client.Network, startBlock, endBlock, len(logs), networkConfig.Contracts.TokenAddress, config.GetConfig().RelayAccount.DepositAddress)
+	}
 	for _, receiptLog := range logs {
 		if err := processERC20DepositLog(ctx, db, client, networkConfig, receiptLog); err != nil {
 			return err
