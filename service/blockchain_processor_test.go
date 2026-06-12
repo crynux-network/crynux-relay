@@ -99,6 +99,50 @@ func TestRelayAccountDepositTransferRequiresPositiveValueAndEmptyInput(t *testin
 	}
 }
 
+func TestParseERC20DepositLogCreditsTransferFromAddress(t *testing.T) {
+	tokenAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	depositAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+	fromAddress := common.HexToAddress("0x00000000000000000000000000000000000000CC")
+	amount := big.NewInt(1000)
+
+	depositLog, ok := parseERC20DepositLog("base-sepolia", tokenAddress.Hex(), depositAddress.Hex(), types.Log{
+		Address: tokenAddress,
+		Topics: []common.Hash{
+			erc20TransferTopic,
+			addressTopic(fromAddress.Hex()),
+			addressTopic(depositAddress.Hex()),
+		},
+		Data: amount.Bytes(),
+	})
+	if !ok {
+		t.Fatal("expected ERC20 transfer to deposit address to be parsed")
+	}
+	if depositLog.fromAddress != fromAddress.Hex() {
+		t.Fatalf("expected deposit to be credited to Transfer from %s, got %s", fromAddress.Hex(), depositLog.fromAddress)
+	}
+	if depositLog.amount.Cmp(amount) != 0 {
+		t.Fatalf("expected deposit amount %s, got %s", amount.String(), depositLog.amount.String())
+	}
+}
+
+func TestParseERC20DepositLogSkipsZeroFromAddress(t *testing.T) {
+	tokenAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	depositAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+
+	_, ok := parseERC20DepositLog("base-sepolia", tokenAddress.Hex(), depositAddress.Hex(), types.Log{
+		Address: tokenAddress,
+		Topics: []common.Hash{
+			erc20TransferTopic,
+			addressTopic((common.Address{}).Hex()),
+			addressTopic(depositAddress.Hex()),
+		},
+		Data: big.NewInt(1000).Bytes(),
+	})
+	if ok {
+		t.Fatal("expected ERC20 transfer from zero address to be skipped")
+	}
+}
+
 func setupBlockchainProcessorTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
