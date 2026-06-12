@@ -866,9 +866,13 @@ func createOrResumeDelegatedSlashJob(ctx context.Context, db *gorm.DB, event *bi
 	} else if node == nil {
 		return nil
 	}
+	log.Infof("NodeSlashed: processing node slash, node: %s, network: %s, staked balance: %s, staked credits: %s, tx: %s, block: %d, log index: %d",
+		nodeAddress, network, event.StakedBalance.String(), event.StakedCredits.String(), event.Raw.TxHash.Hex(), event.Raw.BlockNumber, event.Raw.Index)
 	if err := SlashNodeVestings(ctx, db, nodeAddress, time.Now().UTC()); err != nil {
 		return err
 	}
+	log.Infof("NodeSlashed: processed node vesting slash, node: %s, network: %s, tx: %s, log index: %d",
+		nodeAddress, network, event.Raw.TxHash.Hex(), event.Raw.Index)
 	job, err := getOrCreateDelegatedSlashJob(dbCtx, db, event, network)
 	if err != nil {
 		return err
@@ -883,6 +887,9 @@ func slashDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.Del
 	delegatorAddress := event.DelegatorAddress.Hex()
 	nodeAddress := event.NodeAddress.Hex()
 	var slashed bool
+	var slashJobID sql.NullInt64
+	log.Infof("DelegatorSlashed: processing delegated staking slash, delegator: %s, node: %s, network: %s, amount: %s, tx: %s, block: %d, log index: %d",
+		delegatorAddress, nodeAddress, network, event.Amount.String(), event.Raw.TxHash.Hex(), event.Raw.BlockNumber, event.Raw.Index)
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 		var job models.DelegatedSlashJob
 		jobID := sql.NullInt64{}
@@ -905,6 +912,7 @@ func slashDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.Del
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&slashRecord).Error; err != nil {
 			return err
 		}
+		slashJobID = jobID
 
 		var delegation models.Delegation
 		if err := tx.Where("delegator_address = ? AND node_address = ? AND network = ? AND slashed = ?", delegatorAddress, nodeAddress, network, false).First(&delegation).Error; err != nil {
@@ -946,7 +954,13 @@ func slashDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.Del
 			return err
 		}
 	}
-	log.Infof("DelegatorSlashed: successfully processed delegated slash %s -> %s", delegatorAddress, nodeAddress)
+	if slashJobID.Valid {
+		log.Infof("DelegatorSlashed: successfully processed delegated staking slash, job id: %d, delegator: %s, node: %s, network: %s, amount: %s, tx: %s, block: %d, log index: %d",
+			slashJobID.Int64, delegatorAddress, nodeAddress, network, event.Amount.String(), event.Raw.TxHash.Hex(), event.Raw.BlockNumber, event.Raw.Index)
+	} else {
+		log.Infof("DelegatorSlashed: successfully processed delegated staking slash without active job, delegator: %s, node: %s, network: %s, amount: %s, tx: %s, block: %d, log index: %d",
+			delegatorAddress, nodeAddress, network, event.Amount.String(), event.Raw.TxHash.Hex(), event.Raw.BlockNumber, event.Raw.Index)
+	}
 	return nil
 }
 
@@ -960,6 +974,8 @@ func getOrCreateDelegatedSlashJob(ctx context.Context, db *gorm.DB, event *bindi
 			Where("network = ? AND node_slash_tx_hash = ? AND node_slash_log_index = ?", network, nodeSlashTxHash, nodeSlashLogIndex).
 			First(&eventJob).Error
 		if err == nil {
+			log.Infof("DelegatedSlashJob: reused job for node slash event, job id: %d, status: %s, node: %s, network: %s, tx: %s, log index: %d",
+				eventJob.ID, eventJob.Status, eventJob.NodeAddress, network, nodeSlashTxHash, nodeSlashLogIndex)
 			return &eventJob, nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -982,6 +998,11 @@ func getOrCreateDelegatedSlashJob(ctx context.Context, db *gorm.DB, event *bindi
 		if err := db.WithContext(ctx).Create(&job).Error; err != nil {
 			return nil, err
 		}
+		log.Infof("DelegatedSlashJob: created delegated staking slash job, job id: %d, node: %s, network: %s, tx: %s, log index: %d",
+			job.ID, nodeAddress, network, nodeSlashTxHash, nodeSlashLogIndex)
+	} else {
+		log.Infof("DelegatedSlashJob: resumed unfinished delegated staking slash job, job id: %d, status: %s, node: %s, network: %s, tx: %s, log index: %d",
+			job.ID, job.Status, nodeAddress, network, nodeSlashTxHash, nodeSlashLogIndex)
 	}
 	return &job, nil
 }
@@ -1003,20 +1024,31 @@ func sendNextDelegatedSlashBatch(ctx context.Context, db *gorm.DB, job models.De
 		return err
 	}
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	log.Infof("DelegatedSlashBatch: loaded next delegated staking slash batch, job id: %d, node: %s, network: %s, delegators: %d, batch size: %d",
+		job.ID, job.NodeAddress, job.Network, len(delegatorAddresses), batchSize)
+
+	var completed bool
+	var skippedOpenTransaction bool
+	var openTransactionID int64
+	var blockchainTransactionID uint
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var currentJob models.DelegatedSlashJob
 		if err := tx.First(&currentJob, job.ID).Error; err != nil {
 			return err
 		}
 		if currentJob.Status == models.DelegatedSlashJobStatusCompleted {
+			completed = true
 			return nil
 		}
 		if open, err := hasOpenDelegatedSlashBatchTransaction(ctx, tx, &currentJob); err != nil {
 			return err
 		} else if open {
+			skippedOpenTransaction = true
+			openTransactionID = currentJob.LatestBatchTransactionID.Int64
 			return nil
 		}
 		if len(delegatorAddresses) == 0 {
+			completed = true
 			return tx.Model(&currentJob).Updates(map[string]interface{}{
 				"status": models.DelegatedSlashJobStatusCompleted,
 			}).Error
@@ -1026,12 +1058,27 @@ func sendNextDelegatedSlashBatch(ctx context.Context, db *gorm.DB, job models.De
 		if err != nil {
 			return err
 		}
+		blockchainTransactionID = blockchainTransaction.ID
 		return tx.Model(&currentJob).Updates(map[string]interface{}{
 			"status":                      models.DelegatedSlashJobStatusProcessing,
 			"latest_batch_transaction_id": sql.NullInt64{Int64: int64(blockchainTransaction.ID), Valid: true},
 			"last_error":                  sql.NullString{},
 		}).Error
-	})
+	}); err != nil {
+		return err
+	}
+
+	if completed {
+		log.Infof("DelegatedSlashBatch: completed delegated staking slash job, job id: %d, node: %s, network: %s",
+			job.ID, job.NodeAddress, job.Network)
+	} else if skippedOpenTransaction {
+		log.Infof("DelegatedSlashBatch: skipped delegated staking slash batch because latest transaction is still open, job id: %d, node: %s, network: %s, latest transaction id: %d",
+			job.ID, job.NodeAddress, job.Network, openTransactionID)
+	} else {
+		log.Infof("DelegatedSlashBatch: created delegated staking slash batch transaction, job id: %d, transaction id: %d, node: %s, network: %s, delegators: %d",
+			job.ID, blockchainTransactionID, job.NodeAddress, job.Network, len(delegatorAddresses))
+	}
+	return nil
 }
 
 func hasOpenDelegatedSlashBatchTransaction(ctx context.Context, db *gorm.DB, job *models.DelegatedSlashJob) (bool, error) {
