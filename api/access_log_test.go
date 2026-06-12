@@ -36,12 +36,12 @@ func TestAccessLoggerLevels(t *testing.T) {
 		{
 			name:       "client error",
 			statusCode: http.StatusNotFound,
-			wantLevel:  logrus.WarnLevel,
+			wantLevel:  logrus.DebugLevel,
 		},
 		{
 			name:       "server error",
 			statusCode: http.StatusInternalServerError,
-			wantLevel:  logrus.ErrorLevel,
+			wantLevel:  logrus.DebugLevel,
 		},
 	}
 

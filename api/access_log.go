@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"math"
-	"net/http"
 	"os"
 	"time"
 
@@ -61,18 +60,11 @@ func AccessLogger(logger logrus.FieldLogger, notLogged ...string) gin.HandlerFun
 		})
 
 		if len(c.Errors) > 0 {
-			entry.Error(c.Errors.ByType(gin.ErrorTypePrivate).String())
+			entry.Debug(c.Errors.ByType(gin.ErrorTypePrivate).String())
 			return
 		}
 
 		msg := fmt.Sprintf("%s - %s [%s] \"%s %s\" %d %d \"%s\" \"%s\" (%dms)", clientIP, hostname, time.Now().Format(accessLogTimeFormat), c.Request.Method, path, statusCode, dataLength, referer, clientUserAgent, latency)
-		switch {
-		case statusCode >= http.StatusInternalServerError:
-			entry.Error(msg)
-		case statusCode >= http.StatusBadRequest:
-			entry.Warn(msg)
-		default:
-			entry.Debug(msg)
-		}
+		entry.Debug(msg)
 	}
 }

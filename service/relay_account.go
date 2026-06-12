@@ -37,6 +37,28 @@ type depositTxData struct {
 	Amount      *big.Int
 }
 
+func shouldLogRelayAccountEvent(eventType models.RelayAccountEventType) bool {
+	switch eventType {
+	case models.RelayAccountEventTypeDeposit,
+		models.RelayAccountEventTypeWithdraw,
+		models.RelayAccountEventTypeWithdrawRefund,
+		models.RelayAccountEventTypeWithdrawFeeIncome:
+		return true
+	default:
+		return false
+	}
+}
+
+func logRelayAccountEventValidation(result string, events []models.RelayAccountEvent) {
+	for _, event := range events {
+		if !shouldLogRelayAccountEvent(event.Type) {
+			continue
+		}
+		log.Infof("Relay account event validation %s, event id: %d, type: %d, address: %s, amount: %s, reason: %s",
+			result, event.ID, event.Type, event.Address, event.Amount.String(), event.Reason)
+	}
+}
+
 func splitRelayAccountEventReason(eventType models.RelayAccountEventType, reason string) ([]string, bool) {
 	eventTypeStr := fmt.Sprintf("%d", eventType)
 	if eventType == models.RelayAccountEventTypeDeposit || eventType == models.RelayAccountEventTypeUserDelegation {
@@ -518,6 +540,8 @@ func processPendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events [
 	if err != nil {
 		return err
 	}
+	logRelayAccountEventValidation("valid", validEvents)
+	logRelayAccountEventValidation("invalid", invalidEvents)
 	dbWithCtx := db.WithContext(ctx)
 
 	if len(invalidEvents) > 0 {
@@ -539,20 +563,24 @@ func processPendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events [
 			return err
 		}
 		if len(invalidWithdrawEventIDs) > 0 {
-			if err := dbWithCtx.Model(&models.WithdrawRecord{}).
+			result := dbWithCtx.Model(&models.WithdrawRecord{}).
 				Where("relay_account_event_id IN (?)", invalidWithdrawEventIDs).
 				Where("local_status = ?", models.WithdrawLocalStatusPending).
-				Update("local_status", models.WithdrawLocalStatusInvalid).Error; err != nil {
-				return err
+				Update("local_status", models.WithdrawLocalStatusInvalid)
+			if result.Error != nil {
+				return result.Error
 			}
+			log.Infof("Marked invalid withdraw records by relay account events, event ids: %v, affected rows: %d", invalidWithdrawEventIDs, result.RowsAffected)
 		}
 		if len(invalidDepositEventIDs) > 0 {
-			if err := dbWithCtx.Model(&models.DepositRecord{}).
+			result := dbWithCtx.Model(&models.DepositRecord{}).
 				Where("relay_account_event_id IN (?)", invalidDepositEventIDs).
 				Where("local_status = ?", models.DepositLocalStatusPending).
-				Update("local_status", models.DepositLocalStatusInvalid).Error; err != nil {
-				return err
+				Update("local_status", models.DepositLocalStatusInvalid)
+			if result.Error != nil {
+				return result.Error
 			}
+			log.Infof("Marked invalid deposit records by relay account events, event ids: %v, affected rows: %d", invalidDepositEventIDs, result.RowsAffected)
 		}
 	}
 
@@ -656,15 +684,17 @@ func processPendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events [
 					recordMACCases += fmt.Sprintf(" WHEN id = %d THEN '%s'", record.ID, recordMAC)
 				}
 
-				if err := tx.Model(&models.WithdrawRecord{}).
+				result := tx.Model(&models.WithdrawRecord{}).
 					Where("id IN (?)", recordIDs).
 					Where("local_status = ?", models.WithdrawLocalStatusPending).
 					Updates(map[string]interface{}{
 						"mac":          gorm.Expr("CASE" + recordMACCases + " END"),
 						"local_status": models.WithdrawLocalStatusProcessed,
-					}).Error; err != nil {
-					return err
+					})
+				if result.Error != nil {
+					return result.Error
 				}
+				log.Infof("Marked processed withdraw records by relay account events, record ids: %v, affected rows: %d", recordIDs, result.RowsAffected)
 			}
 		}
 
@@ -675,12 +705,14 @@ func processPendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events [
 			}
 		}
 		if len(depositEventIDs) > 0 {
-			if err := tx.Model(&models.DepositRecord{}).
+			result := tx.Model(&models.DepositRecord{}).
 				Where("relay_account_event_id IN (?)", depositEventIDs).
 				Where("local_status = ?", models.DepositLocalStatusPending).
-				Update("local_status", models.DepositLocalStatusProcessed).Error; err != nil {
-				return err
+				Update("local_status", models.DepositLocalStatusProcessed)
+			if result.Error != nil {
+				return result.Error
 			}
+			log.Infof("Marked processed deposit records by relay account events, event ids: %v, affected rows: %d", depositEventIDs, result.RowsAffected)
 		}
 
 		return nil
@@ -777,18 +809,20 @@ func depositRelayAccount(ctx context.Context, db *gorm.DB, txHash, address strin
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	var eventID uint
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 		reason := fmt.Sprintf("%d-%s-%s", models.RelayAccountEventTypeDeposit, txHash, network)
-		eventID, err := createRelayAccountEventWithID(ctx, tx, models.RelayAccountEventTypeDeposit, reason, address, amount)
+		createdEventID, err := createRelayAccountEventWithID(ctx, tx, models.RelayAccountEventTypeDeposit, reason, address, amount)
 		if err != nil {
 			return err
 		}
+		eventID = createdEventID
 		record := &models.DepositRecord{
 			Address:             address,
 			Amount:              models.BigInt{Int: *new(big.Int).Set(amount)},
 			Network:             network,
 			TxHash:              txHash,
-			RelayAccountEventID: eventID,
+			RelayAccountEventID: createdEventID,
 			LocalStatus:         models.DepositLocalStatusPending,
 		}
 		if err := tx.Create(record).Error; err != nil {
@@ -803,6 +837,7 @@ func depositRelayAccount(ctx context.Context, db *gorm.DB, txHash, address strin
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("Created deposit relay account event, event id: %d, tx: %s, network: %s, address: %s, amount: %s", eventID, txHash, network, address, amount.String())
 	amountCopy := new(big.Int).Set(amount)
 	return func() error {
 		relayAccountCache.mu.Lock()
