@@ -14,7 +14,7 @@ import (
 
 var (
 	errWrongTaskStatus      = errors.New("illegal previous task status")
-	errWrongNodeCurrentTask = errors.New("node current task is wrong")
+	ErrWrongNodeCurrentTask = errors.New("node current task is wrong")
 )
 
 func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) error {
@@ -136,7 +136,7 @@ func checkTaskSelectedNode(ctx context.Context, db *gorm.DB, task *models.Infere
 		return nil, err
 	}
 	if !(node.CurrentTaskIDCommitment.Valid && node.CurrentTaskIDCommitment.String == task.TaskIDCommitment) {
-		return nil, errWrongNodeCurrentTask
+		return nil, ErrWrongNodeCurrentTask
 	}
 	return node, nil
 }
@@ -392,7 +392,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 
 		if len(task.SelectedNode) > 0 {
 			node, err := checkTaskSelectedNode(ctx, db, &task)
-			if errors.Is(err, errWrongNodeCurrentTask) {
+			if errors.Is(err, ErrWrongNodeCurrentTask) {
 				log.Errorf("TaskEndAborted: node current task is wrong, task: %s, node: %s", task.TaskIDCommitment, task.SelectedNode)
 			} else if err != nil {
 				return err

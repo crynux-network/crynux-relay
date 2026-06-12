@@ -28,7 +28,9 @@ Contracts MUST NOT own delegated slash orchestration, job progress, retries, rec
 
 ## Relay Responsibilities
 
-Relay MUST create or resume a durable delegated slash job after a confirmed `NodeStaking.NodeSlashed` event. The job is keyed by node address and network.
+Relay MUST create or resume one durable delegated slash job for each confirmed `NodeStaking.NodeSlashed` chain event. A job MUST store the node address, blockchain network, `NodeStaking.NodeSlashed` transaction hash, and log index. Reprocessing the same `NodeStaking.NodeSlashed` chain event MUST resume the existing job for that event.
+
+Relay MUST create a new delegated slash job when the same node address is slashed again by a different confirmed `NodeStaking.NodeSlashed` chain event. Completed delegated slash jobs are historical records and MUST NOT be reused for a later slash event.
 
 Relay MUST select delegator address batches from the `DelegatedStaking` contract, queue `DelegatedStaking::slashNodeDelegations` transactions, and keep the job open while the contract reports remaining delegators for the node.
 
@@ -58,6 +60,8 @@ Each `delegated_staking_slash_records` row MUST include:
 - slash job ID when available
 
 The `delegated_staking_slash_records` table MUST enforce uniqueness on `(network, slash_tx_hash, log_index)` and MUST support lookup by `(network, node_address, delegator_address)`.
+
+The `delegated_slash_jobs` table MUST enforce uniqueness on the `NodeStaking.NodeSlashed` event identity for jobs that have that identity. The node address and blockchain network columns MUST support non-unique lookup so multiple completed jobs can exist for the same node address and blockchain network across separate slash events.
 
 The authenticated admin API `GET /v2/admin/delegated_slash/audits` MUST support filtering by node address and network, optional filtering by delegator address, and pagination with `page` and `page_size`. The default page size is `30`, and the maximum page size is `100`.
 
