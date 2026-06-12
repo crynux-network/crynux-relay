@@ -332,16 +332,6 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 			if !ok {
 				continue
 			}
-			transfer, err := client.GetTransactionTransfer(ctx, common.HexToHash(txHash))
-			if errors.Is(err, ethereum.NotFound) {
-				continue
-			}
-			if err != nil {
-				return nil, nil, err
-			}
-			if !strings.EqualFold(transfer.From.Hex(), depositTx.FromAddress) {
-				continue
-			}
 		default:
 			continue
 		}
@@ -511,8 +501,12 @@ func validateERC20RelayAccountDepositReceipt(receipt *types.Receipt, client *blo
 		if amount.Sign() <= 0 {
 			continue
 		}
+		fromAddress := common.BytesToAddress(receiptLog.Topics[1].Bytes()).Hex()
+		if fromAddress == (common.Address{}).Hex() {
+			continue
+		}
 		return depositTxData{
-			FromAddress: common.BytesToAddress(receiptLog.Topics[1].Bytes()).Hex(),
+			FromAddress: fromAddress,
 			Amount:      amount,
 		}, true
 	}

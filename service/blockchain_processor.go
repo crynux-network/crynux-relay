@@ -200,6 +200,11 @@ func processDepositWithdrawNetworkBlockRange(ctx context.Context, db *gorm.DB, c
 
 var erc20TransferTopic = crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
 
+type erc20DepositLogData struct {
+	fromAddress string
+	amount      *big.Int
+}
+
 func addressTopic(address string) common.Hash {
 	return common.BytesToHash(common.HexToAddress(address).Bytes())
 }
@@ -236,39 +241,46 @@ func processERC20DepositLogs(ctx context.Context, db *gorm.DB, client *blockchai
 	return nil
 }
 
-func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient, networkConfig config.DepositWithdrawNetworkConfig, receiptLog types.Log) error {
+func parseERC20DepositLog(network, tokenAddress, depositAddress string, receiptLog types.Log) (*erc20DepositLogData, bool) {
 	if len(receiptLog.Topics) != 3 ||
 		receiptLog.Topics[0] != erc20TransferTopic ||
-		!strings.EqualFold(receiptLog.Address.Hex(), networkConfig.Contracts.TokenAddress) ||
-		receiptLog.Topics[2] != addressTopic(config.GetConfig().RelayAccount.DepositAddress) {
-		log.Infof("Skipping unmatched ERC20 deposit log on %s, tx: %s, block: %d, log index: %d, contract: %s, topics: %d",
-			client.Network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, receiptLog.Address.Hex(), len(receiptLog.Topics))
-		return nil
+		!strings.EqualFold(receiptLog.Address.Hex(), tokenAddress) ||
+		receiptLog.Topics[2] != addressTopic(depositAddress) {
+		log.Errorf("Skipping unmatched ERC20 deposit log on %s, tx: %s, block: %d, log index: %d, contract: %s, topics: %d",
+			network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, receiptLog.Address.Hex(), len(receiptLog.Topics))
+		return nil, false
 	}
 	amount := new(big.Int).SetBytes(receiptLog.Data)
 	if amount.Sign() <= 0 {
-		log.Infof("Skipping zero ERC20 deposit log on %s, tx: %s, block: %d, log index: %d", client.Network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index)
-		return nil
+		log.Errorf("Skipping zero ERC20 deposit log on %s, tx: %s, block: %d, log index: %d", network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index)
+		return nil, false
 	}
 	fromAddress := common.BytesToAddress(receiptLog.Topics[1].Bytes()).Hex()
+	if fromAddress == (common.Address{}).Hex() {
+		log.Errorf("Skipping ERC20 deposit log with zero from address on %s, tx: %s, block: %d, log index: %d, amount: %s",
+			network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, amount.String())
+		return nil, false
+	}
 	log.Infof("Matched ERC20 deposit log on %s, tx: %s, block: %d, log index: %d, from: %s, amount: %s",
-		client.Network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, fromAddress, amount.String())
+		network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, fromAddress, amount.String())
+	return &erc20DepositLogData{
+		fromAddress: fromAddress,
+		amount:      amount,
+	}, true
+}
+
+func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain.BlockchainClient, networkConfig config.DepositWithdrawNetworkConfig, receiptLog types.Log) error {
+	depositLog, ok := parseERC20DepositLog(client.Network, networkConfig.Contracts.TokenAddress, config.GetConfig().RelayAccount.DepositAddress, receiptLog)
+	if !ok {
+		return nil
+	}
 
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, receiptLog.TxHash)
 	if err != nil {
 		return err
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		log.Infof("Skipping ERC20 deposit log with unsuccessful receipt on %s, tx: %s, receipt status: %d", client.Network, receiptLog.TxHash.Hex(), receipt.Status)
-		return nil
-	}
-	transfer, err := client.GetTransactionTransfer(ctx, receiptLog.TxHash)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(transfer.From.Hex(), fromAddress) {
-		log.Infof("Skipping ERC20 deposit log because transaction sender does not match Transfer from on %s, tx: %s, tx from: %s, log from: %s",
-			client.Network, receiptLog.TxHash.Hex(), transfer.From.Hex(), fromAddress)
+		log.Errorf("Skipping ERC20 deposit log with unsuccessful receipt on %s, tx: %s, receipt status: %d", client.Network, receiptLog.TxHash.Hex(), receipt.Status)
 		return nil
 	}
 	event, err := models.GetRelayAccountDepositEvent(ctx, db, receiptLog.TxHash.Hex(), client.Network)
@@ -276,17 +288,17 @@ func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain
 		return err
 	}
 	if event != nil {
-		log.Infof("Skipping already processed ERC20 deposit on %s, tx: %s, existing event id: %d", client.Network, receiptLog.TxHash.Hex(), event.ID)
+		log.Errorf("Skipping already processed ERC20 deposit on %s, tx: %s, existing event id: %d", client.Network, receiptLog.TxHash.Hex(), event.ID)
 		return nil
 	}
-	commitFunc, err := depositRelayAccount(ctx, db, receiptLog.TxHash.Hex(), fromAddress, amount, client.Network)
+	commitFunc, err := depositRelayAccount(ctx, db, receiptLog.TxHash.Hex(), depositLog.fromAddress, depositLog.amount, client.Network)
 	if err != nil {
 		return err
 	}
 	if err := commitFunc(); err != nil {
 		return err
 	}
-	log.Infof("Processed ERC20 deposit from %s, amount: %s, tx: %s, network: %s", fromAddress, amount.String(), receiptLog.TxHash.Hex(), client.Network)
+	log.Infof("Processed ERC20 deposit from %s, amount: %s, tx: %s, network: %s", depositLog.fromAddress, depositLog.amount.String(), receiptLog.TxHash.Hex(), client.Network)
 	return nil
 }
 
@@ -389,7 +401,7 @@ func filterReceiptLogsByContract(receiptLogs []*types.Log, nodeStakingAddress, d
 
 func processRelayAccountDepositTransfer(ctx context.Context, db *gorm.DB, transfer *blockchain.TransactionTransfer, receipt *types.Receipt, client *blockchain.BlockchainClient) error {
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		log.Infof("Skipping native deposit with unsuccessful receipt on %s, tx: %s, receipt status: %d", client.Network, transfer.Hash.Hex(), receipt.Status)
+		log.Errorf("Skipping native deposit with unsuccessful receipt on %s, tx: %s, receipt status: %d", client.Network, transfer.Hash.Hex(), receipt.Status)
 		return nil
 	}
 
@@ -399,7 +411,7 @@ func processRelayAccountDepositTransfer(ctx context.Context, db *gorm.DB, transf
 		return err
 	}
 	if event != nil {
-		log.Infof("Skipping already processed native deposit on %s, tx: %s, existing event id: %d", client.Network, transfer.Hash.Hex(), event.ID)
+		log.Errorf("Skipping already processed native deposit on %s, tx: %s, existing event id: %d", client.Network, transfer.Hash.Hex(), event.ID)
 		return nil
 	}
 
@@ -1014,17 +1026,32 @@ func hasOpenDelegatedSlashBatchTransaction(ctx context.Context, db *gorm.DB, job
 // processTransactionTransfer processes a transaction using raw RPC transfer fields.
 func processTransactionTransfer(ctx context.Context, db *gorm.DB, transfer *blockchain.TransactionTransfer, receipt *types.Receipt, client *blockchain.BlockchainClient) error {
 	appConfig := config.GetConfig()
+	if !isTransferToRelayAccountDepositAddress(transfer, appConfig.RelayAccount.DepositAddress) {
+		return nil
+	}
 	if !isRelayAccountDepositTransfer(transfer, appConfig.RelayAccount.DepositAddress) {
+		log.Errorf("Skipping invalid native deposit transfer on %s, tx: %s, from: %s, to: %s, value: %s, input bytes: %d",
+			client.Network, transfer.Hash.Hex(), transfer.From.Hex(), transfer.To.Hex(), nativeTransferValueText(transfer), len(transfer.Input))
 		return nil
 	}
 
 	return processRelayAccountDepositTransfer(ctx, db, transfer, receipt, client)
 }
 
+func isTransferToRelayAccountDepositAddress(transfer *blockchain.TransactionTransfer, depositAddress string) bool {
+	return transfer.To != nil && strings.EqualFold(transfer.To.Hex(), depositAddress)
+}
+
+func nativeTransferValueText(transfer *blockchain.TransactionTransfer) string {
+	if transfer.Value == nil {
+		return "<nil>"
+	}
+	return transfer.Value.String()
+}
+
 func isRelayAccountDepositTransfer(transfer *blockchain.TransactionTransfer, depositAddress string) bool {
-	return transfer.To != nil &&
+	return isTransferToRelayAccountDepositAddress(transfer, depositAddress) &&
 		transfer.Value != nil &&
 		transfer.Value.Sign() > 0 &&
-		len(transfer.Input) == 0 &&
-		strings.EqualFold(transfer.To.Hex(), depositAddress)
+		len(transfer.Input) == 0
 }

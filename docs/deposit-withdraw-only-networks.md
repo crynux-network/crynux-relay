@@ -100,6 +100,7 @@ For deposit and withdraw only networks, Relay MUST validate ERC20 CNX deposits w
 - The log address MUST equal `token_address`.
 - The log MUST be a `Transfer(address,address,uint256)` event.
 - The indexed `to` address MUST equal `relay_account.deposit_address`.
+- The indexed `from` address MUST NOT be the zero address.
 - The amount MUST be greater than zero.
 - The credited relay account address MUST be the indexed `from` address.
 
