@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +29,8 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 	if address == appConfig.Withdraw.WithdrawalFeeAddress || address == appConfig.Dao.TaskFeeShareAddress {
 		withdrawalFee = big.NewInt(0)
 	}
+	log.Infof("Creating withdraw request, address: %s, benefit address: %s, network: %s, amount: %s, withdrawal fee: %s",
+		address, benefitAddress, network, amount.String(), withdrawalFee.String())
 	record := &models.WithdrawRecord{
 		Address:        address,
 		BenefitAddress: benefitAddress,
@@ -55,11 +58,17 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 		if err := commitFunc(); err != nil {
 			return err
 		}
+		log.Infof("Created withdraw relay account event, withdraw id: %d, event id: %d, address: %s, network: %s, amount: %s, withdrawal fee: %s, total charged: %s",
+			record.ID, eventID, address, network, amount.String(), withdrawalFee.String(), totalAmount.String())
 		return nil
 	}); err != nil {
+		log.Infof("Failed to create withdraw request, address: %s, benefit address: %s, network: %s, amount: %s, withdrawal fee: %s, error: %v",
+			address, benefitAddress, network, amount.String(), withdrawalFee.String(), err)
 		return nil, err
 	}
 
+	log.Infof("Withdraw request created, withdraw id: %d, event id: %d, address: %s, benefit address: %s, network: %s, amount: %s, withdrawal fee: %s",
+		record.ID, record.RelayAccountEventID, record.Address, record.BenefitAddress, record.Network, record.Amount.String(), record.WithdrawalFee.String())
 	return record, nil
 }
 
@@ -74,8 +83,11 @@ func FulfillWithdraw(ctx context.Context, db *gorm.DB, withdrawID uint, txHash s
 		if err := tx.Model(&models.WithdrawRecord{}).Where("id = ?", withdrawID).First(&record).Error; err != nil {
 			return err
 		}
+		log.Infof("Fulfilling withdraw request, withdraw id: %d, address: %s, network: %s, amount: %s, withdrawal fee: %s, local status: %d, status: %d, tx hash: %s",
+			record.ID, record.Address, record.Network, record.Amount.String(), record.WithdrawalFee.String(), record.LocalStatus, record.Status, txHash)
 
 		if record.Status == models.WithdrawStatusSuccess {
+			log.Infof("Withdraw request already fulfilled, withdraw id: %d, tx hash: %s", record.ID, record.TxHash.String)
 			return nil
 		}
 
@@ -103,9 +115,13 @@ func FulfillWithdraw(ctx context.Context, db *gorm.DB, withdrawID uint, txHash s
 			if err := commitFunc(); err != nil {
 				return err
 			}
+			log.Infof("Created withdraw fee income event, withdraw id: %d, fee address: %s, withdrawal fee: %s",
+				record.ID, appConfig.Withdraw.WithdrawalFeeAddress, record.WithdrawalFee.String())
 		}
+		log.Infof("Withdraw request fulfilled, withdraw id: %d, tx hash: %s", record.ID, txHash)
 		return nil
 	}); err != nil {
+		log.Infof("Failed to fulfill withdraw request, withdraw id: %d, tx hash: %s, error: %v", withdrawID, txHash, err)
 		return err
 	}
 	return nil
@@ -120,8 +136,11 @@ func RejectWithdraw(ctx context.Context, db *gorm.DB, withdrawID uint) error {
 		if err := tx.Model(&models.WithdrawRecord{}).Where("id = ?", withdrawID).First(&record).Error; err != nil {
 			return err
 		}
+		log.Infof("Rejecting withdraw request, withdraw id: %d, address: %s, network: %s, amount: %s, withdrawal fee: %s, local status: %d, status: %d",
+			record.ID, record.Address, record.Network, record.Amount.String(), record.WithdrawalFee.String(), record.LocalStatus, record.Status)
 
 		if record.Status == models.WithdrawStatusFailed {
+			log.Infof("Withdraw request already rejected, withdraw id: %d", record.ID)
 			return nil
 		}
 
@@ -146,9 +165,12 @@ func RejectWithdraw(ctx context.Context, db *gorm.DB, withdrawID uint) error {
 		if err := commitFunc(); err != nil {
 			return err
 		}
+		log.Infof("Withdraw request rejected and refund event created, withdraw id: %d, address: %s, refund amount: %s",
+			record.ID, record.Address, totalAmount.String())
 
 		return nil
 	}); err != nil {
+		log.Infof("Failed to reject withdraw request, withdraw id: %d, error: %v", withdrawID, err)
 		return err
 	}
 	return nil

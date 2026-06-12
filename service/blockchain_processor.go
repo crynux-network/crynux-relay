@@ -183,7 +183,8 @@ func processDepositWithdrawNetworkBlockRange(ctx context.Context, db *gorm.DB, c
 	if endBlock-startBlock+1 > networkConfig.LogBlockRange {
 		endBlock = startBlock + networkConfig.LogBlockRange - 1
 	}
-	log.Debugf("Processing ERC20 deposit logs from %d to %d on %s", startBlock, endBlock, client.Network)
+	log.Infof("Scanning ERC20 deposit logs on %s from block %d to %d, latest block: %d, token: %s, deposit address: %s, log block range: %d",
+		client.Network, startBlock, endBlock, latestBlockNum, networkConfig.Contracts.TokenAddress, appConfig.RelayAccount.DepositAddress, networkConfig.LogBlockRange)
 	if err := processERC20DepositLogs(ctx, db, client, networkConfig, startBlock, endBlock); err != nil {
 		return err
 	}
@@ -225,6 +226,7 @@ func processERC20DepositLogs(ctx context.Context, db *gorm.DB, client *blockchai
 	if err != nil {
 		return err
 	}
+	log.Infof("ERC20 deposit log scan result on %s from block %d to %d: %d log(s)", client.Network, startBlock, endBlock, len(logs))
 	for _, receiptLog := range logs {
 		if err := processERC20DepositLog(ctx, db, client, networkConfig, receiptLog); err != nil {
 			return err
@@ -238,19 +240,25 @@ func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain
 		receiptLog.Topics[0] != erc20TransferTopic ||
 		!strings.EqualFold(receiptLog.Address.Hex(), networkConfig.Contracts.TokenAddress) ||
 		receiptLog.Topics[2] != addressTopic(config.GetConfig().RelayAccount.DepositAddress) {
+		log.Infof("Skipping unmatched ERC20 deposit log on %s, tx: %s, block: %d, log index: %d, contract: %s, topics: %d",
+			client.Network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, receiptLog.Address.Hex(), len(receiptLog.Topics))
 		return nil
 	}
 	amount := new(big.Int).SetBytes(receiptLog.Data)
 	if amount.Sign() <= 0 {
+		log.Infof("Skipping zero ERC20 deposit log on %s, tx: %s, block: %d, log index: %d", client.Network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index)
 		return nil
 	}
 	fromAddress := common.BytesToAddress(receiptLog.Topics[1].Bytes()).Hex()
+	log.Infof("Matched ERC20 deposit log on %s, tx: %s, block: %d, log index: %d, from: %s, amount: %s",
+		client.Network, receiptLog.TxHash.Hex(), receiptLog.BlockNumber, receiptLog.Index, fromAddress, amount.String())
 
 	receipt, err := client.RpcClient.TransactionReceipt(ctx, receiptLog.TxHash)
 	if err != nil {
 		return err
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
+		log.Infof("Skipping ERC20 deposit log with unsuccessful receipt on %s, tx: %s, receipt status: %d", client.Network, receiptLog.TxHash.Hex(), receipt.Status)
 		return nil
 	}
 	transfer, err := client.GetTransactionTransfer(ctx, receiptLog.TxHash)
@@ -258,6 +266,8 @@ func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain
 		return err
 	}
 	if !strings.EqualFold(transfer.From.Hex(), fromAddress) {
+		log.Infof("Skipping ERC20 deposit log because transaction sender does not match Transfer from on %s, tx: %s, tx from: %s, log from: %s",
+			client.Network, receiptLog.TxHash.Hex(), transfer.From.Hex(), fromAddress)
 		return nil
 	}
 	event, err := models.GetRelayAccountDepositEvent(ctx, db, receiptLog.TxHash.Hex(), client.Network)
@@ -265,6 +275,7 @@ func processERC20DepositLog(ctx context.Context, db *gorm.DB, client *blockchain
 		return err
 	}
 	if event != nil {
+		log.Infof("Skipping already processed ERC20 deposit on %s, tx: %s, existing event id: %d", client.Network, receiptLog.TxHash.Hex(), event.ID)
 		return nil
 	}
 	commitFunc, err := depositRelayAccount(ctx, db, receiptLog.TxHash.Hex(), fromAddress, amount, client.Network)
@@ -377,6 +388,7 @@ func filterReceiptLogsByContract(receiptLogs []*types.Log, nodeStakingAddress, d
 
 func processRelayAccountDepositTransfer(ctx context.Context, db *gorm.DB, transfer *blockchain.TransactionTransfer, receipt *types.Receipt, client *blockchain.BlockchainClient) error {
 	if receipt.Status != types.ReceiptStatusSuccessful {
+		log.Infof("Skipping native deposit with unsuccessful receipt on %s, tx: %s, receipt status: %d", client.Network, transfer.Hash.Hex(), receipt.Status)
 		return nil
 	}
 
@@ -386,9 +398,12 @@ func processRelayAccountDepositTransfer(ctx context.Context, db *gorm.DB, transf
 		return err
 	}
 	if event != nil {
+		log.Infof("Skipping already processed native deposit on %s, tx: %s, existing event id: %d", client.Network, transfer.Hash.Hex(), event.ID)
 		return nil
 	}
 
+	log.Infof("Processing native deposit on %s, tx: %s, from: %s, to: %s, amount: %s",
+		client.Network, transfer.Hash.Hex(), transfer.From.Hex(), transfer.To.Hex(), transfer.Value.String())
 	commitFunc, err := depositRelayAccount(ctx, db, transfer.Hash.Hex(), transfer.From.Hex(), transfer.Value, client.Network)
 	if err != nil {
 		log.Errorf("Failed to process relay account deposit for %s, network: %s, error: %v", transfer.From.Hex(), client.Network, err)
