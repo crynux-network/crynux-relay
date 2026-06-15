@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crynux_relay/api/cnx"
 	"crynux_relay/api/tools"
 	v1 "crynux_relay/api/v1"
 	responseV1 "crynux_relay/api/v1/response"
@@ -59,6 +60,9 @@ func GetHttpApplication(appConfig *config.AppConfig) *gin.Engine {
 	fizzEngine.GET("", []fizz.OperationOption{}, Hello)
 
 	tools.InitializeJWTManager()
+
+	// CNX token APIs
+	cnx.InitRoutes(fizzEngine)
 
 	// v1 api
 	v1.InitRoutes(fizzEngine)
