@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 )
@@ -191,5 +192,81 @@ func TestGetPreviousEmissionWeekInfoRejectsOutOfRangeYear(t *testing.T) {
 	_, err := GetPreviousEmissionWeekInfo(now, start)
 	if !errors.Is(err, ErrEmissionWeekOutOfRange) {
 		t.Fatalf("expected ErrEmissionWeekOutOfRange, got %v", err)
+	}
+}
+
+func TestGetCNXTotalSupply(t *testing.T) {
+	expected := cnxToWei(cnxTotalSupplyCNX)
+
+	totalSupply := GetCNXTotalSupply()
+	if totalSupply.Cmp(expected) != 0 {
+		t.Fatalf("expected %s, got %s", expected, totalSupply)
+	}
+}
+
+func TestGetCNXCirculatingSupplyReturnsZeroBeforeMainnet(t *testing.T) {
+	supply, err := GetCNXCirculatingSupply(
+		time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC),
+		"2026-01-01T00:00:00Z",
+	)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if supply.Sign() != 0 {
+		t.Fatalf("expected zero supply, got %s", supply)
+	}
+}
+
+func TestGetCNXCirculatingSupplyAtMainnetStartIncludesUnlockedYear0(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	supply, err := GetCNXCirculatingSupply(now, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	year0NodeVestingCNX := int64(year0EmissionCNX * year0NodeAllocationPercent / 100)
+	expected := cnxToWei(year0EmissionCNX - year0NodeVestingCNX)
+	if supply.Cmp(expected) != 0 {
+		t.Fatalf("expected %s, got %s", expected, supply)
+	}
+}
+
+func TestGetCNXCirculatingSupplyIncludesReleasedVestingAfterFirstWeek(t *testing.T) {
+	mainnetStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+
+	supply, err := GetCNXCirculatingSupply(now, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	year0NodeVestingCNX := int64(year0EmissionCNX * year0NodeAllocationPercent / 100)
+	year0Unlocked := cnxToWei(year0EmissionCNX - year0NodeVestingCNX)
+	year0Released := releasedVestingAmount(
+		cnxToWei(year0NodeVestingCNX),
+		mainnetStart,
+		year0VestingDurationDays,
+		now,
+	)
+
+	weeklyEmissionCNX := weeklyEmissionCNXByYear[0]
+	weeklyNodeVestingCNX := weeklyEmissionCNX * nodeAllocationPercent(1) / 100
+	weeklyUnlocked := cnxToWei(weeklyEmissionCNX - weeklyNodeVestingCNX)
+	weeklyReleased := releasedVestingAmount(
+		cnxToWei(weeklyNodeVestingCNX),
+		mainnetStart.Add(emissionWeekDuration),
+		nodeVestingDurationDays,
+		now,
+	)
+
+	expected := big.NewInt(0)
+	expected.Add(expected, year0Unlocked)
+	expected.Add(expected, year0Released)
+	expected.Add(expected, weeklyUnlocked)
+	expected.Add(expected, weeklyReleased)
+
+	if supply.Cmp(expected) != 0 {
+		t.Fatalf("expected %s, got %s", expected, supply)
 	}
 }
