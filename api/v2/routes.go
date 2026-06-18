@@ -152,6 +152,38 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.TriggerNodeSlash, 200))
+	adminSlashesGroup := adminGroup.Group("slashes", "admin slashes", "Admin slash lookup APIs")
+	adminSlashesGroup.GET("/nodes", []fizz.OperationOption{
+		fizz.ID("admin_slash_nodes_v2"),
+		fizz.Summary("List node slash events"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListSlashNodes, 200))
+	adminSlashesGroup.GET("/events/:slash_event_id", []fizz.OperationOption{
+		fizz.ID("admin_slash_event_v2"),
+		fizz.Summary("Get one node slash event report source"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.GetSlashEvent, 200))
+	adminSlashesGroup.GET("/nodes/:address/delegators", []fizz.OperationOption{
+		fizz.ID("admin_slash_node_delegators_v2"),
+		fizz.Summary("List delegated slash audit records for one node"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListSlashNodeDelegators, 200))
+	adminSlashesGroup.GET("/nodes/:address/vestings", []fizz.OperationOption{
+		fizz.ID("admin_slash_node_vestings_v2"),
+		fizz.Summary("List node vesting records for slash verification"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListSlashNodeVestings, 200))
 	adminGroup.GET("/task_whitelist", []fizz.OperationOption{
 		fizz.ID("admin_task_whitelist_list_v2"),
 		fizz.Summary("List task creator whitelist"),
