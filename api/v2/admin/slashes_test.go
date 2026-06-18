@@ -1,0 +1,225 @@
+package admin
+
+import (
+	"context"
+	"crynux_relay/models"
+	"database/sql"
+	"math/big"
+	"testing"
+	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func newSlashReportTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&models.Event{},
+		&models.Node{},
+		&models.BlockchainTransaction{},
+		&models.DelegatedSlashJob{},
+		&models.DelegatedStakingSlashRecord{},
+		&models.VestingRecord{},
+	); err != nil {
+		t.Fatalf("failed to migrate test db: %v", err)
+	}
+	return db
+}
+
+func createSlashReportEvent(t *testing.T, db *gorm.DB, event models.ToEventType, createdAt time.Time) models.Event {
+	t.Helper()
+	record, err := event.ToEvent()
+	if err != nil {
+		t.Fatalf("failed to build event: %v", err)
+	}
+	record.CreatedAt = createdAt
+	if err := db.Create(record).Error; err != nil {
+		t.Fatalf("failed to create event: %v", err)
+	}
+	return *record
+}
+
+func TestQuerySlashedNodeRecordsMapsEventTransactionAndJob(t *testing.T) {
+	db := newSlashReportTestDB(t)
+	ctx := context.Background()
+	nodeAddress := "0x1111111111111111111111111111111111111111"
+
+	if err := db.Create(&models.Node{
+		Network: "base",
+		Address: nodeAddress,
+		GPUName: "RTX 4090",
+	}).Error; err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+	tx := models.BlockchainTransaction{
+		Network:     "base",
+		Type:        "slash_staking",
+		Status:      models.TransactionStatusConfirmed,
+		FromAddress: nodeAddress,
+		ToAddress:   "0x2222222222222222222222222222222222222222",
+		Value:       "0",
+		TxHash:      sql.NullString{String: "0xslashtx", Valid: true},
+	}
+	if err := db.Create(&tx).Error; err != nil {
+		t.Fatalf("failed to create transaction: %v", err)
+	}
+
+	createSlashReportEvent(t, db, &models.NodeQuitEvent{
+		NodeAddress:             nodeAddress,
+		BlockchainTransactionID: tx.ID,
+		Network:                 "base",
+	}, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+	slashEvent := createSlashReportEvent(t, db, &models.NodeSlashedEvent{
+		NodeAddress:      nodeAddress,
+		TaskIDCommitment: "0xtask",
+		Amount:           models.BigInt{Int: *big.NewInt(1000)},
+		Network:          "base",
+	}, time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC))
+	createSlashReportEvent(t, db, &models.NodeSlashedEvent{
+		NodeAddress:      "0x3333333333333333333333333333333333333333",
+		TaskIDCommitment: "0xother",
+		Amount:           models.BigInt{Int: *big.NewInt(2000)},
+		Network:          "near",
+	}, time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC))
+
+	job := models.DelegatedSlashJob{
+		NodeAddress:       nodeAddress,
+		Network:           "base",
+		Status:            models.DelegatedSlashJobStatusCompleted,
+		NodeSlashTxHash:   sql.NullString{String: "0xslashtx", Valid: true},
+		NodeSlashLogIndex: sql.NullInt64{Int64: 1, Valid: true},
+	}
+	if err := db.Create(&job).Error; err != nil {
+		t.Fatalf("failed to create slash job: %v", err)
+	}
+
+	records, total, err := querySlashedNodeRecords(ctx, db, "base", 1, 30)
+	if err != nil {
+		t.Fatalf("query slashed node records failed: %v", err)
+	}
+	if total != 1 || len(records) != 1 {
+		t.Fatalf("expected one base slash record, total=%d len=%d", total, len(records))
+	}
+
+	record := records[0]
+	if record.SlashEventID != slashEvent.ID {
+		t.Fatalf("expected slash event id %d, got %d", slashEvent.ID, record.SlashEventID)
+	}
+	if record.CardName != "RTX 4090" {
+		t.Fatalf("expected card name RTX 4090, got %s", record.CardName)
+	}
+	if record.QueuedTransactionID == nil || *record.QueuedTransactionID != tx.ID {
+		t.Fatalf("expected queued transaction id %d, got %v", tx.ID, record.QueuedTransactionID)
+	}
+	if record.ConfirmedOperatorSlashTxHash != "0xslashtx" {
+		t.Fatalf("expected tx hash 0xslashtx, got %s", record.ConfirmedOperatorSlashTxHash)
+	}
+	if record.DelegatedSlashJobID == nil || *record.DelegatedSlashJobID != job.ID {
+		t.Fatalf("expected delegated slash job id %d, got %v", job.ID, record.DelegatedSlashJobID)
+	}
+}
+
+func TestQueryDelegatedSlashAuditRecordsFiltersBySlashJob(t *testing.T) {
+	db := newSlashReportTestDB(t)
+	nodeAddress := "0x1111111111111111111111111111111111111111"
+	jobID := uint(5)
+
+	records := []models.DelegatedStakingSlashRecord{
+		{
+			SlashJobID:       sql.NullInt64{Int64: int64(jobID), Valid: true},
+			NodeAddress:      nodeAddress,
+			DelegatorAddress: "0x2222222222222222222222222222222222222222",
+			Network:          "base",
+			Amount:           models.BigInt{Int: *big.NewInt(100)},
+			SlashTxHash:      "0xrecord1",
+			BlockNumber:      11,
+			LogIndex:         2,
+		},
+		{
+			SlashJobID:       sql.NullInt64{Int64: 6, Valid: true},
+			NodeAddress:      nodeAddress,
+			DelegatorAddress: "0x3333333333333333333333333333333333333333",
+			Network:          "base",
+			Amount:           models.BigInt{Int: *big.NewInt(200)},
+			SlashTxHash:      "0xrecord2",
+			BlockNumber:      12,
+			LogIndex:         3,
+		},
+	}
+	if err := db.Create(&records).Error; err != nil {
+		t.Fatalf("failed to create delegated slash records: %v", err)
+	}
+
+	result, total, err := queryDelegatedSlashAuditRecords(context.Background(), db, nodeAddress, "base", &jobID, 1, 30)
+	if err != nil {
+		t.Fatalf("query delegated slash audit records failed: %v", err)
+	}
+	if total != 1 || len(result) != 1 {
+		t.Fatalf("expected one delegated slash record, total=%d len=%d", total, len(result))
+	}
+	if result[0].SlashJobID == nil || *result[0].SlashJobID != jobID {
+		t.Fatalf("expected slash job id %d, got %v", jobID, result[0].SlashJobID)
+	}
+	if result[0].Amount != "100" {
+		t.Fatalf("expected amount 100, got %s", result[0].Amount)
+	}
+}
+
+func TestQuerySlashVestingRecordsReturnsNodeVestingsWithSlashedLockedAmount(t *testing.T) {
+	db := newSlashReportTestDB(t)
+	nodeAddress := "0x1111111111111111111111111111111111111111"
+	now := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
+
+	records := []models.VestingRecord{
+		{
+			Address:        nodeAddress,
+			TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
+			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			DurationDays:   10,
+			Type:           models.VestingTypeNode,
+			Source:         "emission",
+			ExternalID:     "node-vesting",
+			AdminSignature: "0xsig",
+			Status:         models.VestingStatusActive,
+			Slashed:        true,
+		},
+		{
+			Address:        nodeAddress,
+			TotalAmount:    models.BigInt{Int: *big.NewInt(2000)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			DurationDays:   10,
+			Type:           models.VestingTypeDelegation,
+			Source:         "emission",
+			ExternalID:     "delegation-vesting",
+			AdminSignature: "0xsig",
+			Status:         models.VestingStatusActive,
+		},
+	}
+	if err := db.Create(&records).Error; err != nil {
+		t.Fatalf("failed to create vesting records: %v", err)
+	}
+
+	result, total, err := querySlashVestingRecords(context.Background(), db, nodeAddress, 1, 30, now)
+	if err != nil {
+		t.Fatalf("query slash vesting records failed: %v", err)
+	}
+	if total != 1 || len(result) != 1 {
+		t.Fatalf("expected one node vesting record, total=%d len=%d", total, len(result))
+	}
+	if result[0].Amount != "1000" {
+		t.Fatalf("expected amount 1000, got %s", result[0].Amount)
+	}
+	if result[0].LockedAmount != "0" {
+		t.Fatalf("expected slashed locked amount 0, got %s", result[0].LockedAmount)
+	}
+	if !result[0].Slashed {
+		t.Fatal("expected slashed vesting record")
+	}
+}
