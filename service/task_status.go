@@ -86,7 +86,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 		return err
 	}
 	if err := captureRunningTaskSnapshot(ctx, db, &task, &node); err != nil {
-		return err
+		log.Errorf("SetTaskStatusStarted: failed to capture running task snapshot, task: %s, node: %s, error: %v", task.TaskIDCommitment, node.Address, err)
 	}
 
 	*originTask = task

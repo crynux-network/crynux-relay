@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	ErrDelegatedSlashJobInProgress = errors.New("delegated slash job in progress")
-	getStakingInfo                 = blockchain.GetStakingInfo
-	getNodeDelegatorShare          = blockchain.GetNodeDelegatorShare
-	getNodeStakingInfos            = blockchain.GetNodeStakingInfos
+	ErrDelegatedSlashJobInProgress  = errors.New("delegated slash job in progress")
+	ErrPendingSlashAlreadyProcessed = errors.New("pending slash has already been processed")
+	getStakingInfo                  = blockchain.GetStakingInfo
+	getNodeDelegatorShare           = blockchain.GetNodeDelegatorShare
+	getNodeStakingInfos             = blockchain.GetNodeStakingInfos
 )
 
 type chainDelegation struct {
@@ -371,19 +372,12 @@ func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommit
 	if node.Status == models.NodeStatusQuit {
 		return 0, errors.New("node has already quit")
 	}
-	if taskIDCommitment == "" {
-		taskIDCommitment = "0x"
-	}
-	slashedAmount := node.StakeAmount
 	var blockchainTransactionID uint
 	var wasActiveBeforeQuit bool
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var err error
-		wasActiveBeforeQuit, blockchainTransactionID, err = setNodeStatusQuitTx(ctx, tx, node, true)
-		if err != nil {
-			return err
-		}
-		return emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network, Evidence: evidence})
+		wasActiveBeforeQuit, blockchainTransactionID, err = slashNodeTx(ctx, tx, node, taskIDCommitment, evidence)
+		return err
 	}); err != nil {
 		return 0, err
 	}
@@ -393,6 +387,63 @@ func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommit
 	}
 	LogNodeStatusChange(node, "slashed")
 	return blockchainTransactionID, nil
+}
+
+func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (uint, error) {
+	var blockchainTransactionID uint
+	var wasActiveBeforeQuit bool
+	var node *models.Node
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var pendingSlash models.PendingSlash
+		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := tx.WithContext(dbCtx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&pendingSlash, pendingSlashID).Error; err != nil {
+			return err
+		}
+		if pendingSlash.Status != models.PendingSlashStatusPending {
+			return ErrPendingSlashAlreadyProcessed
+		}
+		evidence, err := ParsePendingSlashEvidence(&pendingSlash)
+		if err != nil {
+			return err
+		}
+		node, err = models.GetNodeByAddress(ctx, tx, pendingSlash.NodeAddress)
+		if err != nil {
+			return err
+		}
+		if node.Status == models.NodeStatusQuit {
+			return errors.New("node has already quit")
+		}
+		wasActiveBeforeQuit, blockchainTransactionID, err = slashNodeTx(ctx, tx, node, pendingSlash.TaskIDCommitment, evidence)
+		if err != nil {
+			return err
+		}
+		pendingSlash.Status = models.PendingSlashStatusSlashed
+		return pendingSlash.Save(ctx, tx)
+	}); err != nil {
+		return 0, err
+	}
+	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
+		return 0, err
+	}
+	LogNodeStatusChange(node, "slashed")
+	return blockchainTransactionID, nil
+}
+
+func slashNodeTx(ctx context.Context, tx *gorm.DB, node *models.Node, taskIDCommitment string, evidence *models.SlashEvidence) (bool, uint, error) {
+	if taskIDCommitment == "" {
+		taskIDCommitment = "0x"
+	}
+	slashedAmount := node.StakeAmount
+	wasActiveBeforeQuit, blockchainTransactionID, err := setNodeStatusQuitTx(ctx, tx, node, true)
+	if err != nil {
+		return false, 0, err
+	}
+	if err := emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network, Evidence: evidence}); err != nil {
+		return false, 0, err
+	}
+	return wasActiveBeforeQuit, blockchainTransactionID, nil
 }
 
 func updateNodeQosScore(ctx context.Context, db *gorm.DB, node *models.Node, qos uint64) error {
