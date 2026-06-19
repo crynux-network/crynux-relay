@@ -104,6 +104,14 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), admin.ExportNodeQosCSV)
+	adminNodesGroup.GET("/:address/scores", []fizz.OperationOption{
+		fizz.ID("admin_node_scores_v2"),
+		fizz.Summary("Get node score calculation details"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.GetNodeScores, 200))
 	adminNodesGroup.GET("/tasks/history", []fizz.OperationOption{
 		fizz.ID("admin_nodes_task_history_v2"),
 		fizz.Summary("Render node task history in HTML"),
@@ -152,6 +160,29 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.TriggerNodeSlash, 200))
+	adminGroup.GET("/pending_slashes", []fizz.OperationOption{
+		fizz.ID("admin_pending_slashes_v2"),
+		fizz.Summary("List pending slash reviews"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListPendingSlashes, 200))
+	adminGroup.GET("/pending_slashes/:pending_slash_id", []fizz.OperationOption{
+		fizz.ID("admin_pending_slash_v2"),
+		fizz.Summary("Get one pending slash review"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.GetPendingSlash, 200))
+	adminGroup.GET("/pending_slashes/:pending_slash_id/artifacts/:artifact_type/:task_id_commitment/:file_name", []fizz.OperationOption{
+		fizz.ID("admin_pending_slash_artifact_v2"),
+		fizz.Summary("Download one pending slash evidence artifact"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DownloadPendingSlashArtifact, 200))
 	adminSlashesGroup := adminGroup.Group("slashes", "admin slashes", "Admin slash lookup APIs")
 	adminSlashesGroup.GET("/nodes", []fizz.OperationOption{
 		fizz.ID("admin_slash_nodes_v2"),

@@ -56,7 +56,7 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 		return nil, response.NewValidationErrorResponse("Signature", "Signer not allowed")
 	}
 
-	if task.Status != models.TaskValidated && task.Status != models.TaskGroupValidated && task.Status != models.TaskEndInvalidated {
+	if task.Status != models.TaskValidated && task.Status != models.TaskGroupValidated && task.Status != models.TaskEndInvalidated && task.Status != models.TaskEndGroupRefund {
 		validationErr := response.NewValidationErrorResponse("task_id_commitment", "Task not validated")
 		return nil, validationErr
 	}
@@ -182,6 +182,11 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 			if err := c.SaveUploadedFile(checkpoint, slashedCheckpointFilename); err != nil {
 				return nil, response.NewExceptionResponse(err)
 			}
+		}
+	}
+	if isSlashed {
+		if err := service.UpdatePendingSlashResultEvidence(c.Request.Context(), config.GetDB(), task.TaskIDCommitment); err != nil {
+			return nil, response.NewExceptionResponse(err)
 		}
 	}
 	if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {

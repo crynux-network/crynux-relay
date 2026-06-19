@@ -158,6 +158,7 @@ func setupBlockchainProcessorTestDB(t *testing.T) *gorm.DB {
 		&models.DelegatedStakingSlashRecord{},
 		&models.NetworkNodeData{},
 		&models.NodeNameCount{},
+		&models.VestingRecord{},
 	); err != nil {
 		t.Fatalf("failed to migrate test db: %v", err)
 	}
@@ -175,6 +176,7 @@ func resetBlockchainProcessorTestCaches() {
 	}
 	globalDelegatorShareCache = &DelegatorShareCache{delegatorShares: make(map[string]uint8)}
 	globalMaxStaking = newMaxStaking()
+	globalNodeVestingStakeCache = newNodeVestingStakeCache()
 	resetNodeNamePolicyCacheForTest()
 }
 
@@ -599,6 +601,18 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 		t.Fatalf("failed to seed stale delegation: %v", err)
 	}
 	UpdateDelegation(staleDelegatorAddress.Hex(), nodeAddress.Hex(), big.NewInt(99), "network-b")
+	globalNodeVestingStakeCache.set(nodeAddress.Hex(), []models.VestingRecord{
+		{
+			Address:        nodeAddress.Hex(),
+			TotalAmount:    models.BigInt{Int: *big.NewInt(90)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+			StartTime:      time.Now().UTC().Add(24 * time.Hour),
+			DurationDays:   10,
+			Type:           models.VestingTypeNode,
+			Status:         models.VestingStatusActive,
+			Slashed:        false,
+		},
+	})
 
 	originalGetStakingInfo := getStakingInfo
 	originalGetNodeDelegatorShare := getNodeDelegatorShare

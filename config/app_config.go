@@ -133,7 +133,8 @@ type AppConfig struct {
 		TaskWhitelistEnabled     bool   `mapstructure:"task_whitelist_enabled"`
 		MinimumNodeNameNumber    uint64 `mapstructure:"minimum_node_name_number"`
 		NodeNameWhitelistEnabled bool   `mapstructure:"node_name_whitelist_enabled"`
-	}
+		PassiveSlashMode         *bool  `mapstructure:"passive_slash_mode"`
+	} `mapstructure:"task"`
 
 	TaskSchema struct {
 		StableDiffusionInference    string `mapstructure:"stable_diffusion_inference"`

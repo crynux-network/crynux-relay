@@ -47,17 +47,18 @@ type ListSlashNodeVestingsInput struct {
 }
 
 type SlashedNodeRecord struct {
-	SlashEventID                 uint   `json:"slash_event_id"`
-	Address                      string `json:"address"`
-	CardName                     string `json:"card_name"`
-	Network                      string `json:"network"`
-	OperatorSlashedAmount        string `json:"operator_slashed_amount"`
-	TaskIDCommitment             string `json:"task_id_commitment"`
-	QueuedTransactionID          *uint  `json:"queued_transaction_id"`
-	ConfirmedOperatorSlashTxHash string `json:"confirmed_operator_slash_tx_hash"`
-	DelegatedSlashJobID          *uint  `json:"delegated_slash_job_id"`
-	DelegatedSlashJobStatus      string `json:"delegated_slash_job_status"`
-	CreatedAt                    int64  `json:"created_at"`
+	SlashEventID                 uint                  `json:"slash_event_id"`
+	Address                      string                `json:"address"`
+	CardName                     string                `json:"card_name"`
+	Network                      string                `json:"network"`
+	OperatorSlashedAmount        string                `json:"operator_slashed_amount"`
+	TaskIDCommitment             string                `json:"task_id_commitment"`
+	QueuedTransactionID          *uint                 `json:"queued_transaction_id"`
+	ConfirmedOperatorSlashTxHash string                `json:"confirmed_operator_slash_tx_hash"`
+	DelegatedSlashJobID          *uint                 `json:"delegated_slash_job_id"`
+	DelegatedSlashJobStatus      string                `json:"delegated_slash_job_status"`
+	Evidence                     *models.SlashEvidence `json:"evidence,omitempty"`
+	CreatedAt                    int64                 `json:"created_at"`
 }
 
 type DelegatedSlashAuditRecord struct {
@@ -341,6 +342,7 @@ func buildSlashedNodeRecord(ctx context.Context, db *gorm.DB, event models.Event
 		Network:               eventArgs.Network,
 		OperatorSlashedAmount: eventArgs.Amount.String(),
 		TaskIDCommitment:      event.TaskIDCommitment,
+		Evidence:              eventArgs.Evidence,
 		CreatedAt:             event.CreatedAt.Unix(),
 	}
 	if record.TaskIDCommitment == "" {
@@ -349,15 +351,25 @@ func buildSlashedNodeRecord(ctx context.Context, db *gorm.DB, event models.Event
 	if eventArgs.NodeAddress != "" {
 		record.Address = eventArgs.NodeAddress
 	}
+	if eventArgs.Evidence != nil {
+		if nodeSnapshot := findSlashEvidenceNodeSnapshot(eventArgs.Evidence, record.Address); nodeSnapshot != nil {
+			record.CardName = nodeSnapshot.GPUName
+		}
+		if taskSnapshot := findSlashEvidenceTaskSnapshot(eventArgs.Evidence, record.TaskIDCommitment); taskSnapshot != nil {
+			record.TaskIDCommitment = taskSnapshot.TaskIDCommitment
+		}
+	}
 
-	var node models.Node
-	if err := db.WithContext(ctx).
-		Model(&models.Node{}).
-		Where("address = ?", record.Address).
-		First(&node).Error; err == nil {
-		record.CardName = node.GPUName
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	if record.CardName == "" {
+		var node models.Node
+		if err := db.WithContext(ctx).
+			Model(&models.Node{}).
+			Where("address = ?", record.Address).
+			First(&node).Error; err == nil {
+			record.CardName = node.GPUName
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 
 	queuedTxID, txHash, err := findOperatorSlashTransaction(ctx, db, event.ID, record.Address, record.Network)
@@ -379,6 +391,30 @@ func buildSlashedNodeRecord(ctx context.Context, db *gorm.DB, event models.Event
 	}
 
 	return record, nil
+}
+
+func findSlashEvidenceNodeSnapshot(evidence *models.SlashEvidence, nodeAddress string) *models.SlashEvidenceNodeSnapshot {
+	for i := range evidence.NodeSnapshots {
+		if evidence.NodeSnapshots[i].Address == nodeAddress {
+			return &evidence.NodeSnapshots[i]
+		}
+	}
+	if len(evidence.NodeSnapshots) == 0 {
+		return nil
+	}
+	return &evidence.NodeSnapshots[0]
+}
+
+func findSlashEvidenceTaskSnapshot(evidence *models.SlashEvidence, taskIDCommitment string) *models.SlashEvidenceTaskSnapshot {
+	for i := range evidence.TaskSnapshots {
+		if evidence.TaskSnapshots[i].TaskIDCommitment == taskIDCommitment {
+			return &evidence.TaskSnapshots[i]
+		}
+	}
+	if len(evidence.TaskSnapshots) == 0 {
+		return nil
+	}
+	return &evidence.TaskSnapshots[0]
 }
 
 func findOperatorSlashTransaction(ctx context.Context, db *gorm.DB, slashEventID uint, nodeAddress, network string) (*uint, string, error) {
