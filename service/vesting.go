@@ -180,9 +180,6 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 	now := time.Now().UTC()
 	refreshedNodeAddresses := make(map[string]struct{})
 	for _, record := range created {
-		if record.Type != models.VestingTypeNode {
-			continue
-		}
 		if _, ok := refreshedNodeAddresses[record.Address]; ok {
 			continue
 		}
@@ -329,7 +326,6 @@ func SlashNodeVestingsTx(ctx context.Context, tx *gorm.DB, nodeAddress string) (
 	result := tx.WithContext(dbCtx).
 		Model(&models.VestingRecord{}).
 		Where("address = ?", nodeAddress).
-		Where("type = ?", models.VestingTypeNode).
 		Where("status = ?", models.VestingStatusActive).
 		Where("slashed = ?", false).
 		Update("slashed", true)
@@ -368,7 +364,6 @@ func RestoreNodeVestings(ctx context.Context, db *gorm.DB, nodeAddress string, n
 		result := tx.WithContext(dbCtx).
 			Model(&models.VestingRecord{}).
 			Where("address = ?", nodeAddress).
-			Where("type = ?", models.VestingTypeNode).
 			Where("slashed = ?", true).
 			Update("slashed", false)
 		if result.Error != nil {

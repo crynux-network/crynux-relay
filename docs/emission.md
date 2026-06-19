@@ -96,7 +96,7 @@ Relay MUST store created records in `vesting_records` with `released_amount = 0`
 
 The `(source, external_id)` pair MUST identify the external emission item and MUST remain unique.
 
-Node vesting records MAY be marked with `slashed = true` when the node address is slashed. The `status` field MUST continue to represent only the release lifecycle. The `slashed` field MUST represent slash eligibility and release eligibility.
+Vesting records for a node address MAY be marked with `slashed = true` when that node address is slashed, regardless of vesting type. The `status` field MUST continue to represent only the release lifecycle. The `slashed` field MUST represent slash eligibility and release eligibility.
 
 ## Vesting Release
 
@@ -119,7 +119,7 @@ The `VestingRelease` event and the vesting record update MUST be committed in on
 
 Slashed vesting records MUST NOT release and MUST NOT contribute to relay account locked amount calculations. Slashing MUST NOT change `released_amount`, `start_time`, `duration_days`, `total_amount`, `type`, `source`, or `external_id`.
 
-The admin endpoint `POST /v2/admin/vesting/restore` MUST restore slashed node vesting records for the submitted `node_address` by setting `slashed = false`. Restore MUST keep the original schedule and `released_amount`. After restore, the next release run MUST release the catch-up delta when the schedule requires `should_released > released_amount`.
+The admin endpoint `POST /v2/admin/vesting/restore` MUST restore slashed vesting records for the submitted `node_address` by setting `slashed = false` across all vesting types. Restore MUST keep the original schedule and `released_amount`. After restore, the next release run MUST release the catch-up delta when the schedule requires `should_released > released_amount`.
 
 ## Emission Chart Aggregation
 

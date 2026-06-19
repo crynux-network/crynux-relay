@@ -60,7 +60,6 @@ func summarizeRestorableNodeVestings(c *gin.Context, nodeAddress string) (*resto
 		Model(&models.VestingRecord{}).
 		Select("total_amount").
 		Where("address = ?", nodeAddress).
-		Where("type = ?", models.VestingTypeNode).
 		Where("slashed = ?", true).
 		Find(&records).Error; err != nil {
 		return nil, err

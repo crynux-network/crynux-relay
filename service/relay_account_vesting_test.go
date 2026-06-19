@@ -281,7 +281,7 @@ func TestRestoredSlashedVestingCatchesUpRelease(t *testing.T) {
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
 		StartTime:      start,
 		DurationDays:   10,
-		Type:           models.VestingTypeNode,
+		Type:           models.VestingTypeOther,
 		Source:         "airdrop",
 		ExternalID:     "restore-1",
 		AdminSignature: "0xsig",

@@ -871,7 +871,7 @@ func createOrResumeDelegatedSlashJob(ctx context.Context, db *gorm.DB, event *bi
 	if err := SlashNodeVestings(ctx, db, nodeAddress, time.Now().UTC()); err != nil {
 		return err
 	}
-	log.Infof("NodeSlashed: processed node vesting slash, node: %s, network: %s, tx: %s, log index: %d",
+	log.Infof("NodeSlashed: processed vesting slash, node: %s, network: %s, tx: %s, log index: %d",
 		nodeAddress, network, event.Raw.TxHash.Hex(), event.Raw.Index)
 	job, err := getOrCreateDelegatedSlashJob(dbCtx, db, event, network)
 	if err != nil {

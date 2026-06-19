@@ -61,7 +61,6 @@ func InitNodeVestingStakeCache(ctx context.Context, db *gorm.DB) error {
 		Model(&models.VestingRecord{}).
 		Where("status = ?", models.VestingStatusActive).
 		Where("slashed = ?", false).
-		Where("type = ?", models.VestingTypeNode).
 		FindInBatches(&records, initNodeVestingStakeCacheBatchSize, func(tx *gorm.DB, batch int) error {
 			for _, record := range records {
 				addressRecords := cache.recordsByAddress[record.Address]
@@ -86,7 +85,6 @@ func RefreshNodeVestingStake(ctx context.Context, db *gorm.DB, address string) e
 		Where("address = ?", address).
 		Where("status = ?", models.VestingStatusActive).
 		Where("slashed = ?", false).
-		Where("type = ?", models.VestingTypeNode).
 		Find(&records).Error; err != nil {
 		return err
 	}
@@ -142,7 +140,6 @@ func RefreshNodeVestingScoreStakes(ctx context.Context, db *gorm.DB, now time.Ti
 		Distinct("address").
 		Where("status = ?", models.VestingStatusActive).
 		Where("slashed = ?", false).
-		Where("type = ?", models.VestingTypeNode).
 		Find(&addresses).Error; err != nil {
 		return err
 	}

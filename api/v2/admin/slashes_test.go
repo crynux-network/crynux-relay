@@ -269,7 +269,7 @@ func TestQueryDelegatedSlashAuditRecordsFiltersBySlashJob(t *testing.T) {
 	}
 }
 
-func TestQuerySlashVestingRecordsReturnsNodeVestingsWithSlashedLockedAmount(t *testing.T) {
+func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmount(t *testing.T) {
 	db := newSlashReportTestDB(t)
 	nodeAddress := "0x1111111111111111111111111111111111111111"
 	now := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
@@ -309,16 +309,28 @@ func TestQuerySlashVestingRecordsReturnsNodeVestingsWithSlashedLockedAmount(t *t
 	if err != nil {
 		t.Fatalf("query slash vesting records failed: %v", err)
 	}
-	if total != 1 || len(result) != 1 {
-		t.Fatalf("expected one node vesting record, total=%d len=%d", total, len(result))
+	if total != 2 || len(result) != 2 {
+		t.Fatalf("expected two vesting records, total=%d len=%d", total, len(result))
 	}
-	if result[0].Amount != "1000" {
-		t.Fatalf("expected amount 1000, got %s", result[0].Amount)
+	recordsByExternalID := make(map[string]SlashVestingRecord)
+	for _, record := range result {
+		recordsByExternalID[record.ExternalID] = record
 	}
-	if result[0].LockedAmount != "0" {
-		t.Fatalf("expected slashed locked amount 0, got %s", result[0].LockedAmount)
+	nodeVesting := recordsByExternalID["node-vesting"]
+	if nodeVesting.Amount != "1000" {
+		t.Fatalf("expected node amount 1000, got %s", nodeVesting.Amount)
 	}
-	if !result[0].Slashed {
+	if nodeVesting.LockedAmount != "0" {
+		t.Fatalf("expected slashed locked amount 0, got %s", nodeVesting.LockedAmount)
+	}
+	if !nodeVesting.Slashed {
 		t.Fatal("expected slashed vesting record")
+	}
+	delegationVesting := recordsByExternalID["delegation-vesting"]
+	if delegationVesting.Amount != "2000" {
+		t.Fatalf("expected delegation amount 2000, got %s", delegationVesting.Amount)
+	}
+	if delegationVesting.LockedAmount != "1000" {
+		t.Fatalf("expected delegation locked amount 1000, got %s", delegationVesting.LockedAmount)
 	}
 }
