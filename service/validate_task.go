@@ -192,6 +192,33 @@ func persistValidationGroupAbortedTaskQos(ctx context.Context, tx *gorm.DB, task
 	})
 }
 
+type prebuiltSlashEvidence struct {
+	evidence         *models.SlashEvidence
+	evidenceComplete bool
+}
+
+func buildInvalidatedTaskSlashEvidence(ctx context.Context, db *gorm.DB, tasks []*models.InferenceTask, nextStatusMap map[string]models.TaskStatus) (map[string]prebuiltSlashEvidence, error) {
+	evidenceByTaskIDCommitment := make(map[string]prebuiltSlashEvidence)
+	for _, task := range tasks {
+		if nextStatusMap[task.TaskIDCommitment] != models.TaskEndInvalidated {
+			continue
+		}
+		node, err := checkTaskSelectedNode(ctx, db, task)
+		if err != nil {
+			return nil, err
+		}
+		evidence, evidenceComplete, err := buildSlashEvidence(ctx, db, task, node)
+		if err != nil {
+			return nil, err
+		}
+		evidenceByTaskIDCommitment[task.TaskIDCommitment] = prebuiltSlashEvidence{
+			evidence:         evidence,
+			evidenceComplete: evidenceComplete,
+		}
+	}
+	return evidenceByTaskIDCommitment, nil
+}
+
 func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask, taskID, vrfProof, publicKey string) error {
 	tasks := make([]*models.InferenceTask, len(originTasks))
 	for i, task := range originTasks {
@@ -314,13 +341,22 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 		markValidationGroupKickoutCheckNodes(tasks, nextStatusMap, validationGroupNodeMetricsBefore)
 	}
 
+	slashEvidenceByTaskIDCommitment, err := buildInvalidatedTaskSlashEvidence(ctx, config.GetDB(), tasks, nextStatusMap)
+	if err != nil {
+		return err
+	}
+
 	if err := config.GetDB().Transaction(func(tx *gorm.DB) error {
 		for _, task := range tasks {
 			nextStatus := nextStatusMap[task.TaskIDCommitment]
 
 			switch nextStatus {
 			case models.TaskEndInvalidated:
-				if err := SetTaskStatusEndInvalidated(ctx, tx, task); err != nil {
+				slashEvidence, ok := slashEvidenceByTaskIDCommitment[task.TaskIDCommitment]
+				if !ok {
+					return errors.New("missing prebuilt slash evidence")
+				}
+				if err := SetTaskStatusEndInvalidatedWithEvidence(ctx, tx, task, slashEvidence.evidence, slashEvidence.evidenceComplete); err != nil {
 					return err
 				}
 			case models.TaskGroupValidated:

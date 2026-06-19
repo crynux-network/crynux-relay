@@ -291,13 +291,31 @@ func SetTaskStatusEndInvalidated(ctx context.Context, db *gorm.DB, originTask *m
 		return err
 	}
 	passiveSlashMode := config.GetConfig().Task.PassiveSlashMode != nil && *config.GetConfig().Task.PassiveSlashMode
+	return setTaskStatusEndInvalidatedWithEvidence(ctx, db, originTask, node, evidence, evidenceComplete, passiveSlashMode)
+}
+
+func SetTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, originTask *models.InferenceTask, evidence *models.SlashEvidence, evidenceComplete bool) error {
+	task := *originTask
+	if task.Status != models.TaskScoreReady && task.Status != models.TaskEndAborted && task.Status != models.TaskErrorReported {
+		return errWrongTaskStatus
+	}
+
+	node, err := checkTaskSelectedNode(ctx, db, &task)
+	if err != nil {
+		return err
+	}
+	passiveSlashMode := config.GetConfig().Task.PassiveSlashMode != nil && *config.GetConfig().Task.PassiveSlashMode
+	return setTaskStatusEndInvalidatedWithEvidence(ctx, db, originTask, node, evidence, evidenceComplete, passiveSlashMode)
+}
+
+func setTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, originTask *models.InferenceTask, node *models.Node, evidence *models.SlashEvidence, evidenceComplete bool, passiveSlashMode bool) error {
+	task := *originTask
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		err = task.Update(ctx, tx, map[string]interface{}{
+		if err := task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskEndInvalidated,
 			"validated_time": sql.NullTime{Time: time.Now(), Valid: true},
 			"qos_score":      0,
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 		if err := emitEvent(ctx, tx, &models.TaskEndInvalidatedEvent{TaskIDCommitment: task.TaskIDCommitment, SelectedNode: task.SelectedNode}); err != nil {

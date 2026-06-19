@@ -109,6 +109,9 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
 	applyNodeDelegationsToCache(node.Address, node.Network, chainDelegations)
 	SetDelegatorShare(node.Address, node.Network, delegatorShare)
+	if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
+		return err
+	}
 	UpdateMaxStaking(node.Address, GetNodeScoreStakeAmount(*node, time.Now().UTC()))
 	LogNodeStatusChange(node, "join")
 	return nil
