@@ -524,7 +524,7 @@ func querySlashVestingRecords(ctx context.Context, db *gorm.DB, nodeAddress stri
 
 	query := db.WithContext(dbCtx).
 		Model(&models.VestingRecord{}).
-		Where("address = ? AND type = ?", nodeAddress, models.VestingTypeNode)
+		Where("address = ?", nodeAddress)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

@@ -141,7 +141,7 @@ func InitRoutes(r *fizz.Fizz) {
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.CreateVestingRecords, 200))
 	adminGroup.POST("/vesting/restore", []fizz.OperationOption{
 		fizz.ID("admin_vesting_restore_v2"),
-		fizz.Summary("Restore slashed node vesting records"),
+		fizz.Summary("Restore slashed vesting records for a node address"),
 		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
@@ -209,7 +209,7 @@ func InitRoutes(r *fizz.Fizz) {
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListSlashNodeDelegators, 200))
 	adminSlashesGroup.GET("/nodes/:address/vestings", []fizz.OperationOption{
 		fizz.ID("admin_slash_node_vestings_v2"),
-		fizz.Summary("List node vesting records for slash verification"),
+		fizz.Summary("List vesting records for node slash verification"),
 		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),

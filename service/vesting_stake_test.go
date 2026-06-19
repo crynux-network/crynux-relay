@@ -36,7 +36,7 @@ func resetVestingStakeTestCaches(network string) {
 	globalMaxStaking = newMaxStaking()
 }
 
-func TestGetNodeScoreStakeAmountIncludesUnslashedLockedNodeVesting(t *testing.T) {
+func TestGetNodeScoreStakeAmountIncludesUnslashedLockedVestings(t *testing.T) {
 	ctx := context.Background()
 	db := newVestingStakeTestDB(t)
 	network := "network-a"
@@ -104,8 +104,8 @@ func TestGetNodeScoreStakeAmountIncludesUnslashedLockedNodeVesting(t *testing.T)
 	}
 
 	scoreStake := GetNodeScoreStakeAmount(node, now)
-	if scoreStake.String() != "930" {
-		t.Fatalf("expected score stake 930, got %s", scoreStake.String())
+	if scoreStake.String() != "6530" {
+		t.Fatalf("expected score stake 6530, got %s", scoreStake.String())
 	}
 }
 
@@ -141,6 +141,34 @@ func TestSlashAndRestoreNodeVestingsRefreshScoreStake(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create vesting: %v", err)
 	}
+	if err := db.Create(&models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(2000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+		StartTime:      start,
+		DurationDays:   10,
+		Type:           models.VestingTypeOther,
+		Source:         "airdrop",
+		ExternalID:     "active-other",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+	}).Error; err != nil {
+		t.Fatalf("failed to create other vesting: %v", err)
+	}
+	if err := db.Create(&models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(3000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+		StartTime:      start,
+		DurationDays:   10,
+		Type:           models.VestingTypeDelegation,
+		Source:         "airdrop",
+		ExternalID:     "active-delegation",
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+	}).Error; err != nil {
+		t.Fatalf("failed to create delegation vesting: %v", err)
+	}
 
 	if err := InitNodeVestingStakeCache(ctx, db); err != nil {
 		t.Fatalf("failed to init node vesting stake cache: %v", err)
@@ -151,11 +179,21 @@ func TestSlashAndRestoreNodeVestingsRefreshScoreStake(t *testing.T) {
 	if got := GetNodeScoreStakeAmount(node, now); got.String() != "100" {
 		t.Fatalf("expected score stake 100 after slash, got %s", got.String())
 	}
+	var slashedCount int64
+	if err := db.Model(&models.VestingRecord{}).
+		Where("address = ?", address).
+		Where("slashed = ?", true).
+		Count(&slashedCount).Error; err != nil {
+		t.Fatalf("failed to count slashed vestings: %v", err)
+	}
+	if slashedCount != 3 {
+		t.Fatalf("expected 3 slashed vesting records, got %d", slashedCount)
+	}
 
 	if err := RestoreNodeVestings(ctx, db, address, now); err != nil {
 		t.Fatalf("restore vesting failed: %v", err)
 	}
-	if got := GetNodeScoreStakeAmount(node, now); got.String() != "900" {
-		t.Fatalf("expected score stake 900 after restore, got %s", got.String())
+	if got := GetNodeScoreStakeAmount(node, now); got.String() != "4900" {
+		t.Fatalf("expected score stake 4900 after restore, got %s", got.String())
 	}
 }
