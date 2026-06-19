@@ -67,6 +67,9 @@ func InitConfig(configPath string) error {
 	if err := checkStatsConfig(); err != nil {
 		return err
 	}
+	if err := checkTaskConfig(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -161,6 +164,13 @@ func checkStatsConfig() error {
 		return fmt.Errorf("stats.init_start_time must be RFC3339: %w", err)
 	}
 	appConfig.Stats.InitStartTime = raw
+	return nil
+}
+
+func checkTaskConfig() error {
+	if appConfig.Task.PassiveSlashMode == nil {
+		return errors.New("task.passive_slash_mode is not set")
+	}
 	return nil
 }
 

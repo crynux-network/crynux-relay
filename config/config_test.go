@@ -75,6 +75,8 @@ mac:
   secret_key_file: %q
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+task:
+  passive_slash_mode: true
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 
@@ -89,6 +91,74 @@ stats:
 	if blockchain.Account.PrivateKey != privateKey {
 		t.Fatalf("expected normalized private key %s, got %s", privateKey, blockchain.Account.PrivateKey)
 	}
+}
+
+func TestInitConfigHonorsPassiveSlashModeFalse(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := writeConfigTestFiles(t, false, true)
+	if err := InitConfig(dir); err != nil {
+		t.Fatalf("failed to init config: %v", err)
+	}
+	if GetConfig().Task.PassiveSlashMode == nil {
+		t.Fatal("expected passive slash mode to be configured")
+	}
+	if *GetConfig().Task.PassiveSlashMode {
+		t.Fatal("expected passive slash mode false to be honored")
+	}
+}
+
+func TestInitConfigRequiresPassiveSlashMode(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := writeConfigTestFiles(t, false, false)
+	if err := InitConfig(dir); err == nil {
+		t.Fatal("expected missing task.passive_slash_mode to fail config initialization")
+	}
+}
+
+func writeConfigTestFiles(t *testing.T, passiveSlashMode bool, includePassiveSlashMode bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	privateKey := "0440cb8b2962699e5ce6835170ba86a085d67477e5581e398674a59feb8e7b9c"
+	privateKeyFile := filepath.Join(dir, "private_key")
+	jwtKeyFile := filepath.Join(dir, "jwt_key")
+	macKeyFile := filepath.Join(dir, "mac_key")
+
+	writeTestFile(t, privateKeyFile, "0x"+privateKey)
+	writeTestFile(t, jwtKeyFile, "jwt-secret")
+	writeTestFile(t, macKeyFile, "mac-secret")
+
+	taskConfig := ""
+	if includePassiveSlashMode {
+		taskConfig = fmt.Sprintf("task:\n  passive_slash_mode: %t\n", passiveSlashMode)
+	}
+	content := fmt.Sprintf(`environment: debug
+blockchains:
+  testnet:
+    rps: 1
+    rpc_endpoint: "http://localhost:8545"
+    account:
+      address: %q
+      private_key_file: %q
+    contracts:
+      benefit_address: "0x0000000000000000000000000000000000000001"
+      node_staking: "0x0000000000000000000000000000000000000002"
+      credits: "0x0000000000000000000000000000000000000003"
+http:
+  jwt:
+    secret_key_file: %q
+mac:
+  secret_key_file: %q
+stats:
+  init_start_time: "2026-01-01T00:00:00Z"
+%s`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile), taskConfig)
+	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
+	return dir
 }
 
 func writeTestFile(t *testing.T, path string, content string) {

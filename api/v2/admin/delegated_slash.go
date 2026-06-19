@@ -20,7 +20,8 @@ type ListDelegatedSlashAuditsInput struct {
 }
 
 type TriggerNodeSlashInput struct {
-	NodeAddress string `json:"node_address" validate:"required"`
+	NodeAddress    string `json:"node_address"`
+	PendingSlashID uint   `json:"pending_slash_id"`
 }
 
 type TriggerNodeSlashData struct {
@@ -99,11 +100,33 @@ func ExportDelegatedSlashAuditsCSV(c *gin.Context) {
 }
 
 func TriggerNodeSlash(c *gin.Context, in *TriggerNodeSlashInput) (*TriggerNodeSlashResponse, error) {
-	if !common.IsHexAddress(in.NodeAddress) {
+	var evidence *models.SlashEvidence
+	taskIDCommitment := ""
+	nodeAddressInput := in.NodeAddress
+	var pendingSlash *models.PendingSlash
+	if in.PendingSlashID != 0 {
+		var err error
+		pendingSlash, err = models.GetPendingSlashByID(c.Request.Context(), config.GetDB(), in.PendingSlashID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, response.NewNotFoundErrorResponse()
+			}
+			return nil, response.NewExceptionResponse(err)
+		}
+		if pendingSlash.Status != models.PendingSlashStatusPending {
+			return nil, &response.ErrorResponse{Response: response.Response{Message: "pending slash is not pending"}}
+		}
+		nodeAddressInput = pendingSlash.NodeAddress
+		taskIDCommitment = pendingSlash.TaskIDCommitment
+		evidence, err = service.ParsePendingSlashEvidence(pendingSlash)
+		if err != nil {
+			return nil, response.NewExceptionResponse(err)
+		}
+	} else if !common.IsHexAddress(nodeAddressInput) {
 		return nil, &response.ErrorResponse{Response: response.Response{Message: "invalid node address"}}
 	}
 
-	_, node, err := getNodeByAdminAddress(c, in.NodeAddress)
+	_, node, err := getNodeByAdminAddress(c, nodeAddressInput)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &response.ErrorResponse{Response: response.Response{Message: "node not found"}}
@@ -111,9 +134,15 @@ func TriggerNodeSlash(c *gin.Context, in *TriggerNodeSlashInput) (*TriggerNodeSl
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	blockchainTransactionID, err := service.SlashNode(c.Request.Context(), config.GetDB(), node, "")
+	blockchainTransactionID, err := service.SlashNode(c.Request.Context(), config.GetDB(), node, taskIDCommitment, evidence)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
+	}
+	if pendingSlash != nil {
+		pendingSlash.Status = models.PendingSlashStatusSlashed
+		if err := pendingSlash.Save(c.Request.Context(), config.GetDB()); err != nil {
+			return nil, response.NewExceptionResponse(err)
+		}
 	}
 
 	return &TriggerNodeSlashResponse{

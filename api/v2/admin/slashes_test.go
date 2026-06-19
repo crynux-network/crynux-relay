@@ -124,6 +124,105 @@ func TestQuerySlashedNodeRecordsMapsEventTransactionAndJob(t *testing.T) {
 	}
 }
 
+func TestQuerySlashedNodeRecordPrefersEvidenceCardName(t *testing.T) {
+	db := newSlashReportTestDB(t)
+	ctx := context.Background()
+	nodeAddress := "0x1111111111111111111111111111111111111111"
+
+	if err := db.Create(&models.Node{
+		Network: "base",
+		Address: nodeAddress,
+		GPUName: "RTX 5090 After Restart",
+	}).Error; err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+	slashEvent := createSlashReportEvent(t, db, &models.NodeSlashedEvent{
+		NodeAddress:      nodeAddress,
+		TaskIDCommitment: "0xtask",
+		Amount:           models.BigInt{Int: *big.NewInt(1000)},
+		Network:          "base",
+		Evidence: &models.SlashEvidence{
+			TaskSnapshots: []models.SlashEvidenceTaskSnapshot{
+				{TaskIDCommitment: "0xtask"},
+			},
+			NodeSnapshots: []models.SlashEvidenceNodeSnapshot{
+				{
+					Address: nodeAddress,
+					GPUName: "RTX 4090 At Assignment",
+				},
+			},
+		},
+	}, time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC))
+
+	record, err := querySlashedNodeRecordByID(ctx, db, slashEvent.ID)
+	if err != nil {
+		t.Fatalf("query slashed node record failed: %v", err)
+	}
+	if record.CardName != "RTX 4090 At Assignment" {
+		t.Fatalf("expected evidence card name, got %s", record.CardName)
+	}
+	if record.Evidence == nil {
+		t.Fatal("expected evidence in slash record")
+	}
+}
+
+func TestQueryPendingSlashRecordsIncludesEvidence(t *testing.T) {
+	db := newSlashReportTestDB(t)
+	ctx := context.Background()
+	if err := db.AutoMigrate(&models.PendingSlash{}); err != nil {
+		t.Fatalf("failed to migrate pending slashes: %v", err)
+	}
+	pendingSlash := models.PendingSlash{
+		Status:           models.PendingSlashStatusPending,
+		NodeAddress:      "0x1111111111111111111111111111111111111111",
+		Network:          "base",
+		TaskIDCommitment: "0xtask",
+		EvidenceJSON:     `{"task_snapshots":[{"task_id_commitment":"0xtask"}],"node_snapshots":[{"gpu_name":"RTX 4090"}],"validation_context":{"reason":"task_end_invalidated"},"input_artifacts":[{"task_id_commitment":"0xtask","status":"missing"}],"result_artifacts":[{"task_id_commitment":"0xtask","status":"pending_upload"}]}`,
+		EvidenceComplete: true,
+	}
+	if err := db.Create(&pendingSlash).Error; err != nil {
+		t.Fatalf("failed to create pending slash: %v", err)
+	}
+
+	records, total, err := queryPendingSlashRecords(ctx, db, "pending", "base", 1, 30)
+	if err != nil {
+		t.Fatalf("query pending slash records failed: %v", err)
+	}
+	if total != 1 || len(records) != 1 {
+		t.Fatalf("expected one pending slash, total=%d len=%d", total, len(records))
+	}
+	if records[0].Evidence == nil || len(records[0].Evidence.NodeSnapshots) != 1 || records[0].Evidence.NodeSnapshots[0].GPUName != "RTX 4090" {
+		t.Fatalf("expected evidence gpu name RTX 4090, got %#v", records[0].Evidence)
+	}
+}
+
+func TestFindPendingSlashArtifactAndCleanFileName(t *testing.T) {
+	evidence := &models.SlashEvidence{
+		ResultArtifacts: []models.SlashEvidenceArtifacts{
+			{
+				TaskIDCommitment: "0xtask",
+				StoredPath:       "data/slashed_tasks/0xtask/results",
+				Files:            []string{"0.png", "checkpoint.zip"},
+				Status:           "uploaded",
+			},
+		},
+	}
+
+	artifact, err := findPendingSlashArtifact(evidence, "result", "0xtask")
+	if err != nil {
+		t.Fatalf("expected artifact lookup to succeed: %v", err)
+	}
+	if !artifactContainsFile(artifact, "0.png") {
+		t.Fatal("expected artifact to contain 0.png")
+	}
+	if _, err := cleanArtifactFileName("../secret"); err == nil {
+		t.Fatal("expected path traversal file name to be rejected")
+	}
+	if got, err := cleanArtifactFileName("checkpoint.zip"); err != nil || got != "checkpoint.zip" {
+		t.Fatalf("expected clean checkpoint.zip, got %q err %v", got, err)
+	}
+}
+
 func TestQueryDelegatedSlashAuditRecordsFiltersBySlashJob(t *testing.T) {
 	db := newSlashReportTestDB(t)
 	nodeAddress := "0x1111111111111111111111111111111111111111"

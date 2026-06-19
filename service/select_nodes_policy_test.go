@@ -29,7 +29,8 @@ func initSelectionPolicyTestConfig(t *testing.T, minCount uint64, whitelistEnabl
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  minimum_node_name_number: " + strconv.FormatUint(minCount, 10) + "\n" +
-		"  node_name_whitelist_enabled: " + whitelistFlag + "\n"
+		"  node_name_whitelist_enabled: " + whitelistFlag + "\n" +
+		"  passive_slash_mode: true\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}

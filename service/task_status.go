@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crynux_relay/config"
 	"crynux_relay/models"
 	"database/sql"
 	"errors"
@@ -82,6 +83,9 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 		})
 	})
 	if err != nil {
+		return err
+	}
+	if err := captureRunningTaskSnapshot(ctx, db, &task, &node); err != nil {
 		return err
 	}
 
@@ -282,6 +286,11 @@ func SetTaskStatusEndInvalidated(ctx context.Context, db *gorm.DB, originTask *m
 		return err
 	}
 
+	evidence, evidenceComplete, err := buildSlashEvidence(ctx, db, &task, node)
+	if err != nil {
+		return err
+	}
+	passiveSlashMode := config.GetConfig().Task.PassiveSlashMode != nil && *config.GetConfig().Task.PassiveSlashMode
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskEndInvalidated,
@@ -294,11 +303,18 @@ func SetTaskStatusEndInvalidated(ctx context.Context, db *gorm.DB, originTask *m
 		if err := emitEvent(ctx, tx, &models.TaskEndInvalidatedEvent{TaskIDCommitment: task.TaskIDCommitment, SelectedNode: task.SelectedNode}); err != nil {
 			return err
 		}
-		_, err := SlashNode(ctx, tx, node, task.TaskIDCommitment)
+		if passiveSlashMode {
+			if err := createPendingSlash(ctx, tx, &task, node, evidence, evidenceComplete); err != nil {
+				return err
+			}
+			return nodeFinishTask(ctx, tx, node)
+		}
+		_, err := SlashNode(ctx, tx, node, task.TaskIDCommitment, evidence)
 		return err
 	}); err != nil {
 		return err
 	}
+	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
 }
@@ -357,6 +373,7 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
 	}
+	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
 }
@@ -436,6 +453,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
 	}
+	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
 }
@@ -556,6 +574,7 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
 	}
+	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
 }

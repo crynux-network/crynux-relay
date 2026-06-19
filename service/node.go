@@ -367,7 +367,7 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 	return nil
 }
 
-func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommitment string) (uint, error) {
+func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommitment string, evidence *models.SlashEvidence) (uint, error) {
 	if node.Status == models.NodeStatusQuit {
 		return 0, errors.New("node has already quit")
 	}
@@ -383,7 +383,7 @@ func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommit
 		if err != nil {
 			return err
 		}
-		return emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network})
+		return emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network, Evidence: evidence})
 	}); err != nil {
 		return 0, err
 	}

@@ -150,7 +150,7 @@ Long-term QoS scoring for tasks already in `TaskEndAborted` follows these rules:
 - If the group contains at least one non-aborted task, each task aborted due to `TaskAbortTimeout` MUST contribute a Task QoS score of `0` to its selected node's long-term QoS rolling average.
 - If all 3 tasks in the group are already aborted, all 3 Task QoS scores MUST be treated as NULL and MUST NOT update any node's long-term QoS rolling average.
 
-A task reaching `EndInvalidated` triggers the **node slash** for its assigned node through `SlashNode`.
+A task reaching `EndInvalidated` enters the configured slash path for its assigned node. Passive slash mode records pending review evidence, and active mode triggers the node slash through `SlashNode`. The passive slash flow, evidence model, pending review states, and admin approval path are specified in `passive_slash_model.md`.
 
 ### Payment Distribution in Groups
 
@@ -168,7 +168,7 @@ Tasks in `GroupRefund` status have their task fee refunded to the creator since 
 
 ### When Slashing Occurs
 
-A node is slashed when its submitted result does not match the majority in a validation group. Specifically, the task transitions to `TaskEndInvalidated`, which calls `SlashNode` with the offending task ID commitment.
+A node is slash-eligible when its submitted result does not match the majority in a validation group. Specifically, the task transitions to `TaskEndInvalidated`. When `task.passive_slash_mode` is `false`, Relay calls `SlashNode` with the offending task ID commitment. When `task.passive_slash_mode` is `true`, Relay creates a pending slash review record and does not execute the slash during validation.
 
 The authenticated admin API `POST /v2/admin/nodes/slash` also calls `SlashNode`. Admin-triggered slash uses the node row's current network and does not have an offending task ID commitment, so the emitted `NodeSlashed` Relay event MUST use `0x` as the task ID commitment placeholder.
 
@@ -225,6 +225,7 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 |-----------|-------------|
 | `task.stake_amount` | Required stake amount for joining the network (in ether) |
 | `task.distance_threshold` | Maximum Hamming distance per 8-byte pHash block for SD result comparison |
+| `task.passive_slash_mode` | Required boolean that controls whether validation invalidation records pending slash evidence or executes automatic slash |
 | `qos.score_pool_size` | Number of task scores in the rolling QoS pool (default: 50) |
 | `qos.kickout_threshold` | QoS score below which a node is permanently kicked out |
 | `qos.health_kickout_threshold` | Health threshold below which a timeouted node is kicked out when the task finishes |
@@ -236,6 +237,7 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 | `service/validate_task.go` | Core validation logic: VRF verification, task ID commitment check, group result comparison |
 | `service/task_status.go` | Task state transitions, slash trigger (`SetTaskStatusEndInvalidated`), abort handling |
 | `service/node.go` | Node lifecycle: `SlashNode`, `nodeFinishTask`, `SetNodeStatusQuit` |
+| `service/slash_evidence.go` | Passive slash evidence snapshots, input/output evidence file tracking, and pending slash evidence updates |
 | `service/qos.go` | QoS scoring, health penalty/boost, permanent kickout check |
 | `service/start_task.go` | Task queue processing and node dispatch |
 | `service/select_nodes.go` | Node selection for task assignment (weighted by QoS and staking) |
@@ -245,6 +247,7 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 | `models/inference_task.go` | Task model, status enum, abort reason enum |
 | `models/node.go` | Node model with staking, health, and QoS fields |
 | `models/event.go` | Event types: `NodeSlashed`, `NodeKickedOut`, `TaskEndInvalidated`, etc. |
+| `models/slash_evidence.go` | Pending slash and slash evidence models |
 | `utils/vrf.go` | VRF validation sampling decision (`VrfNeedValidation`) |
 | `utils/hamming.go` | Hamming distance calculation for pHash comparison |
 | `utils/commitment.go` | Task ID commitment utility |
