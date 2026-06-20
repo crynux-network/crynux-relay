@@ -21,6 +21,7 @@ const (
 	slashEvidenceReasonInvalidated = "task_end_invalidated"
 	slashEvidenceStatusCopied      = "copied"
 	slashEvidenceStatusMissing     = "missing"
+	slashEvidenceStatusNotRequired = "not_required"
 	slashEvidenceStatusPending     = "pending_upload"
 	slashEvidenceStatusUploaded    = "uploaded"
 )
@@ -263,9 +264,27 @@ func copySlashEvidenceInputArtifact(taskIDCommitment string) (models.SlashEviden
 func buildPendingResultEvidenceArtifacts(tasks []models.InferenceTask) []models.SlashEvidenceArtifacts {
 	artifacts := make([]models.SlashEvidenceArtifacts, 0, len(tasks))
 	for _, task := range tasks {
+		if task.Status == models.TaskEndGroupRefund {
+			artifacts = append(artifacts, buildNotRequiredResultEvidenceArtifact(task.TaskIDCommitment))
+			continue
+		}
 		artifacts = append(artifacts, buildPendingResultEvidenceArtifact(task.TaskIDCommitment))
 	}
 	return artifacts
+}
+
+func buildCurrentResultEvidenceArtifact(task models.InferenceTask) (models.SlashEvidenceArtifacts, error) {
+	if task.Status == models.TaskEndGroupRefund {
+		return buildNotRequiredResultEvidenceArtifact(task.TaskIDCommitment), nil
+	}
+	artifact, err := buildUploadedResultEvidenceArtifacts(task.TaskIDCommitment)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return models.SlashEvidenceArtifacts{}, err
+		}
+		return buildPendingResultEvidenceArtifact(task.TaskIDCommitment), nil
+	}
+	return artifact, nil
 }
 
 func buildPendingResultEvidenceArtifact(taskIDCommitment string) models.SlashEvidenceArtifacts {
@@ -274,6 +293,13 @@ func buildPendingResultEvidenceArtifact(taskIDCommitment string) models.SlashEvi
 		TaskIDCommitment: taskIDCommitment,
 		StoredPath:       filepath.Join(appConfig.DataDir.SlashedTasks, taskIDCommitment, "results"),
 		Status:           slashEvidenceStatusPending,
+	}
+}
+
+func buildNotRequiredResultEvidenceArtifact(taskIDCommitment string) models.SlashEvidenceArtifacts {
+	return models.SlashEvidenceArtifacts{
+		TaskIDCommitment: taskIDCommitment,
+		Status:           slashEvidenceStatusNotRequired,
 	}
 }
 
@@ -428,12 +454,9 @@ func UpdatePendingSlashResultEvidence(ctx context.Context, db *gorm.DB, taskIDCo
 	resultArtifacts := make([]models.SlashEvidenceArtifacts, 0, len(groupTasks))
 	for _, groupTask := range groupTasks {
 		groupTaskIDCommitments = append(groupTaskIDCommitments, groupTask.TaskIDCommitment)
-		artifact, err := buildUploadedResultEvidenceArtifacts(groupTask.TaskIDCommitment)
+		artifact, err := buildCurrentResultEvidenceArtifact(groupTask)
 		if err != nil {
-			if !os.IsNotExist(err) {
-				return err
-			}
-			artifact = buildPendingResultEvidenceArtifact(groupTask.TaskIDCommitment)
+			return err
 		}
 		resultArtifacts = append(resultArtifacts, artifact)
 	}
