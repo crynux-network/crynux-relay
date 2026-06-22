@@ -41,6 +41,23 @@ func captureRunningTaskSnapshot(ctx context.Context, db *gorm.DB, task *models.I
 	return nil
 }
 
+func captureTaskTraceStartSnapshot(ctx context.Context, db *gorm.DB, task *models.InferenceTask, node *models.Node) error {
+	currentNode, err := models.GetNodeByAddress(ctx, db, node.Address)
+	if err != nil {
+		return err
+	}
+	snapshot, err := buildSlashEvidenceNodeSnapshot(ctx, db, currentNode)
+	if err != nil {
+		return err
+	}
+	GetTaskTraceStore().RecordTaskStarted(task, snapshot)
+	return nil
+}
+
+func BuildTaskTraceNodeSnapshot(ctx context.Context, db *gorm.DB, node *models.Node) (models.SlashEvidenceNodeSnapshot, error) {
+	return buildSlashEvidenceNodeSnapshot(ctx, db, node)
+}
+
 func deleteRunningTaskSnapshot(taskIDCommitment string) {
 	runningTaskSnapshots.Delete(taskIDCommitment)
 }

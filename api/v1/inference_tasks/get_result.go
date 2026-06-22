@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/validate"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 	"os"
 	"path/filepath"
@@ -75,6 +76,7 @@ func GetResult(c *gin.Context, in *GetResultInputWithSignature) error {
 	if _, err := os.Stat(resultFile); err != nil {
 		return response.NewValidationErrorResponse("index", "File not found")
 	}
+	service.GetTaskTraceStore().RecordAppResultFetched(task.TaskIDCommitment, "result_file", in.Index)
 
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-Transfer-Encoding", "binary")
@@ -136,6 +138,7 @@ func GetResultCheckpoint(c *gin.Context, in *GetResultCheckpointInputWithSignatu
 	if _, err := os.Stat(resultFile); err != nil {
 		return response.NewValidationErrorResponse("task_id", "Checkpoint file not found")
 	}
+	service.GetTaskTraceStore().RecordAppResultFetched(task.TaskIDCommitment, "checkpoint", "")
 
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-Transfer-Encoding", "binary")

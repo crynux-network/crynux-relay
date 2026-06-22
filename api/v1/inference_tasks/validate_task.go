@@ -56,6 +56,11 @@ func ValidateTask(c *gin.Context, in *ValidateTaskInputWithSignature) (*response
 		}
 		tasks = append(tasks, task)
 	}
+	mode := "single_task"
+	if len(tasks) == 3 {
+		mode = "group"
+	}
+	service.GetTaskTraceStore().RecordValidationRequest(in.TaskID, in.TaskIDCommitments, mode)
 
 	for range 3 {
 		if len(tasks) == 1 {
@@ -78,5 +83,6 @@ func ValidateTask(c *gin.Context, in *ValidateTaskInputWithSignature) (*response
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
+	service.GetTaskTraceStore().RecordValidationResult(tasks)
 	return &response.Response{}, nil
 }

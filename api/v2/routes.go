@@ -183,6 +183,15 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DownloadPendingSlashArtifact, 200))
+	adminTasksGroup := adminGroup.Group("tasks", "admin tasks", "Admin task tracing APIs")
+	adminTasksGroup.GET("/:task_id_commitment/trace", []fizz.OperationOption{
+		fizz.ID("admin_task_trace_v2"),
+		fizz.Summary("Get chronological task lifecycle trace"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.GetTaskTrace, 200))
 	adminSlashesGroup := adminGroup.Group("slashes", "admin slashes", "Admin slash lookup APIs")
 	adminSlashesGroup.GET("/nodes", []fizz.OperationOption{
 		fizz.ID("admin_slash_nodes_v2"),

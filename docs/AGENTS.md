@@ -9,6 +9,7 @@
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | [task_timeout.md](./task_timeout.md) | Queue timeout, running timeout, abort completion, node health penalty, and timeout race handling |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
+| [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, derived durations, node selection attempts, validation, upload, and missing-data reporting |
 | [passive_slash_model.md](./passive_slash_model.md) | Passive slash review mode, slash evidence capture, pending slash states, and admin approval flow |
 | [node_event_stream.md](./node_event_stream.md) | Relay `events` table, v1 event APIs, and node watcher polling protocol |
 | [model_predownload.md](./model_predownload.md) | Pre-download scheduling, node notification, and model availability tracking |
