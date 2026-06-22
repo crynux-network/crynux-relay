@@ -53,12 +53,14 @@ func AddModelID(c *gin.Context, in *AddModelIDInputWithSignature) (*response.Res
 		return nil, response.NewValidationErrorResponse("address", "Illegal node status")
 	}
 
+	in.ModelID = models.NormalizeModelID(in.ModelID)
+
 	_, err = models.GetNodeModel(c.Request.Context(), config.GetDB(), in.Address, in.ModelID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		nodeModel := &models.NodeModel{
 			NodeAddress: in.Address,
 			ModelID:     in.ModelID,
-			InUse: false,
+			InUse:       false,
 		}
 		if err := nodeModel.Save(c.Request.Context(), config.GetDB()); err != nil {
 			return nil, response.NewExceptionResponse(err)

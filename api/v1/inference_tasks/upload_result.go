@@ -144,6 +144,19 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	} else {
 		fileExt = ".json"
 	}
+	traceFiles := make([]service.TaskTraceUploadFile, 0, len(files))
+	for i := range files {
+		traceFiles = append(traceFiles, service.TaskTraceUploadFile{
+			Index: strconv.Itoa(i),
+			Type:  fileExt,
+		})
+	}
+	checkpointPresent := false
+	if task.TaskType == models.TaskTypeSDFTLora {
+		checkpoints := form.File["checkpoint"]
+		checkpointPresent = len(checkpoints) > 0
+	}
+	service.GetTaskTraceStore().RecordResultUploadStarted(task, traceFiles, checkpointPresent)
 
 	for i, file := range files {
 		if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {

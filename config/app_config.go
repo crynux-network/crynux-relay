@@ -134,6 +134,7 @@ type AppConfig struct {
 		MinimumNodeNameNumber    uint64 `mapstructure:"minimum_node_name_number"`
 		NodeNameWhitelistEnabled bool   `mapstructure:"node_name_whitelist_enabled"`
 		PassiveSlashMode         *bool  `mapstructure:"passive_slash_mode"`
+		TaskTracingDurationDays  uint64 `mapstructure:"task_tracing_duration_days"`
 	} `mapstructure:"task"`
 
 	TaskSchema struct {

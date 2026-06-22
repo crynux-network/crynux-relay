@@ -409,6 +409,9 @@ func (d *TaskDispatcher) processDispatchedTasks(ctx context.Context) error {
 					dispatchedTask.mu.Lock()
 					err := SetTaskStatusStarted(ctx, config.GetDB(), dispatchedTask.task, dispatchedTask.node)
 					success := err == nil
+					if success {
+						GetTaskTraceStore().RecordNodeSelected(dispatchedTask.task.TaskIDCommitment, dispatchedTask.node.Address, dispatchedTask.createdAt)
+					}
 
 					dispatchedTask.resChan <- success
 					dispatchedTask.finished = true
@@ -437,6 +440,7 @@ func (d *TaskDispatcher) processDispatchedTasks(ctx context.Context) error {
 func StartTaskProcesser(ctx context.Context) {
 	taskDispatcher := NewTaskDispatcher()
 
+	go GetTaskTraceStore().StartCleanup(ctx)
 	go taskDispatcher.processDispatchedTasks(ctx)
 	go processTaskTimeouts(ctx)
 	go taskDispatcher.getQueuedTasks(ctx)

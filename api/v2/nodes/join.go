@@ -51,6 +51,8 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 		return nil, validationErr
 	}
 
+	in.ModelIDs = models.NormalizeModelIDs(in.ModelIDs)
+
 	unlockJoin := service.LockNodeJoinByAddress(in.Address)
 	defer unlockJoin()
 
