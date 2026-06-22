@@ -55,6 +55,8 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		return nil, validationErr
 	}
 
+	in.TaskModelIDs = models.NormalizeModelIDs(in.TaskModelIDs)
+
 	if config.GetConfig().Task.TaskWhitelistEnabled {
 		allowed, err := service.IsTaskCreatorWhitelisted(c.Request.Context(), config.GetDB(), address)
 		if err != nil {

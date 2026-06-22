@@ -29,6 +29,8 @@ type chainDelegation struct {
 }
 
 func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, modelIDs []string) error {
+	modelIDs = models.NormalizeModelIDs(modelIDs)
+
 	unfinishedSlashJob, err := models.HasUnfinishedDelegatedSlashJobForNode(ctx, db, node.Address)
 	if err != nil {
 		return err
