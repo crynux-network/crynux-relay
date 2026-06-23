@@ -160,6 +160,13 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.TriggerNodeSlash, 200))
+	adminGroup.POST("/nodes/kickout_all", []fizz.OperationOption{
+		fizz.ID("admin_nodes_kickout_all_v2"),
+		fizz.Summary("Kick out all nodes and abort all non-terminal tasks in Relay DB"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.KickoutAllNodes, 200))
 	adminGroup.GET("/pending_slashes", []fizz.OperationOption{
 		fizz.ID("admin_pending_slashes_v2"),
 		fizz.Summary("List pending slash reviews"),
