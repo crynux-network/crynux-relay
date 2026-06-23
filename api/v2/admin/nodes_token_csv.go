@@ -26,8 +26,6 @@ const (
 	nodesTokenCSVChainRequestBatchSize = 10
 	nodesTokenCSVChainRequestPause     = time.Second
 	nodesTokenCSVChainRequestMaxRetry  = 10
-	nodesTokenCSVDymensionNetwork      = "dymension"
-	nodesTokenCSVNearNetwork           = "near"
 )
 
 var nodesTokenCSVChainRequestRetryWait = 10 * time.Second
@@ -38,13 +36,12 @@ var nodesTokenCSVExportState = struct {
 }{}
 
 type nodesTokenCSVRow struct {
-	Address             string
-	CardName            string
-	DymChainBalance     *big.Int
-	NearChainBalance    *big.Int
-	RelayAccountBalance *big.Int
-	Staking             *big.Int
-	Total               *big.Int
+	Address                string
+	CardName               string
+	ChainBalances          map[string]*big.Int
+	BenefitAddressBalances map[string]*big.Int
+	RelayAccountBalance    *big.Int
+	Staking                *big.Int
 }
 
 type nodesBenefitAddressCSVRow struct {
@@ -53,6 +50,24 @@ type nodesBenefitAddressCSVRow struct {
 	Network               string
 	BenefitAddress        string
 	BenefitAddressBalance *big.Int
+}
+
+type nodesActiveDelegatedStakingCSVRow struct {
+	DelegatorAddress    string
+	NodeAddress         string
+	Network             string
+	ChainStakingBalance *big.Int
+	ChainWalletBalance  *big.Int
+}
+
+type nodesActiveDelegatedStakingNode struct {
+	NodeAddress string
+	Network     string
+}
+
+type nodesActiveDelegatedStakingInfos struct {
+	DelegatorAddresses []common.Address
+	Amounts            []*big.Int
 }
 
 type nodesTokenCSVChainRequestLimiter struct {
@@ -106,49 +121,14 @@ func exportNodesTokenCSV(ctx context.Context) {
 	totalWallets := len(networkNodeData)
 	logger.WithField("total_wallets", totalWallets).Info("Loaded wallets from network node data for nodes token CSV export")
 
-	var nodes []models.Node
-	if totalWallets > 0 {
-		addresses := make([]string, 0, totalWallets)
-		for _, nodeData := range networkNodeData {
-			addresses = append(addresses, nodeData.Address)
-		}
-		if err := config.GetDB().WithContext(ctx).Model(&models.Node{}).Where("address IN (?)", addresses).Find(&nodes).Error; err != nil {
-			logger.WithError(err).Error("Failed to load nodes for token CSV export")
-			return
-		}
-	}
-	nodesByAddress := make(map[string]models.Node, len(nodes))
-	for _, node := range nodes {
-		nodesByAddress[node.Address] = node
-	}
-
+	networks := getNodesTokenCSVNetworks()
 	rows := make([]nodesTokenCSVRow, 0, totalWallets)
-	inactiveRows := make([]nodesTokenCSVRow, 0)
-	benefitAddressRows := make([]nodesBenefitAddressCSVRow, 0, totalWallets*len(config.GetConfig().Blockchains))
+	benefitAddressRows := make([]nodesBenefitAddressCSVRow, 0, totalWallets*len(networks))
 	limiter := &nodesTokenCSVChainRequestLimiter{}
 	for i, nodeData := range networkNodeData {
-		node, found := nodesByAddress[nodeData.Address]
 		staking := &nodeData.Staking.Int
-		if found {
-			staking = &node.StakeAmount.Int
-		}
 
-		row, err := buildNodesTokenCSVRow(ctx, nodeData.Address, nodeData.CardModel, staking, limiter)
-		if err != nil {
-			logger.WithError(err).WithFields(log.Fields{
-				"wallet":            nodeData.Address,
-				"total_wallets":     totalWallets,
-				"remaining_wallets": totalWallets - i,
-			}).Error("Failed to export wallet token data")
-			return
-		}
-		if found {
-			rows = append(rows, row)
-		} else {
-			inactiveRows = append(inactiveRows, row)
-		}
-
-		benefitRows, err := buildNodesBenefitAddressCSVRows(ctx, nodeData.Address, nodeData.CardModel, limiter)
+		benefitRows, err := buildNodesBenefitAddressCSVRows(ctx, nodeData.Address, nodeData.CardModel, networks, limiter)
 		if err != nil {
 			logger.WithError(err).WithFields(log.Fields{
 				"wallet":            nodeData.Address,
@@ -159,6 +139,17 @@ func exportNodesTokenCSV(ctx context.Context) {
 		}
 		benefitAddressRows = append(benefitAddressRows, benefitRows...)
 
+		row, err := buildNodesTokenCSVRow(ctx, nodeData.Address, nodeData.CardModel, staking, networks, benefitRows, limiter)
+		if err != nil {
+			logger.WithError(err).WithFields(log.Fields{
+				"wallet":            nodeData.Address,
+				"total_wallets":     totalWallets,
+				"remaining_wallets": totalWallets - i,
+			}).Error("Failed to export wallet token data")
+			return
+		}
+		rows = append(rows, row)
+
 		logger.WithFields(log.Fields{
 			"wallet":            nodeData.Address,
 			"total_wallets":     totalWallets,
@@ -166,21 +157,9 @@ func exportNodesTokenCSV(ctx context.Context) {
 		}).Info("Exported wallet token data")
 	}
 
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].Total.Cmp(rows[j].Total) > 0
-	})
-	sort.Slice(inactiveRows, func(i, j int) bool {
-		return inactiveRows[i].Total.Cmp(inactiveRows[j].Total) > 0
-	})
-
-	filename, err := writeNodesTokenCSV(rows)
+	filename, err := writeNodesTokenCSV(rows, networks)
 	if err != nil {
 		logger.WithError(err).Error("Failed to write nodes token CSV")
-		return
-	}
-	inactiveFilename, err := writeInactiveNodesTokenCSV(inactiveRows)
-	if err != nil {
-		logger.WithError(err).Error("Failed to write inactive nodes token CSV")
 		return
 	}
 	benefitAddressFilename, err := writeNodesBenefitAddressCSV(benefitAddressRows)
@@ -188,48 +167,58 @@ func exportNodesTokenCSV(ctx context.Context) {
 		logger.WithError(err).Error("Failed to write nodes benefit address CSV")
 		return
 	}
+	activeDelegatedStakingRows, err := buildNodesActiveDelegatedStakingCSVRows(ctx, limiter)
+	if err != nil {
+		logger.WithError(err).Error("Failed to export active delegated staking token data")
+		return
+	}
+	activeDelegatedStakingFilename, err := writeNodesActiveDelegatedStakingCSV(activeDelegatedStakingRows)
+	if err != nil {
+		logger.WithError(err).Error("Failed to write active delegated staking CSV")
+		return
+	}
 
 	logger.WithFields(log.Fields{
-		"total_wallets":            totalWallets,
-		"active_wallets":           len(rows),
-		"inactive_wallets":         len(inactiveRows),
-		"filename":                 filename,
-		"inactive_filename":        inactiveFilename,
-		"benefit_address_filename": benefitAddressFilename,
+		"total_wallets":                          totalWallets,
+		"wallets":                                len(rows),
+		"active_delegated_staking_rows":          len(activeDelegatedStakingRows),
+		"filename":                               filename,
+		"benefit_address_filename":               benefitAddressFilename,
+		"active_delegated_staking_rows_filename": activeDelegatedStakingFilename,
 	}).Info("Finished exporting nodes token CSV")
 }
 
-func buildNodesTokenCSVRow(ctx context.Context, address, cardName string, stakingAmount *big.Int, limiter *nodesTokenCSVChainRequestLimiter) (nodesTokenCSVRow, error) {
-	dymBalance, err := getNodesTokenCSVChainBalance(ctx, address, nodesTokenCSVDymensionNetwork, limiter)
-	if err != nil {
-		return nodesTokenCSVRow{}, err
+func buildNodesTokenCSVRow(ctx context.Context, address, cardName string, stakingAmount *big.Int, networks []string, benefitRows []nodesBenefitAddressCSVRow, limiter *nodesTokenCSVChainRequestLimiter) (nodesTokenCSVRow, error) {
+	chainBalances := make(map[string]*big.Int, len(networks))
+	benefitAddressBalances := make(map[string]*big.Int, len(benefitRows))
+	for _, network := range networks {
+		balance, err := getNodesTokenCSVChainBalance(ctx, address, network, limiter)
+		if err != nil {
+			return nodesTokenCSVRow{}, err
+		}
+		chainBalances[network] = balance
 	}
-	nearBalance, err := getNodesTokenCSVChainBalance(ctx, address, nodesTokenCSVNearNetwork, limiter)
-	if err != nil {
-		return nodesTokenCSVRow{}, err
+	for _, benefitRow := range benefitRows {
+		balance := new(big.Int).Set(benefitRow.BenefitAddressBalance)
+		benefitAddressBalances[benefitRow.Network] = balance
 	}
 	relayAccountBalance, err := service.GetRelayAccountBalance(ctx, config.GetDB(), address)
 	if err != nil {
 		return nodesTokenCSVRow{}, err
 	}
 	staking := new(big.Int).Set(stakingAmount)
-	total := new(big.Int).Add(dymBalance, nearBalance)
-	total.Add(total, relayAccountBalance)
-	total.Add(total, staking)
 
 	return nodesTokenCSVRow{
-		Address:             address,
-		CardName:            cardName,
-		DymChainBalance:     dymBalance,
-		NearChainBalance:    nearBalance,
-		RelayAccountBalance: new(big.Int).Set(relayAccountBalance),
-		Staking:             staking,
-		Total:               total,
+		Address:                address,
+		CardName:               cardName,
+		ChainBalances:          chainBalances,
+		BenefitAddressBalances: benefitAddressBalances,
+		RelayAccountBalance:    new(big.Int).Set(relayAccountBalance),
+		Staking:                staking,
 	}, nil
 }
 
-func buildNodesBenefitAddressCSVRows(ctx context.Context, address, cardName string, limiter *nodesTokenCSVChainRequestLimiter) ([]nodesBenefitAddressCSVRow, error) {
-	networks := getNodesTokenCSVNetworks()
+func buildNodesBenefitAddressCSVRows(ctx context.Context, address, cardName string, networks []string, limiter *nodesTokenCSVChainRequestLimiter) ([]nodesBenefitAddressCSVRow, error) {
 	rows := make([]nodesBenefitAddressCSVRow, 0, len(networks))
 	nodeAddress := common.HexToAddress(address)
 	for _, network := range networks {
@@ -284,6 +273,75 @@ func getNodesBenefitAddress(ctx context.Context, address, network string, limite
 		return "", err
 	}
 	return benefitAddress.Hex(), nil
+}
+
+func buildNodesActiveDelegatedStakingCSVRows(ctx context.Context, limiter *nodesTokenCSVChainRequestLimiter) ([]nodesActiveDelegatedStakingCSVRow, error) {
+	nodes, err := loadNodesActiveDelegatedStakingNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := make([]nodesActiveDelegatedStakingCSVRow, 0)
+	for _, node := range nodes {
+		stakingInfos, err := getNodesActiveDelegatedStakingInfos(ctx, node.NodeAddress, node.Network, limiter)
+		if err != nil {
+			return nil, err
+		}
+		if len(stakingInfos.DelegatorAddresses) != len(stakingInfos.Amounts) {
+			return nil, fmt.Errorf("delegated staking info length mismatch for node %s on network %s: %d addresses, %d amounts", node.NodeAddress, node.Network, len(stakingInfos.DelegatorAddresses), len(stakingInfos.Amounts))
+		}
+		for i, delegatorAddress := range stakingInfos.DelegatorAddresses {
+			amount := stakingInfos.Amounts[i]
+			if amount.Sign() == 0 {
+				continue
+			}
+			walletBalance, err := getNodesTokenCSVChainBalance(ctx, delegatorAddress.Hex(), node.Network, limiter)
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, nodesActiveDelegatedStakingCSVRow{
+				DelegatorAddress:    delegatorAddress.Hex(),
+				NodeAddress:         node.NodeAddress,
+				Network:             node.Network,
+				ChainStakingBalance: new(big.Int).Set(amount),
+				ChainWalletBalance:  walletBalance,
+			})
+		}
+	}
+	return rows, nil
+}
+
+func loadNodesActiveDelegatedStakingNodes(ctx context.Context) ([]nodesActiveDelegatedStakingNode, error) {
+	var nodes []nodesActiveDelegatedStakingNode
+	err := config.GetDB().WithContext(ctx).
+		Model(&models.Delegation{}).
+		Select("delegations.node_address, delegations.network").
+		Joins("inner join nodes on nodes.address = delegations.node_address and nodes.network = delegations.network").
+		Where("delegations.slashed = ?", false).
+		Group("delegations.node_address, delegations.network").
+		Order("delegations.node_address ASC, delegations.network ASC").
+		Find(&nodes).Error
+	return nodes, err
+}
+
+func getNodesActiveDelegatedStakingInfos(ctx context.Context, nodeAddress, network string, limiter *nodesTokenCSVChainRequestLimiter) (nodesActiveDelegatedStakingInfos, error) {
+	infos, err := retryNodesTokenCSVChainRequest(ctx, "delegated_staking_infos", network, nodeAddress, func() (nodesActiveDelegatedStakingInfos, error) {
+		addresses, amounts, err := blockchain.GetNodeStakingInfos(ctx, common.HexToAddress(nodeAddress), network)
+		if err != nil {
+			return nodesActiveDelegatedStakingInfos{}, err
+		}
+		return nodesActiveDelegatedStakingInfos{
+			DelegatorAddresses: addresses,
+			Amounts:            amounts,
+		}, nil
+	})
+	if err != nil {
+		return nodesActiveDelegatedStakingInfos{}, err
+	}
+	if err := limiter.wait(ctx); err != nil {
+		return nodesActiveDelegatedStakingInfos{}, err
+	}
+	return infos, nil
 }
 
 func retryNodesTokenCSVChainRequest[T any](ctx context.Context, operation, network, address string, request func() (T, error)) (T, error) {
@@ -341,15 +399,11 @@ func (limiter *nodesTokenCSVChainRequestLimiter) wait(ctx context.Context) error
 	}
 }
 
-func writeNodesTokenCSV(rows []nodesTokenCSVRow) (string, error) {
-	return writeNodesTokenCSVRows("nodes_token_", rows)
+func writeNodesTokenCSV(rows []nodesTokenCSVRow, networks []string) (string, error) {
+	return writeNodesTokenCSVRows("nodes_token_", rows, networks)
 }
 
-func writeInactiveNodesTokenCSV(rows []nodesTokenCSVRow) (string, error) {
-	return writeNodesTokenCSVRows("inactive_nodes_token_", rows)
-}
-
-func writeNodesTokenCSVRows(filenamePrefix string, rows []nodesTokenCSVRow) (string, error) {
+func writeNodesTokenCSVRows(filenamePrefix string, rows []nodesTokenCSVRow, networks []string) (string, error) {
 	logDir := getNodesTokenCSVLogDir(config.GetConfig().Log.Output)
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return "", err
@@ -363,28 +417,12 @@ func writeNodesTokenCSVRows(filenamePrefix string, rows []nodesTokenCSVRow) (str
 	defer file.Close()
 
 	writer := csv.NewWriter(file)
-	if err := writer.Write([]string{
-		"node address",
-		"card name",
-		"dym chain balance CNX",
-		"near chain balance CNX",
-		"relay account balance CNX",
-		"staking CNX",
-		"total CNX",
-	}); err != nil {
+	if err := writer.Write(buildNodesTokenCSVHeader(networks)); err != nil {
 		return "", err
 	}
 
 	for _, row := range rows {
-		if err := writer.Write([]string{
-			row.Address,
-			row.CardName,
-			formatCNXAmount(row.DymChainBalance),
-			formatCNXAmount(row.NearChainBalance),
-			formatCNXAmount(row.RelayAccountBalance),
-			formatCNXAmount(row.Staking),
-			formatCNXAmount(row.Total),
-		}); err != nil {
+		if err := writer.Write(buildNodesTokenCSVRecord(row, networks)); err != nil {
 			return "", err
 		}
 	}
@@ -394,6 +432,50 @@ func writeNodesTokenCSVRows(filenamePrefix string, rows []nodesTokenCSVRow) (str
 		return "", err
 	}
 	return filename, nil
+}
+
+func buildNodesTokenCSVHeader(networks []string) []string {
+	header := []string{
+		"node address",
+		"card name",
+	}
+	for _, network := range networks {
+		header = append(header, fmt.Sprintf("%s node on-chain wallet balance CNX", network))
+	}
+	header = append(header,
+		"staking CNX",
+		"relay account balance CNX",
+	)
+	for _, network := range networks {
+		header = append(header, fmt.Sprintf("%s benefit address balance CNX", network))
+	}
+	return header
+}
+
+func buildNodesTokenCSVRecord(row nodesTokenCSVRow, networks []string) []string {
+	record := []string{
+		row.Address,
+		row.CardName,
+	}
+	for _, network := range networks {
+		record = append(record, formatCNXAmount(getNodesTokenCSVNetworkAmount(row.ChainBalances, network)))
+	}
+	record = append(record,
+		formatCNXAmount(row.Staking),
+		formatCNXAmount(row.RelayAccountBalance),
+	)
+	for _, network := range networks {
+		record = append(record, formatCNXAmount(getNodesTokenCSVNetworkAmount(row.BenefitAddressBalances, network)))
+	}
+	return record
+}
+
+func getNodesTokenCSVNetworkAmount(amounts map[string]*big.Int, network string) *big.Int {
+	amount, ok := amounts[network]
+	if !ok {
+		return big.NewInt(0)
+	}
+	return amount
 }
 
 func writeNodesBenefitAddressCSV(rows []nodesBenefitAddressCSVRow) (string, error) {
@@ -437,6 +519,57 @@ func writeNodesBenefitAddressCSV(rows []nodesBenefitAddressCSVRow) (string, erro
 		return "", err
 	}
 	return filename, nil
+}
+
+func writeNodesActiveDelegatedStakingCSV(rows []nodesActiveDelegatedStakingCSVRow) (string, error) {
+	logDir := getNodesTokenCSVLogDir(config.GetConfig().Log.Output)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return "", err
+	}
+
+	filename := filepath.Join(logDir, "active_delegated_staking_"+time.Now().UTC().Format("20060102T150405Z")+".csv")
+	file, err := os.Create(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	if err := writer.Write(buildNodesActiveDelegatedStakingCSVHeader()); err != nil {
+		return "", err
+	}
+
+	for _, row := range rows {
+		if err := writer.Write(buildNodesActiveDelegatedStakingCSVRecord(row)); err != nil {
+			return "", err
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+	return filename, nil
+}
+
+func buildNodesActiveDelegatedStakingCSVHeader() []string {
+	return []string{
+		"delegator address",
+		"node address",
+		"network",
+		"chain staking balance CNX",
+		"chain wallet balance CNX",
+	}
+}
+
+func buildNodesActiveDelegatedStakingCSVRecord(row nodesActiveDelegatedStakingCSVRow) []string {
+	return []string{
+		row.DelegatorAddress,
+		row.NodeAddress,
+		row.Network,
+		formatCNXAmount(row.ChainStakingBalance),
+		formatCNXAmount(row.ChainWalletBalance),
+	}
 }
 
 func formatCNXAmount(amount *big.Int) string {
