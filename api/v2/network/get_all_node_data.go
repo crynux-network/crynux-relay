@@ -10,15 +10,14 @@ import (
 )
 
 type GetAllNodesDataParams struct {
-	Page     int    `json:"page" query:"page" description:"The page" default:"1" validate:"min=1"`
-	PageSize int    `json:"page_size" query:"page_size" description:"The page size" default:"30" validate:"max=100,min=1"`
+	Page     int `json:"page" query:"page" description:"The page" default:"1" validate:"min=1"`
+	PageSize int `json:"page_size" query:"page_size" description:"The page size" default:"30" validate:"max=100,min=1"`
 }
 
 type NetworkNodeData struct {
 	Address      string  `json:"address"`
 	CardModel    string  `json:"card_model"`
 	VRam         int     `json:"v_ram"`
-	Balance      string  `json:"balance"`
 	Staking      string  `json:"staking"`
 	QOSScore     float64 `json:"qos_score"`
 	StakingScore float64 `json:"staking_score"`
@@ -54,7 +53,6 @@ func GetAllNodeData(_ *gin.Context, in *GetAllNodesDataParams) (*GetAllNodesData
 			Address:      node.Address,
 			CardModel:    node.CardModel,
 			VRam:         node.VRam,
-			Balance:      node.Balance.String(),
 			Staking:      node.Staking.String(),
 			QOSScore:     qosProb,
 			StakingScore: stakingProb,
