@@ -62,12 +62,6 @@ func getNodeData(ctx context.Context, db *gorm.DB, offset, limit int) ([]models.
 	}
 
 	for i, nodeData := range nodesData {
-		balance, err := service.GetRelayAccountBalance(ctx, db, nodeData.Address)
-		if err != nil {
-			log.Errorf("SyncNetwork: error getting task fee %v", err)
-			return nil, err
-		}
-		nodesData[i].Balance = models.BigInt{Int: *balance}
 		node, ok := nodesMap[nodeData.Address]
 		if ok {
 			nodesData[i].QoS = node.QOSScore
@@ -256,7 +250,7 @@ func batchUpsertNodeData(ctx context.Context, nodeDatas []models.NetworkNodeData
 
 	return config.GetDB().WithContext(dbCtx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "address"}},
-		DoUpdates: clause.AssignmentColumns([]string{"balance", "qo_s", "staking", "updated_at", "health_base", "health_updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"qo_s", "staking", "updated_at", "health_base", "health_updated_at"}),
 	}).CreateInBatches(nodeDatas, len(nodeDatas)).Error
 }
 
