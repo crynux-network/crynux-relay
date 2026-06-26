@@ -52,10 +52,9 @@ func GetNodeScores(c *gin.Context, in *GetNodeScoresInput) (*GetNodeScoresRespon
 	operatorStaking := &node.StakeAmount.Int
 	delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
 	vestingStaking := service.GetNodeLockedVestingAmount(node.Address, now)
-	scoreStaking := service.GetNodeScoreStakeAmount(*node, now)
+	selectingProb := service.CalculateNodeSelectingProb(*node, now)
+	scoreStaking := selectingProb.ScoreStakeAmount
 	maxStaking := service.GetMaxStaking()
-	qosScore := service.CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-	stakingScore, _, probWeight := service.CalculateSelectingProb(scoreStaking, maxStaking, qosScore)
 	vestingScore := service.CalculateStakingScore(vestingStaking, maxStaking)
 
 	return &GetNodeScoresResponse{
@@ -68,9 +67,9 @@ func GetNodeScores(c *gin.Context, in *GetNodeScoresInput) (*GetNodeScoresRespon
 			ScoreStaking:     formatCNXAmount4(scoreStaking),
 			MaxStaking:       formatCNXAmount4(maxStaking),
 			VestingScore:     vestingScore,
-			StakingScore:     stakingScore,
-			QOSScore:         qosScore,
-			ProbWeight:       probWeight,
+			StakingScore:     selectingProb.StakingScore,
+			QOSScore:         selectingProb.QOSScore,
+			ProbWeight:       selectingProb.ProbWeight,
 		},
 	}, nil
 }
