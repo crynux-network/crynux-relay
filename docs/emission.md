@@ -69,6 +69,8 @@ Relay MUST allocate the node emission pool across all node and delegation partic
 row_emission = floor(row_task_fee * node_emission_pool / total_task_fee)
 ```
 
+The CSV MUST include `start_time` as the Unix timestamp for the vesting start time. `start_time` MUST equal the selected emission week's exclusive end boundary, which is the UTC `00:00:00` timestamp at `emission_week_anchor + (week_index + 1) * 7 days`. Every CSV row, including the `remainder` row, MUST contain the same `start_time` value.
+
 The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Relay MUST append a `remainder` row containing any integer CNX amount left after floor division. The remainder row is not a vesting recipient.
 
 ## Vesting Creation
