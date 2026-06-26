@@ -8,7 +8,6 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"database/sql"
-	"math/big"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -118,18 +117,25 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 	if err := config.GetDB().WithContext(ctx).Model(&models.NetworkNodeData{}).Where("address IN (?)", nodeAddresses).Find(&nodes).Error; err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
+	nodeMap, err := getNodesByAddress(ctx, nodeAddresses)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
 
 	for _, node := range nodes {
 
 		if nodeIncentive, ok := nodeIncentiveMap[node.Address]; ok {
-			qos := service.CalculateQosScore(node.QoS, node.HealthBase, node.HealthUpdatedAt)
-			stakingProb, qosProb, prob := service.CalculateSelectingProb(&node.Staking.Int, service.GetMaxStaking(), qos)
+			nodeModel, ok := nodeMap[node.Address]
+			if !ok {
+				continue
+			}
+			selectingProb := service.CalculateNodeSelectingProb(nodeModel, now)
 			nodeIncentive.CardModel = node.CardModel
 			nodeIncentive.VRam = node.VRam
-			nodeIncentive.QOSScore = qosProb
-			nodeIncentive.Staking = getDisplayedNodeStaking(node, now)
-			nodeIncentive.StakingScore = stakingProb
-			nodeIncentive.ProbWeight = prob
+			nodeIncentive.QOSScore = selectingProb.QOSScore
+			nodeIncentive.Staking = selectingProb.ScoreStakeAmount.String()
+			nodeIncentive.StakingScore = selectingProb.StakingScore
+			nodeIncentive.ProbWeight = selectingProb.ProbWeight
 			nodeIncentiveMap[node.Address] = nodeIncentive
 		}
 	}
@@ -273,18 +279,25 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 	if err := config.GetDB().WithContext(ctx).Model(&models.NetworkNodeData{}).Where("address IN (?)", nodeAddresses).Find(&nodes).Error; err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
+	nodeMap, err := getNodesByAddress(ctx, nodeAddresses)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
 
 	for _, node := range nodes {
 
 		if nodeIncentive, ok := nodeIncentiveMap[node.Address]; ok {
-			qos := service.CalculateQosScore(node.QoS, node.HealthBase, node.HealthUpdatedAt)
-			stakingProb, qosProb, prob := service.CalculateSelectingProb(&node.Staking.Int, service.GetMaxStaking(), qos)
+			nodeModel, ok := nodeMap[node.Address]
+			if !ok {
+				continue
+			}
+			selectingProb := service.CalculateNodeSelectingProb(nodeModel, now)
 			nodeIncentive.CardModel = node.CardModel
 			nodeIncentive.VRam = node.VRam
-			nodeIncentive.QOSScore = qosProb
-			nodeIncentive.Staking = getDisplayedNodeStaking(node, now)
-			nodeIncentive.StakingScore = stakingProb
-			nodeIncentive.ProbWeight = prob
+			nodeIncentive.QOSScore = selectingProb.QOSScore
+			nodeIncentive.Staking = selectingProb.ScoreStakeAmount.String()
+			nodeIncentive.StakingScore = selectingProb.StakingScore
+			nodeIncentive.ProbWeight = selectingProb.ProbWeight
 
 			nodeIncentiveMap[node.Address] = nodeIncentive
 		}
@@ -305,8 +318,15 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 	}, nil
 }
 
-func getDisplayedNodeStaking(node models.NetworkNodeData, now time.Time) string {
-	total := big.NewInt(0).Set(&node.Staking.Int)
-	total.Add(total, service.GetNodeLockedVestingAmount(node.Address, now))
-	return total.String()
+func getNodesByAddress(ctx context.Context, nodeAddresses []string) (map[string]models.Node, error) {
+	var nodes []models.Node
+	if err := config.GetDB().WithContext(ctx).Model(&models.Node{}).Where("address IN (?)", nodeAddresses).Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+
+	nodeMap := make(map[string]models.Node, len(nodes))
+	for _, node := range nodes {
+		nodeMap[node.Address] = node
+	}
+	return nodeMap, nil
 }

@@ -17,6 +17,13 @@ var (
 	globalMaxQosScore = float64(TASK_SCORE_REWARDS[0])
 )
 
+type NodeSelectingProb struct {
+	ScoreStakeAmount *big.Int
+	StakingScore     float64
+	QOSScore         float64
+	ProbWeight       float64
+}
+
 func InitSelectingProb(ctx context.Context, db *gorm.DB) error {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -35,6 +42,22 @@ func InitSelectingProb(ctx context.Context, db *gorm.DB) error {
 
 	globalMaxStaking.init(stakingMap)
 	return nil
+}
+
+func CalculateNodeSelectingProb(node models.Node, now time.Time) NodeSelectingProb {
+	scoreStakeAmount := big.NewInt(0)
+	if node.Status != models.NodeStatusQuit {
+		scoreStakeAmount = GetNodeScoreStakeAmount(node, now)
+	}
+
+	qosScore := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
+	stakingScore, qosScore, probWeight := CalculateSelectingProb(scoreStakeAmount, GetMaxStaking(), qosScore)
+	return NodeSelectingProb{
+		ScoreStakeAmount: scoreStakeAmount,
+		StakingScore:     stakingScore,
+		QOSScore:         qosScore,
+		ProbWeight:       probWeight,
+	}
 }
 
 func CalculateSelectingProb(staking, maxStaking *big.Int, qosScore float64) (float64, float64, float64) {

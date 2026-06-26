@@ -196,14 +196,10 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 		return nil, nil
 	}
 
-	maxStaking := GetMaxStaking()
 	now := time.Now().UTC()
 	scores := make([]float64, len(nodes))
 	for i, node := range nodes {
-		qos := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-		totalStakeAmount := GetNodeScoreStakeAmount(node, now)
-		_, _, prob := CalculateSelectingProb(totalStakeAmount, maxStaking, qos)
-		scores[i] = prob
+		scores[i] = CalculateNodeSelectingProb(node, now).ProbWeight
 	}
 
 	changedNodes := make([]models.Node, 0)
@@ -286,14 +282,10 @@ func selectNodesForDownloadTask(ctx context.Context, task *models.InferenceTask,
 		return nil, nil
 	}
 
-	maxStaking := GetMaxStaking()
 	now := time.Now().UTC()
 	scores := make([]float64, len(validNodes))
 	for i, node := range validNodes {
-		qos := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-		totalStakeAmount := GetNodeScoreStakeAmount(node, now)
-		_, _, prob := CalculateSelectingProb(totalStakeAmount, maxStaking, qos)
-		scores[i] = prob
+		scores[i] = CalculateNodeSelectingProb(node, now).ProbWeight
 	}
 
 	res := selectNodesByScore(validNodes, scores, n)

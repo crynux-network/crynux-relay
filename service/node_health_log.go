@@ -5,6 +5,7 @@ import (
 	"crynux_relay/models"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
@@ -93,7 +94,7 @@ func logNodeHealthEvent(eventName string, node *models.Node, task *models.Infere
 		taskModelLabel(task),
 		node.GPUName,
 		node.GPUVram,
-		calculateNodeStakingScore(node),
+		CalculateNodeSelectingProb(*node, time.Now().UTC()).StakingScore,
 		metrics.HealthBefore,
 		metrics.HealthAfter,
 		metrics.QosBefore,
@@ -120,12 +121,4 @@ func taskModelLabel(task *models.InferenceTask) string {
 		return ""
 	}
 	return strings.Join(task.ModelIDs, ",")
-}
-
-func calculateNodeStakingScore(node *models.Node) float64 {
-	maxStaking := GetMaxStaking()
-	if maxStaking == nil {
-		return 0
-	}
-	return CalculateStakingScore(&node.StakeAmount.Int, maxStaking)
 }

@@ -54,13 +54,8 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 
 	nodeVersion := fmt.Sprintf("%d.%d.%d", node.MajorVersion, node.MinorVersion, node.PatchVersion)
 
-	qos := service.CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
 	now := time.Now().UTC()
-	totalStakeAmount := big.NewInt(0)
-	if node.Status != models.NodeStatusQuit {
-		totalStakeAmount = service.GetNodeScoreStakeAmount(*node, now)
-	}
-	stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), qos)
+	selectingProb := service.CalculateNodeSelectingProb(*node, now)
 
 	delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
 	lockedEmission := service.GetNodeLockedVestingAmount(node.Address, now)
@@ -96,9 +91,9 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 		Status:                 node.Status,
 		GPUName:                node.GPUName,
 		GPUVram:                node.GPUVram,
-		QOSScore:               qosScore,
-		StakingScore:           stakingScore,
-		ProbWeight:             probWeight,
+		QOSScore:               selectingProb.QOSScore,
+		StakingScore:           selectingProb.StakingScore,
+		ProbWeight:             selectingProb.ProbWeight,
 		Version:                nodeVersion,
 		InUseModelIDs:          inUseModelIDs,
 		ModelIDs:               modelIDs,

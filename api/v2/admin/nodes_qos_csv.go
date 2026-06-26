@@ -38,12 +38,12 @@ func ExportNodeQosCSV(c *gin.Context) {
 	now := time.Now().UTC()
 	for _, node := range nodes {
 		qosLong, qosShort, qosScore := service.CalculateQosComponents(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
-		stakingScore, _, probWeight := service.CalculateSelectingProb(service.GetNodeScoreStakeAmount(node, now), service.GetMaxStaking(), qosScore)
+		selectingProb := service.CalculateNodeSelectingProb(node, now)
 		rows = append(rows, exportNodeQosCSVRow{
 			Address:      node.Address,
 			Card:         fmt.Sprintf("%s + %dGB", node.GPUName, node.GPUVram),
-			ProbWeight:   probWeight,
-			StakingScore: stakingScore,
+			ProbWeight:   selectingProb.ProbWeight,
+			StakingScore: selectingProb.StakingScore,
 			QOSScore:     qosScore,
 			QOSLong:      qosLong,
 			QOSShort:     qosShort,

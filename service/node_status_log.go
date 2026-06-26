@@ -4,6 +4,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"strings"
+	"time"
 )
 
 func LogNodeStatusChange(node *models.Node, action string) {
@@ -19,7 +20,7 @@ func LogNodeStatusChange(node *models.Node, action string) {
 		node.Address,
 		node.GPUName,
 		node.GPUVram,
-		calculateNodeStakingScore(node),
+		CalculateNodeSelectingProb(*node, time.Now().UTC()).StakingScore,
 		qosLong,
 		qosShort,
 		qos,

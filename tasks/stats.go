@@ -571,22 +571,18 @@ func batchCreateNodeScores(ctx context.Context, db *gorm.DB, nodes []models.Node
 
 		now := time.Now().UTC()
 		for _, node := range nodes {
-			totalStakeAmount := big.NewInt(0)
-			if node.Status != models.NodeStatusQuit {
-				totalStakeAmount = service.GetNodeScoreStakeAmount(node, now)
-			}
-			stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), node.QOSScore)
+			selectingProb := service.CalculateNodeSelectingProb(node, now)
 			if _, ok := existedNodeScoreMap[node.Address]; ok {
-				stakingScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), stakingScore))
-				qosScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), qosScore))
-				probWeightCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), probWeight))
+				stakingScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), selectingProb.StakingScore))
+				qosScoreCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), selectingProb.QOSScore))
+				probWeightCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN %f ", node.Address, t.Format("2006-01-02 15:04:05.000"), selectingProb.ProbWeight))
 			} else {
 				nodeScore := models.NodeScore{
 					NodeAddress:  node.Address,
 					Time:         t,
-					StakingScore: stakingScore,
-					QOSScore:     qosScore,
-					ProbWeight:   probWeight,
+					StakingScore: selectingProb.StakingScore,
+					QOSScore:     selectingProb.QOSScore,
+					ProbWeight:   selectingProb.ProbWeight,
 				}
 				newNodeScores = append(newNodeScores, nodeScore)
 			}

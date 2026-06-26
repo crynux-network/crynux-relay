@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,7 +30,7 @@ type GetAllNodesDataResponse struct {
 	Data []NetworkNodeData `json:"data"`
 }
 
-func GetAllNodeData(_ *gin.Context, in *GetAllNodesDataParams) (*GetAllNodesDataResponse, error) {
+func GetAllNodeData(c *gin.Context, in *GetAllNodesDataParams) (*GetAllNodesDataResponse, error) {
 	page := 1
 	if in.Page > 0 {
 		page = in.Page
@@ -45,18 +46,35 @@ func GetAllNodeData(_ *gin.Context, in *GetAllNodesDataParams) (*GetAllNodesData
 	if err := config.GetDB().Model(&models.NetworkNodeData{}).Order("id ASC").Limit(limit).Offset(offset).Find(&allNodeData).Error; err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
-	var data []NetworkNodeData
+
+	nodeAddresses := make([]string, 0, len(allNodeData))
 	for _, node := range allNodeData {
-		qos := service.CalculateQosScore(node.QoS, node.HealthBase, node.HealthUpdatedAt)
-		stakingProb, qosProb, prob := service.CalculateSelectingProb(&node.Staking.Int, service.GetMaxStaking(), qos)
+		nodeAddresses = append(nodeAddresses, node.Address)
+	}
+	var nodeModels []models.Node
+	if err := config.GetDB().WithContext(c.Request.Context()).Model(&models.Node{}).Where("address IN (?)", nodeAddresses).Find(&nodeModels).Error; err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
+	nodeModelMap := make(map[string]models.Node, len(nodeModels))
+	for _, node := range nodeModels {
+		nodeModelMap[node.Address] = node
+	}
+
+	var data []NetworkNodeData
+	now := time.Now().UTC()
+	for _, node := range allNodeData {
+		selectingProb := service.NodeSelectingProb{}
+		if nodeModel, ok := nodeModelMap[node.Address]; ok {
+			selectingProb = service.CalculateNodeSelectingProb(nodeModel, now)
+		}
 		data = append(data, NetworkNodeData{
 			Address:      node.Address,
 			CardModel:    node.CardModel,
 			VRam:         node.VRam,
 			Staking:      node.Staking.String(),
-			QOSScore:     qosProb,
-			StakingScore: stakingProb,
-			ProbWeight:   prob,
+			QOSScore:     selectingProb.QOSScore,
+			StakingScore: selectingProb.StakingScore,
+			ProbWeight:   selectingProb.ProbWeight,
 		})
 	}
 	return &GetAllNodesDataResponse{
