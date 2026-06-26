@@ -35,9 +35,9 @@ week_number > 1: [emission_week_anchor + (week_number - 1) * 7 days, emission_we
 
 Relay implementation uses a zero-based week index internally. Internal week index `0` MUST correspond to business emission week 1, index `1` MUST correspond to business emission week 2, and so on.
 
-The current incomplete emission week MUST be excluded from emission CSV export and emission chart data. A week is complete only after its seven-day interval has fully elapsed.
+The current incomplete emission week MUST be excluded from emission CSV export. A week is complete only after its seven-day interval has fully elapsed.
 
-For example, if `dao.mainnet_start_time = 2026-06-01T12:30:00Z`, the emission week anchor is `2026-06-01T00:00:00Z`, and the first emission week is `[2026-06-01T00:00:00Z, 2026-06-08T00:00:00Z)`. On `2026-06-09`, the week starting `2026-06-08T00:00:00Z` is still incomplete and MUST NOT be included.
+For example, if `dao.mainnet_start_time = 2026-06-01T12:30:00Z`, the emission week anchor is `2026-06-01T00:00:00Z`, and the first emission week is `[2026-06-01T00:00:00Z, 2026-06-08T00:00:00Z)`. On `2026-06-09`, the week starting `2026-06-08T00:00:00Z` is still incomplete and MUST NOT be included in emission CSV export.
 
 ## Task Fee Inputs
 
@@ -129,11 +129,11 @@ Emission chart APIs MUST aggregate from `vesting_records.total_amount`. Chart da
 
 Each vesting record MUST be assigned to the emission week containing `vesting_records.start_time`, using the exact `emission_week_anchor + n * 7 days` week boundaries. Vesting records before the emission week anchor MUST be excluded from emission chart buckets.
 
-Chart APIs MUST exclude the current incomplete emission week. For a requested `weeks` value, Relay MUST return exactly `weeks` timestamps and exactly `weeks` amount values per returned series after validating the requested range. Missing data MUST be represented as zero.
+Chart APIs MUST include the current emission week start bucket because vesting records are displayed by submitted `start_time`, not by completed task fee week. For a requested `weeks` value, Relay MUST return exactly `weeks` timestamps and exactly `weeks` amount values per returned series after validating the requested range. Missing data MUST be represented as zero.
 
 The default chart range MUST be 24 weeks. The maximum accepted chart range MUST be 260 weeks.
 
-If fewer than the requested number of complete emission weeks exist since the emission week anchor, Relay MUST still return the requested number of buckets ending at the current complete-week boundary. Buckets before the first emission week MUST contain zero.
+If fewer than the requested number of chart buckets exist since the emission week anchor, Relay MUST still return the requested number of buckets ending at the current emission week start bucket. Buckets before the first emission week MUST contain zero.
 
 ## Chart API Contracts
 

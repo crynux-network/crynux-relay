@@ -77,7 +77,7 @@ func TestNormalizeToUTCWeekStart(t *testing.T) {
 	}
 }
 
-func TestBuildEmissionChartRangeReturns24CompletedWeeks(t *testing.T) {
+func TestBuildEmissionChartRangeReturns24StartTimeBuckets(t *testing.T) {
 	mainnetStart := "2026-01-01T09:33:00+08:00"
 	now := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
 
@@ -101,7 +101,7 @@ func TestBuildEmissionChartRangeReturns24CompletedWeeks(t *testing.T) {
 	}
 }
 
-func TestBuildEmissionChartRangeKeepsRequestedPointsWhenFewerWeeksCompleted(t *testing.T) {
+func TestBuildEmissionChartRangeIncludesCurrentStartTimeBucket(t *testing.T) {
 	mainnetStart := "2026-01-01T00:00:00Z"
 	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
 
@@ -112,17 +112,17 @@ func TestBuildEmissionChartRangeKeepsRequestedPointsWhenFewerWeeksCompleted(t *t
 	if len(chartRange.WeekStarts) != 24 {
 		t.Fatalf("expected 24 week points, got %d", len(chartRange.WeekStarts))
 	}
-	expectedEnd := time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)
+	expectedEnd := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 	if !chartRange.RangeEnd.Equal(expectedEnd) {
 		t.Fatalf("expected range end %s, got %s", expectedEnd, chartRange.RangeEnd)
 	}
 	last := chartRange.WeekStarts[len(chartRange.WeekStarts)-1]
-	if !last.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("expected last point at mainnet start, got %s", last)
+	if !last.Equal(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected last point at current week start, got %s", last)
 	}
 }
 
-func TestBuildEmissionChartRangeReturnsRequestedPointsBeforeFirstCompleteWeek(t *testing.T) {
+func TestBuildEmissionChartRangeReturnsRequestedPointsBeforeFirstWeekCompletes(t *testing.T) {
 	mainnetStart := "2026-01-01T00:00:00Z"
 	now := time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)
 
@@ -133,8 +133,12 @@ func TestBuildEmissionChartRangeReturnsRequestedPointsBeforeFirstCompleteWeek(t 
 	if len(chartRange.WeekStarts) != 24 {
 		t.Fatalf("expected 24 week points, got %d", len(chartRange.WeekStarts))
 	}
-	if !chartRange.RangeEnd.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("expected range end at mainnet start, got %s", chartRange.RangeEnd)
+	if !chartRange.RangeEnd.Equal(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected range end at next week boundary, got %s", chartRange.RangeEnd)
+	}
+	last := chartRange.WeekStarts[len(chartRange.WeekStarts)-1]
+	if !last.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected last point at mainnet start, got %s", last)
 	}
 }
 
@@ -175,13 +179,13 @@ func TestBuildEmissionChartRangeUsesStartTimeSevenDayWeeks(t *testing.T) {
 	if len(chartRange.WeekStarts) != 24 {
 		t.Fatalf("expected 24 week points, got %d", len(chartRange.WeekStarts))
 	}
-	expectedEnd := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
+	expectedEnd := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
 	if !chartRange.RangeEnd.Equal(expectedEnd) {
-		t.Fatalf("expected current complete week boundary %s, got %s", expectedEnd, chartRange.RangeEnd)
+		t.Fatalf("expected next week boundary %s, got %s", expectedEnd, chartRange.RangeEnd)
 	}
 	last := chartRange.WeekStarts[len(chartRange.WeekStarts)-1]
-	if !last.Equal(time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("expected last point at completed launch week, got %s", last)
+	if !last.Equal(time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected last point at current week start, got %s", last)
 	}
 }
 
