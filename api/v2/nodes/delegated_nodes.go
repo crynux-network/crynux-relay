@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"math/big"
 	"sync"
 	"time"
 
@@ -96,6 +97,7 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 	}
 	for _, nodeData := range results {
 		if nodeData != nil {
+			nodeData.OperatorStaking = models.BigInt{Int: *big.NewInt(0).Add(&nodeData.OperatorStaking.Int, &nodeData.LockedEmission.Int)}
 			nodeDatas = append(nodeDatas, nodeData)
 		}
 	}

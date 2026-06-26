@@ -28,6 +28,7 @@ type Node struct {
 	ProbWeight             float64           `json:"prob_weight"`
 	OperatorStaking        models.BigInt     `json:"operator_staking"`
 	DelegatorStaking       models.BigInt     `json:"delegator_staking"`
+	LockedEmission         models.BigInt     `json:"locked_emission"`
 	DelegatorShare         uint8             `json:"delegator_share"`
 	DelegatorsNum          int               `json:"delegators_num"`
 	TotalOperatorEarnings  models.BigInt     `json:"total_operator_earnings"`
@@ -54,13 +55,15 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 	nodeVersion := fmt.Sprintf("%d.%d.%d", node.MajorVersion, node.MinorVersion, node.PatchVersion)
 
 	qos := service.CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
+	now := time.Now().UTC()
 	totalStakeAmount := big.NewInt(0)
 	if node.Status != models.NodeStatusQuit {
-		totalStakeAmount = service.GetNodeScoreStakeAmount(*node, time.Now().UTC())
+		totalStakeAmount = service.GetNodeScoreStakeAmount(*node, now)
 	}
 	stakingScore, qosScore, probWeight := service.CalculateSelectingProb(totalStakeAmount, service.GetMaxStaking(), qos)
 
 	delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
+	lockedEmission := service.GetNodeLockedVestingAmount(node.Address, now)
 	delegatorsNum := service.GetDelegatorCountOfNode(node.Address, node.Network)
 
 	totalOperatorEarnings := big.NewInt(0)
@@ -101,6 +104,7 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 		ModelIDs:               modelIDs,
 		OperatorStaking:        node.StakeAmount,
 		DelegatorStaking:       models.BigInt{Int: *delegatorStaking},
+		LockedEmission:         models.BigInt{Int: *lockedEmission},
 		DelegatorShare:         node.DelegatorShare,
 		DelegatorsNum:          delegatorsNum,
 		TotalOperatorEarnings:  models.BigInt{Int: *totalOperatorEarnings},
