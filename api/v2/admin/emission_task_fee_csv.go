@@ -26,10 +26,11 @@ type emissionTaskFeeAggregateRow struct {
 }
 
 type emissionTaskFeeCSVRow struct {
-	Address  string
-	Type     string
-	TaskFee  string
-	Emission string
+	Address   string
+	Type      string
+	TaskFee   string
+	Emission  string
+	StartTime string
 }
 
 func ExportEmissionTaskFeeCSV(c *gin.Context) {
@@ -65,13 +66,14 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 		totalTaskFee.Add(totalTaskFee, p.TaskFee)
 	}
 
-	rows := buildEmissionTaskFeeCSVRows(participants, totalTaskFee, weekInfo.NodeEmissionPoolCNX)
+	emissionStartTime := fmt.Sprintf("%d", weekInfo.WeekEndDate.Unix())
+	rows := buildEmissionTaskFeeCSVRows(participants, totalTaskFee, weekInfo.NodeEmissionPoolCNX, emissionStartTime)
 
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=emission_task_fee_%s_%s.csv", weekInfo.WeekStartDate.Format("20060102"), weekInfo.WeekEndDate.AddDate(0, 0, -1).Format("20060102")))
 
 	writer := csv.NewWriter(c.Writer)
-	if err := writer.Write([]string{"address", "type", "task fee", "emission"}); err != nil {
+	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time"}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
@@ -79,7 +81,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 
 	for _, row := range rows {
-		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission}); err != nil {
+		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"message": err.Error(),
 			})
@@ -145,7 +147,7 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 	return participants, nil
 }
 
-func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, totalTaskFee *big.Int, nodeEmissionPoolCNX int64) []emissionTaskFeeCSVRow {
+func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, totalTaskFee *big.Int, nodeEmissionPoolCNX int64, emissionStartTime string) []emissionTaskFeeCSVRow {
 	rows := make([]emissionTaskFeeCSVRow, 0, len(participants)+1)
 	remainingEmission := nodeEmissionPoolCNX
 
@@ -156,19 +158,21 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 			emissionCNX := big.NewInt(0).Div(numerator, totalTaskFee).Int64()
 			remainingEmission -= emissionCNX
 			rows = append(rows, emissionTaskFeeCSVRow{
-				Address:  p.Address,
-				Type:     p.Type,
-				TaskFee:  formatCNXAmount(p.TaskFee),
-				Emission: formatIntegerCNX(emissionCNX),
+				Address:   p.Address,
+				Type:      p.Type,
+				TaskFee:   formatCNXAmount(p.TaskFee),
+				Emission:  formatIntegerCNX(emissionCNX),
+				StartTime: emissionStartTime,
 			})
 		}
 	}
 
 	rows = append(rows, emissionTaskFeeCSVRow{
-		Address:  "",
-		Type:     "remainder",
-		TaskFee:  "0.00",
-		Emission: formatIntegerCNX(remainingEmission),
+		Address:   "",
+		Type:      "remainder",
+		TaskFee:   "0.00",
+		Emission:  formatIntegerCNX(remainingEmission),
+		StartTime: emissionStartTime,
 	})
 
 	return rows
