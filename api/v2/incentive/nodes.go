@@ -8,6 +8,7 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"database/sql"
+	"math/big"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -126,7 +127,7 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 			nodeIncentive.CardModel = node.CardModel
 			nodeIncentive.VRam = node.VRam
 			nodeIncentive.QOSScore = qosProb
-			nodeIncentive.Staking = node.Staking.String()
+			nodeIncentive.Staking = getDisplayedNodeStaking(node, now)
 			nodeIncentive.StakingScore = stakingProb
 			nodeIncentive.ProbWeight = prob
 			nodeIncentiveMap[node.Address] = nodeIncentive
@@ -281,7 +282,7 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 			nodeIncentive.CardModel = node.CardModel
 			nodeIncentive.VRam = node.VRam
 			nodeIncentive.QOSScore = qosProb
-			nodeIncentive.Staking = node.Staking.String()
+			nodeIncentive.Staking = getDisplayedNodeStaking(node, now)
 			nodeIncentive.StakingScore = stakingProb
 			nodeIncentive.ProbWeight = prob
 
@@ -302,4 +303,10 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 			Total: total,
 		},
 	}, nil
+}
+
+func getDisplayedNodeStaking(node models.NetworkNodeData, now time.Time) string {
+	total := big.NewInt(0).Set(&node.Staking.Int)
+	total.Add(total, service.GetNodeLockedVestingAmount(node.Address, now))
+	return total.String()
 }
