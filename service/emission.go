@@ -183,7 +183,8 @@ func BuildEmissionChartRange(now time.Time, mainnetStartTime string, weeks int) 
 	}
 
 	currentWeekStart := mainnetWeekStart.Add(time.Duration(elapsedWeeks) * emissionWeekDuration)
-	rangeStart := currentWeekStart.Add(-time.Duration(weeks) * emissionWeekDuration)
+	rangeStart := currentWeekStart.Add(-time.Duration(weeks-1) * emissionWeekDuration)
+	rangeEnd := currentWeekStart.Add(emissionWeekDuration)
 	weekStarts := make([]time.Time, 0, weeks)
 	for i := 0; i < weeks; i++ {
 		weekStarts = append(weekStarts, rangeStart.Add(time.Duration(i)*emissionWeekDuration))
@@ -192,7 +193,7 @@ func BuildEmissionChartRange(now time.Time, mainnetStartTime string, weeks int) 
 	return &EmissionChartRange{
 		MainnetWeekStart: mainnetWeekStart,
 		RangeStart:       rangeStart,
-		RangeEnd:         currentWeekStart,
+		RangeEnd:         rangeEnd,
 		WeekStarts:       weekStarts,
 	}, nil
 }
