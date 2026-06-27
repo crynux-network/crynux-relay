@@ -115,6 +115,9 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		return err
 	}
 	UpdateMaxStaking(node.Address, GetNodeScoreStakeAmount(*node, time.Now().UTC()))
+	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, node.Address); err != nil {
+		return err
+	}
 	LogNodeStatusChange(node, "join")
 	return nil
 }
@@ -189,6 +192,9 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 		if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
 			return err
 		}
+	}
+	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, node.Address); err != nil {
+		return err
 	}
 	return nil
 }

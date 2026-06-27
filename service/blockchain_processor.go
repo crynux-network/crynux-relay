@@ -752,6 +752,9 @@ func updateDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.De
 	if node.Network == network {
 		UpdateMaxStaking(nodeAddress, GetNodeScoreStakeAmount(*node, time.Now().UTC()))
 	}
+	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, nodeAddress); err != nil {
+		return err
+	}
 
 	log.Infof("UpdateUserStaking: successfully updated user %s stake amount to node %s: %s",
 		delegatorAddress, nodeAddress, event.Amount.String())
@@ -810,6 +813,9 @@ func unstakeDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.D
 			}
 		}
 	}
+	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, nodeAddress); err != nil {
+		return err
+	}
 
 	log.Infof("UnstakeUserStaking: successfully unstake user staking %s -> %s",
 		delegatorAddress, nodeAddress)
@@ -850,6 +856,9 @@ func changeNodeDelegatorShare(ctx context.Context, db *gorm.DB, event *bindings.
 	}
 
 	SetDelegatorShare(nodeAddress, network, share)
+	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, nodeAddress); err != nil {
+		return err
+	}
 	log.Infof("ChangeNodeDelegatorShare: successfully change delegator share of node %s to %d",
 		nodeAddress, share)
 	return nil
@@ -953,6 +962,9 @@ func slashDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.Del
 		} else {
 			return err
 		}
+	}
+	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, nodeAddress); err != nil {
+		return err
 	}
 	if slashJobID.Valid {
 		log.Infof("DelegatorSlashed: successfully processed delegated staking slash, job id: %d, delegator: %s, node: %s, network: %s, amount: %s, tx: %s, block: %d, log index: %d",

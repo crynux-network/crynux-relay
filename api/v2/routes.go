@@ -57,6 +57,11 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get delegated nodes"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetDelegatedNodes, 200))
+	delegatedStakingGroup.GET("/nodes/filter_options", []fizz.OperationOption{
+		fizz.ID("get_delegated_node_filter_options_v2"),
+		fizz.Summary("Get delegated node filter options"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.GetDelegatedNodeFilterOptions, 200))
 	delegatedStakingGroup.GET("/nodes/:address", []fizz.OperationOption{
 		fizz.ID("get_delegated_node_v2"),
 		fizz.Summary("Get delegated node info"),
