@@ -574,9 +574,7 @@ func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNod
 	// Update value in memory
 	node.StakeAmount = models.BigInt{Int: *stakingAmount}
 	totalStakeAmount := GetNodeScoreStakeAmount(*node, time.Now().UTC())
-	if totalStakeAmount.Sign() > 0 {
-		UpdateMaxStaking(address, totalStakeAmount)
-	}
+	UpdateMaxStaking(address, totalStakeAmount)
 
 	log.Infof("NodeStaked: successfully updated node %s stake amount to %s",
 		address, stakingAmount.String())
@@ -808,9 +806,7 @@ func unstakeDelegatedStaking(ctx context.Context, db *gorm.DB, event *bindings.D
 		UnstakeDelegation(delegatorAddress, nodeAddress, network)
 		if node.Network == network {
 			totalStakeAmount := GetNodeScoreStakeAmount(*node, time.Now().UTC())
-			if totalStakeAmount.Sign() > 0 {
-				UpdateMaxStaking(nodeAddress, totalStakeAmount)
-			}
+			UpdateMaxStaking(nodeAddress, totalStakeAmount)
 		}
 	}
 	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, nodeAddress); err != nil {

@@ -50,6 +50,17 @@ func (c *nodeVestingStakeCache) lockedAmount(address string, now time.Time) *big
 	return total
 }
 
+func (c *nodeVestingStakeCache) addresses() []string {
+	c.RLock()
+	defer c.RUnlock()
+
+	addresses := make([]string, 0, len(c.recordsByAddress))
+	for address := range c.recordsByAddress {
+		addresses = append(addresses, address)
+	}
+	return addresses
+}
+
 func InitNodeVestingStakeCache(ctx context.Context, db *gorm.DB) error {
 	cache := newNodeVestingStakeCache()
 
@@ -134,17 +145,27 @@ func RefreshNodeVestingScoreStakes(ctx context.Context, db *gorm.DB, now time.Ti
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	var addresses []string
+	addressSet := make(map[string]struct{})
+	if globalNodeVestingStakeCache != nil {
+		for _, address := range globalNodeVestingStakeCache.addresses() {
+			addressSet[address] = struct{}{}
+		}
+	}
+
+	var activeAddresses []string
 	if err := db.WithContext(dbCtx).
 		Model(&models.VestingRecord{}).
 		Distinct("address").
 		Where("status = ?", models.VestingStatusActive).
 		Where("slashed = ?", false).
-		Find(&addresses).Error; err != nil {
+		Find(&activeAddresses).Error; err != nil {
 		return err
 	}
+	for _, address := range activeAddresses {
+		addressSet[address] = struct{}{}
+	}
 
-	for _, address := range addresses {
+	for address := range addressSet {
 		if err := RefreshNodeScoreStake(ctx, db, address, now); err != nil {
 			return err
 		}

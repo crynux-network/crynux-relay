@@ -325,6 +325,34 @@ func TestNodeStakedSkipsMismatchedNetwork(t *testing.T) {
 	}
 }
 
+func TestNodeStakedClearsMaxStakingWhenScoreStakeBecomesZero(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockchainProcessorTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 10)
+	UpdateMaxStaking(nodeAddress.Hex(), big.NewInt(10))
+
+	err := nodeStaked(ctx, db, &bindings.NodeStakingNodeStaked{
+		NodeAddress:   nodeAddress,
+		StakedBalance: big.NewInt(0),
+		StakedCredits: big.NewInt(0),
+	}, "network-a")
+	if err != nil {
+		t.Fatalf("nodeStaked failed: %v", err)
+	}
+
+	var node models.Node
+	if err := db.First(&node, "address = ?", nodeAddress.Hex()).Error; err != nil {
+		t.Fatalf("failed to load node: %v", err)
+	}
+	if node.StakeAmount.Int.Sign() != 0 {
+		t.Fatalf("expected stake amount to be zero, got %s", node.StakeAmount.String())
+	}
+	if got := globalMaxStaking.stakingMap[nodeAddress.Hex()]; got == nil || got.Sign() != 0 {
+		t.Fatalf("expected max-staking cache entry to be zero, got %v", got)
+	}
+}
+
 func TestDelegatorStakedProcessesPreviousNetworkUserState(t *testing.T) {
 	ctx := context.Background()
 	db := setupBlockchainProcessorTestDB(t)
@@ -431,6 +459,41 @@ func TestDelegatorUnstakedDeletesPreviousNetworkUserState(t *testing.T) {
 	}
 	if count := countEvents(t, db); count != 1 {
 		t.Fatalf("expected one event, got %d", count)
+	}
+}
+
+func TestDelegatorUnstakedClearsMaxStakingWhenScoreStakeBecomesZero(t *testing.T) {
+	ctx := context.Background()
+	db := setupBlockchainProcessorTestDB(t)
+	nodeAddress := common.HexToAddress("0x00000000000000000000000000000000000000AA")
+	delegatorAddress := common.HexToAddress("0x00000000000000000000000000000000000000BB")
+	seedTestNode(t, db, nodeAddress.Hex(), "network-a", models.NodeStatusAvailable, 0)
+	if err := db.Create(&models.Delegation{
+		DelegatorAddress: delegatorAddress.Hex(),
+		NodeAddress:      nodeAddress.Hex(),
+		Amount:           models.BigInt{Int: *big.NewInt(15)},
+		Slashed:          false,
+		Network:          "network-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to seed delegation: %v", err)
+	}
+	UpdateDelegation(delegatorAddress.Hex(), nodeAddress.Hex(), big.NewInt(15), "network-a")
+	UpdateMaxStaking(nodeAddress.Hex(), big.NewInt(15))
+
+	err := unstakeDelegatedStaking(ctx, db, &bindings.DelegatedStakingDelegatorUnstaked{
+		DelegatorAddress: delegatorAddress,
+		NodeAddress:      nodeAddress,
+		Amount:           big.NewInt(15),
+	}, "network-a")
+	if err != nil {
+		t.Fatalf("unstakeDelegatedStaking failed: %v", err)
+	}
+
+	if amount := GetNodeTotalStakeAmount(nodeAddress.Hex(), "network-a"); amount.Sign() != 0 {
+		t.Fatalf("expected network-a cache to be cleared, got %s", amount.String())
+	}
+	if got := globalMaxStaking.stakingMap[nodeAddress.Hex()]; got == nil || got.Sign() != 0 {
+		t.Fatalf("expected max-staking cache entry to be zero, got %v", got)
 	}
 }
 
