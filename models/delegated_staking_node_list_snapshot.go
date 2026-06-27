@@ -11,7 +11,7 @@ type DelegatedStakingNodeListSnapshot struct {
 	ID                 uint `gorm:"primarykey"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
-	NodeAddress        string     `gorm:"type:string;size:191;not null;uniqueIndex;index"`
+	NodeAddress        string     `gorm:"type:string;size:191;not null;uniqueIndex:idx_delegated_staking_node_snapshots_address"`
 	Network            string     `gorm:"type:string;size:64;not null;index"`
 	Status             NodeStatus `gorm:"not null;index"`
 	StatusGroup        string     `gorm:"type:string;size:32;not null;index"`
