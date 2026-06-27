@@ -245,8 +245,6 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 		return err
 	}
 
-	healthBoostMetrics := nodeHealthMetrics{}
-	logHealthBoost := false
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskGroupValidated,
@@ -261,18 +259,9 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 			}
 		}
 
-		healthBoostMetrics = calculateBoostNodeHealthMetrics(node)
-		logHealthBoost = shouldLogHealthBoost(healthBoostMetrics)
-		if err := ApplyHealthBoost(ctx, tx, node); err != nil {
-			return err
-		}
-
 		return emitEvent(ctx, tx, &models.TaskValidatedEvent{TaskIDCommitment: task.TaskIDCommitment, SelectedNode: task.SelectedNode})
 	}); err != nil {
 		return err
-	}
-	if logHealthBoost {
-		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
 	}
 	*originTask = task
 	return nil
