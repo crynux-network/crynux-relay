@@ -75,6 +75,7 @@ func main() {
 	go tasks.StartStatsNodeScores(context.Background())
 	go tasks.StartStatsNodeStakings(context.Background())
 	go tasks.StartStatsNodeDelegatorCount(context.Background())
+	go tasks.StartDelegatedStakingNodeListSnapshotRefresh(context.Background())
 
 	startServer()
 }
