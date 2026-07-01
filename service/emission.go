@@ -89,6 +89,37 @@ func GetPreviousEmissionWeekInfo(now time.Time, mainnetStartTime string) (*Emiss
 	}, nil
 }
 
+func GetCurrentEmissionWeekInfo(now time.Time, mainnetStartTime string) (*EmissionWeekInfo, error) {
+	startDate, err := parseMainnetStartDate(mainnetStartTime)
+	if err != nil {
+		return nil, err
+	}
+
+	elapsedWeeks := int(now.UTC().Sub(startDate) / emissionWeekDuration)
+	if elapsedWeeks < 0 {
+		elapsedWeeks = 0
+	}
+
+	yearIndex := elapsedWeeks/emissionWeeksPerYear + 1
+	if yearIndex < 1 || yearIndex > maxEmissionYear {
+		return nil, fmt.Errorf("%w: year=%d week_index=%d", ErrEmissionWeekOutOfRange, yearIndex, elapsedWeeks)
+	}
+
+	weekStart := startDate.Add(time.Duration(elapsedWeeks) * emissionWeekDuration)
+	weekEnd := weekStart.Add(emissionWeekDuration)
+	weeklyEmission := weeklyEmissionCNXByYear[yearIndex-1]
+	nodeEmissionPool := weeklyEmission * nodeAllocationPercent(yearIndex) / 100
+
+	return &EmissionWeekInfo{
+		WeekIndex:           elapsedWeeks,
+		YearIndex:           yearIndex,
+		WeekStartDate:       weekStart,
+		WeekEndDate:         weekEnd,
+		WeeklyEmissionCNX:   weeklyEmission,
+		NodeEmissionPoolCNX: nodeEmissionPool,
+	}, nil
+}
+
 func GetCNXTotalSupply() *big.Int {
 	return cnxToWei(cnxTotalSupplyCNX)
 }

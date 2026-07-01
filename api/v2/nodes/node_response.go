@@ -15,26 +15,31 @@ import (
 )
 
 type Node struct {
-	Address                string            `json:"address" gorm:"index"`
-	Network                string            `json:"network" gorm:"index"`
-	Status                 models.NodeStatus `json:"status" gorm:"index"`
-	GPUName                string            `json:"gpu_name" gorm:"index"`
-	GPUVram                uint64            `json:"gpu_vram" gorm:"index"`
-	Version                string            `json:"version"`
-	InUseModelIDs          []string          `json:"in_use_model_ids"`
-	ModelIDs               []string          `json:"model_ids"`
-	StakingScore           float64           `json:"staking_score"`
-	QOSScore               float64           `json:"qos_score"`
-	ProbWeight             float64           `json:"prob_weight"`
-	OperatorStaking        models.BigInt     `json:"operator_staking"`
-	DelegatorStaking       models.BigInt     `json:"delegator_staking"`
-	LockedEmission         models.BigInt     `json:"locked_emission"`
-	DelegatorShare         uint8             `json:"delegator_share"`
-	DelegatorsNum          int               `json:"delegators_num"`
-	TotalOperatorEarnings  models.BigInt     `json:"total_operator_earnings"`
-	TodayOperatorEarnings  models.BigInt     `json:"today_operator_earnings"`
-	TotalDelegatorEarnings models.BigInt     `json:"total_delegator_earnings"`
-	TodayDelegatorEarnings models.BigInt     `json:"today_delegator_earnings"`
+	Address                            string            `json:"address" gorm:"index"`
+	Network                            string            `json:"network" gorm:"index"`
+	Status                             models.NodeStatus `json:"status" gorm:"index"`
+	GPUName                            string            `json:"gpu_name" gorm:"index"`
+	GPUVram                            uint64            `json:"gpu_vram" gorm:"index"`
+	Version                            string            `json:"version"`
+	InUseModelIDs                      []string          `json:"in_use_model_ids"`
+	ModelIDs                           []string          `json:"model_ids"`
+	StakingScore                       float64           `json:"staking_score"`
+	QOSScore                           float64           `json:"qos_score"`
+	ProbWeight                         float64           `json:"prob_weight"`
+	OperatorStaking                    models.BigInt     `json:"operator_staking"`
+	DelegatorStaking                   models.BigInt     `json:"delegator_staking"`
+	LockedEmission                     models.BigInt     `json:"locked_emission"`
+	DelegatorShare                     uint8             `json:"delegator_share"`
+	DelegatorsNum                      int               `json:"delegators_num"`
+	TotalOperatorEarnings              models.BigInt     `json:"total_operator_earnings"`
+	TodayOperatorEarnings              models.BigInt     `json:"today_operator_earnings"`
+	TotalDelegatorEarnings             models.BigInt     `json:"total_delegator_earnings"`
+	TodayDelegatorEarnings             models.BigInt     `json:"today_delegator_earnings"`
+	EstimatedUpcomingOperatorEmission  models.BigInt     `json:"estimated_upcoming_operator_emission"`
+	EstimatedUpcomingDelegatorEmission models.BigInt     `json:"estimated_upcoming_delegator_emission"`
+	EmissionWeekStart                  int64             `json:"emission_week_start"`
+	EmissionWeekEnd                    int64             `json:"emission_week_end"`
+	EstimateUpdatedAt                  int64             `json:"estimate_updated_at"`
 }
 
 func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
@@ -85,27 +90,34 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 		todayOperatorEarnings = &todayNodeEarnings[0].OperatorEarning.Int
 		todayDelegatorEarnings = &todayNodeEarnings[0].DelegatorEarning.Int
 	}
+	operatorEmissionEstimate := service.GetNodeOperatorEmissionEstimate(node.Address)
+	delegatorEmissionEstimate := service.GetNodeDelegationEmissionEstimate(node.Address)
 	return &Node{
-		Address:                node.Address,
-		Network:                node.Network,
-		Status:                 node.Status,
-		GPUName:                node.GPUName,
-		GPUVram:                node.GPUVram,
-		QOSScore:               selectingProb.QOSScore,
-		StakingScore:           selectingProb.StakingScore,
-		ProbWeight:             selectingProb.ProbWeight,
-		Version:                nodeVersion,
-		InUseModelIDs:          inUseModelIDs,
-		ModelIDs:               modelIDs,
-		OperatorStaking:        node.StakeAmount,
-		DelegatorStaking:       models.BigInt{Int: *delegatorStaking},
-		LockedEmission:         models.BigInt{Int: *lockedEmission},
-		DelegatorShare:         node.DelegatorShare,
-		DelegatorsNum:          delegatorsNum,
-		TotalOperatorEarnings:  models.BigInt{Int: *totalOperatorEarnings},
-		TodayOperatorEarnings:  models.BigInt{Int: *todayOperatorEarnings},
-		TotalDelegatorEarnings: models.BigInt{Int: *totalDelegatorEarnings},
-		TodayDelegatorEarnings: models.BigInt{Int: *todayDelegatorEarnings},
+		Address:                            node.Address,
+		Network:                            node.Network,
+		Status:                             node.Status,
+		GPUName:                            node.GPUName,
+		GPUVram:                            node.GPUVram,
+		QOSScore:                           selectingProb.QOSScore,
+		StakingScore:                       selectingProb.StakingScore,
+		ProbWeight:                         selectingProb.ProbWeight,
+		Version:                            nodeVersion,
+		InUseModelIDs:                      inUseModelIDs,
+		ModelIDs:                           modelIDs,
+		OperatorStaking:                    node.StakeAmount,
+		DelegatorStaking:                   models.BigInt{Int: *delegatorStaking},
+		LockedEmission:                     models.BigInt{Int: *lockedEmission},
+		DelegatorShare:                     node.DelegatorShare,
+		DelegatorsNum:                      delegatorsNum,
+		TotalOperatorEarnings:              models.BigInt{Int: *totalOperatorEarnings},
+		TodayOperatorEarnings:              models.BigInt{Int: *todayOperatorEarnings},
+		TotalDelegatorEarnings:             models.BigInt{Int: *totalDelegatorEarnings},
+		TodayDelegatorEarnings:             models.BigInt{Int: *todayDelegatorEarnings},
+		EstimatedUpcomingOperatorEmission:  models.BigInt{Int: *operatorEmissionEstimate.EstimatedEmission},
+		EstimatedUpcomingDelegatorEmission: models.BigInt{Int: *delegatorEmissionEstimate.EstimatedEmission},
+		EmissionWeekStart:                  operatorEmissionEstimate.EmissionWeekStart,
+		EmissionWeekEnd:                    operatorEmissionEstimate.EmissionWeekEnd,
+		EstimateUpdatedAt:                  operatorEmissionEstimate.EstimateUpdatedAt,
 	}, nil
 }
 

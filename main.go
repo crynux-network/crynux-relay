@@ -57,6 +57,9 @@ func main() {
 	if err := service.InitSelectingProb(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
+	if err := service.InitCurrentEmissionEstimateSnapshot(context.Background(), config.GetDB(), conf.Dao.MainnetStartTime); err != nil {
+		log.Fatalln(err)
+	}
 
 	tm := blockchain.NewTransactionManager(config.GetDB())
 	tm.Start(context.Background())
@@ -76,6 +79,7 @@ func main() {
 	go tasks.StartStatsNodeStakings(context.Background())
 	go tasks.StartStatsNodeDelegatorCount(context.Background())
 	go tasks.StartDelegatedStakingNodeListSnapshotRefresh(context.Background())
+	go tasks.StartCurrentEmissionEstimateSnapshotRefresh(context.Background())
 
 	startServer()
 }
