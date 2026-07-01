@@ -17,9 +17,13 @@ type GetDelegatorInput struct {
 }
 
 type DelegatorInfo struct {
-	DelegationNum           int           `json:"delegation_num"`
-	TotalStakingAmount      models.BigInt `json:"total_staking_amount"`
-	TotalDelegationEarnings models.BigInt `json:"total_delegation_earnings"`
+	DelegationNum                       int           `json:"delegation_num"`
+	TotalStakingAmount                  models.BigInt `json:"total_staking_amount"`
+	TotalDelegationEarnings             models.BigInt `json:"total_delegation_earnings"`
+	EstimatedUpcomingDelegationEmission models.BigInt `json:"estimated_upcoming_delegation_emission"`
+	EmissionWeekStart                   int64         `json:"emission_week_start"`
+	EmissionWeekEnd                     int64         `json:"emission_week_end"`
+	EstimateUpdatedAt                   int64         `json:"estimate_updated_at"`
 }
 
 type GetDelegatorOutput struct {
@@ -45,12 +49,17 @@ func GetDelegatorInfo(c *gin.Context, input *GetDelegatorInput) (*GetDelegatorOu
 	} else {
 		totalDelegationEarnings.Set(&userEarning.Earning.Int)
 	}
+	emissionEstimate := service.GetUserDelegationEmissionEstimate(input.UserAddress)
 
 	return &GetDelegatorOutput{
 		Data: &DelegatorInfo{
-			DelegationNum:           delegationNum,
-			TotalStakingAmount:      models.BigInt{Int: *totalStakingAmount},
-			TotalDelegationEarnings: models.BigInt{Int: *totalDelegationEarnings},
+			DelegationNum:                       delegationNum,
+			TotalStakingAmount:                  models.BigInt{Int: *totalStakingAmount},
+			TotalDelegationEarnings:             models.BigInt{Int: *totalDelegationEarnings},
+			EstimatedUpcomingDelegationEmission: models.BigInt{Int: *emissionEstimate.EstimatedEmission},
+			EmissionWeekStart:                   emissionEstimate.EmissionWeekStart,
+			EmissionWeekEnd:                     emissionEstimate.EmissionWeekEnd,
+			EstimateUpdatedAt:                   emissionEstimate.EstimateUpdatedAt,
 		},
 	}, nil
 }

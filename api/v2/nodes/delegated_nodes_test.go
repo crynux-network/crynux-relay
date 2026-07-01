@@ -4,6 +4,7 @@ import (
 	"context"
 	"crynux_relay/api/v2/response"
 	"crynux_relay/models"
+	"encoding/json"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -120,5 +121,34 @@ func TestGetDelegatedNodeFilterOptionsUseStakeableSnapshotsOnly(t *testing.T) {
 	}
 	if !reflect.DeepEqual(options.Versions, []string{"1.0.0", "1.0.1"}) {
 		t.Fatalf("unexpected versions %v", options.Versions)
+	}
+}
+
+func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
+	payload, err := json.Marshal(Node{
+		EstimatedUpcomingOperatorEmission:  models.BigInt{Int: *big.NewInt(1)},
+		EstimatedUpcomingDelegatorEmission: models.BigInt{Int: *big.NewInt(2)},
+		EmissionWeekStart:                  1767830400,
+		EmissionWeekEnd:                    1768435200,
+		EstimateUpdatedAt:                  1768000000,
+	})
+	if err != nil {
+		t.Fatalf("marshal node: %v", err)
+	}
+
+	var fields map[string]interface{}
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatalf("unmarshal node: %v", err)
+	}
+	for _, field := range []string{
+		"estimated_upcoming_operator_emission",
+		"estimated_upcoming_delegator_emission",
+		"emission_week_start",
+		"emission_week_end",
+		"estimate_updated_at",
+	} {
+		if _, ok := fields[field]; !ok {
+			t.Fatalf("missing field %s in %s", field, payload)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v2/validate"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 	"math/big"
 
@@ -43,26 +44,33 @@ func GetNode(c *gin.Context, input *GetNodeInputWithSignature) (*NodeResponse, e
 
 	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), input.Address)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		operatorEmissionEstimate := service.GetNodeOperatorEmissionEstimate(input.Address)
+		delegatorEmissionEstimate := service.GetNodeDelegationEmissionEstimate(input.Address)
 		return &NodeResponse{
 			Data: &Node{
-				Address:                input.Address,
-				Status:                 models.NodeStatusQuit,
-				GPUName:                "",
-				GPUVram:                0,
-				Version:                "",
-				InUseModelIDs:          []string{},
-				ModelIDs:               []string{},
-				StakingScore:           0,
-				QOSScore:               0,
-				ProbWeight:             0,
-				DelegatorStaking:       models.BigInt{Int: *big.NewInt(0)},
-				OperatorStaking:        models.BigInt{Int: *big.NewInt(0)},
-				DelegatorShare:         0,
-				DelegatorsNum:          0,
-				TotalOperatorEarnings:  models.BigInt{Int: *big.NewInt(0)},
-				TodayOperatorEarnings:  models.BigInt{Int: *big.NewInt(0)},
-				TotalDelegatorEarnings: models.BigInt{Int: *big.NewInt(0)},
-				TodayDelegatorEarnings: models.BigInt{Int: *big.NewInt(0)},
+				Address:                            input.Address,
+				Status:                             models.NodeStatusQuit,
+				GPUName:                            "",
+				GPUVram:                            0,
+				Version:                            "",
+				InUseModelIDs:                      []string{},
+				ModelIDs:                           []string{},
+				StakingScore:                       0,
+				QOSScore:                           0,
+				ProbWeight:                         0,
+				DelegatorStaking:                   models.BigInt{Int: *big.NewInt(0)},
+				OperatorStaking:                    models.BigInt{Int: *big.NewInt(0)},
+				DelegatorShare:                     0,
+				DelegatorsNum:                      0,
+				TotalOperatorEarnings:              models.BigInt{Int: *big.NewInt(0)},
+				TodayOperatorEarnings:              models.BigInt{Int: *big.NewInt(0)},
+				TotalDelegatorEarnings:             models.BigInt{Int: *big.NewInt(0)},
+				TodayDelegatorEarnings:             models.BigInt{Int: *big.NewInt(0)},
+				EstimatedUpcomingOperatorEmission:  models.BigInt{Int: *operatorEmissionEstimate.EstimatedEmission},
+				EstimatedUpcomingDelegatorEmission: models.BigInt{Int: *delegatorEmissionEstimate.EstimatedEmission},
+				EmissionWeekStart:                  operatorEmissionEstimate.EmissionWeekStart,
+				EmissionWeekEnd:                    operatorEmissionEstimate.EmissionWeekEnd,
+				EstimateUpdatedAt:                  operatorEmissionEstimate.EstimateUpdatedAt,
 			},
 		}, nil
 	}

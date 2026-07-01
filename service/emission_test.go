@@ -42,6 +42,40 @@ func TestGetPreviousEmissionWeekInfoReturnsPreviousCompleteWeek(t *testing.T) {
 	}
 }
 
+func TestGetCurrentEmissionWeekInfoReturnsCurrentIncompleteWeek(t *testing.T) {
+	start := "2026-01-01T09:33:00+08:00"
+	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+
+	info, err := GetCurrentEmissionWeekInfo(now, start)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if info.WeekIndex != 1 || info.YearIndex != 1 {
+		t.Fatalf("unexpected week/year: week=%d year=%d", info.WeekIndex, info.YearIndex)
+	}
+	expectedStart := time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)
+	expectedEnd := expectedStart.Add(7 * 24 * time.Hour)
+	if !info.WeekStartDate.Equal(expectedStart) || !info.WeekEndDate.Equal(expectedEnd) {
+		t.Fatalf("unexpected week window: [%s, %s)", info.WeekStartDate, info.WeekEndDate)
+	}
+	if info.NodeEmissionPoolCNX != 9280212 {
+		t.Fatalf("unexpected node emission pool: %d", info.NodeEmissionPoolCNX)
+	}
+}
+
+func TestGetCurrentEmissionWeekInfoUsesFirstWeekBeforeMainnetStart(t *testing.T) {
+	start := "2026-01-01T00:00:00Z"
+	now := time.Date(2025, 12, 31, 12, 0, 0, 0, time.UTC)
+
+	info, err := GetCurrentEmissionWeekInfo(now, start)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if info.WeekIndex != 0 || !info.WeekStartDate.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected current week: index=%d start=%s", info.WeekIndex, info.WeekStartDate)
+	}
+}
+
 func TestGetPreviousEmissionWeekInfoRequiresCompletedWeek(t *testing.T) {
 	start := "2026-01-01T00:00:00Z"
 	now := time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)

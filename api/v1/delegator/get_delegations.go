@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 	"math/big"
 	"sync"
@@ -31,6 +32,10 @@ type DelegationInfo struct {
 	StakedAt                     int64         `json:"staked_at"`
 	TotalEarnings                models.BigInt `json:"total_earnings"`
 	TodayEarnings                models.BigInt `json:"today_earnings"`
+	EstimatedUpcomingEmission    models.BigInt `json:"estimated_upcoming_emission"`
+	EmissionWeekStart            int64         `json:"emission_week_start"`
+	EmissionWeekEnd              int64         `json:"emission_week_end"`
+	EstimateUpdatedAt            int64         `json:"estimate_updated_at"`
 }
 
 type DelegationsResult struct {
@@ -177,6 +182,7 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 		if node != nil {
 			nodeNetwork = node.Network
 		}
+		emissionEstimate := service.GetSingleDelegationEmissionEstimate(input.UserAddress, userStaking.NodeAddress, userStaking.Network)
 		res = append(res, DelegationInfo{
 			UserAddress:                  userStaking.DelegatorAddress,
 			NodeAddress:                  userStaking.NodeAddress,
@@ -187,6 +193,10 @@ func GetDelegations(c *gin.Context, input *GetDelegationsInput) (*GetDelegations
 			StakedAt:                     userStaking.UpdatedAt.Unix(),
 			TotalEarnings:                totalEarningsMap[key],
 			TodayEarnings:                todayEarningsMap[key],
+			EstimatedUpcomingEmission:    models.BigInt{Int: *emissionEstimate.EstimatedEmission},
+			EmissionWeekStart:            emissionEstimate.EmissionWeekStart,
+			EmissionWeekEnd:              emissionEstimate.EmissionWeekEnd,
+			EstimateUpdatedAt:            emissionEstimate.EstimateUpdatedAt,
 		})
 	}
 

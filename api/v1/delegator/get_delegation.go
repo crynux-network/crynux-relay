@@ -4,6 +4,7 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 	"math/big"
 	"time"
@@ -61,6 +62,7 @@ func GetDelegation(c *gin.Context, input *GetDelegationInput) (*GetDelegationOut
 	if node != nil {
 		nodeNetwork = node.Network
 	}
+	emissionEstimate := service.GetSingleDelegationEmissionEstimate(input.UserAddress, input.NodeAddress, input.Network)
 
 	return &GetDelegationOutput{
 		Data: &DelegationInfo{
@@ -73,6 +75,10 @@ func GetDelegation(c *gin.Context, input *GetDelegationInput) (*GetDelegationOut
 			StakedAt:                     userStaking.UpdatedAt.Unix(),
 			TotalEarnings:                models.BigInt{Int: *totalEarningAmount},
 			TodayEarnings:                models.BigInt{Int: *todayEarningAmount},
+			EstimatedUpcomingEmission:    models.BigInt{Int: *emissionEstimate.EstimatedEmission},
+			EmissionWeekStart:            emissionEstimate.EmissionWeekStart,
+			EmissionWeekEnd:              emissionEstimate.EmissionWeekEnd,
+			EstimateUpdatedAt:            emissionEstimate.EstimateUpdatedAt,
 		},
 	}, nil
 }

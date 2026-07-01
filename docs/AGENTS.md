@@ -24,6 +24,7 @@
 | [relay_account_event_cache_flow.md](./relay_account_event_cache_flow.md) | End-to-end relay account flow from event creation to in-memory cache mutation and DB projection for task and withdraw paths |
 | [portal_netstats_chart.md](./portal_netstats_chart.md) | Portal netstats chart inventory, data sources, and aggregation logic |
 | [emission.md](./emission.md) | Emission week boundaries, task fee allocation, vesting creation and release, and chart aggregation |
+| [emission_estimation.md](./emission_estimation.md) | Current-week estimated upcoming emission calculation, snapshot refresh, and API exposure |
 
 ## Doc Update Requirements
 
