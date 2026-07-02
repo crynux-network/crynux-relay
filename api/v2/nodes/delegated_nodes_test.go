@@ -90,9 +90,41 @@ func TestGetDelegatedNodesSortsRunningBeforeStoppedThenMetricDesc(t *testing.T) 
 	if total != 3 {
 		t.Fatalf("expected total 3, got %d", total)
 	}
-	addresses := []string{res[0].Address, res[1].Address, res[2].Address}
+	addresses := []string{res[0].Node.Address, res[1].Node.Address, res[2].Node.Address}
 	if !reflect.DeepEqual(addresses, []string{"0xbbb", "0xaaa", "0xccc"}) {
 		t.Fatalf("unexpected order %v", addresses)
+	}
+}
+
+func TestGetDelegatedNodesSortsByDelegationAPRFromSnapshot(t *testing.T) {
+	db := setupDelegatedNodesTestDB(t)
+	nodes := []models.Node{
+		{Address: "0xaaa", Network: "base", DelegatorShare: 10},
+		{Address: "0xbbb", Network: "base", DelegatorShare: 10},
+	}
+	if err := db.Create(&nodes).Error; err != nil {
+		t.Fatalf("create nodes: %v", err)
+	}
+	snapshots := []models.DelegatedStakingNodeListSnapshot{
+		{NodeAddress: "0xaaa", StatusGroup: "running", StatusRank: 0, GPUName: "RTX 4090", GPUVram: 24, Version: "1.0.0", DelegationApr12m: 0.25},
+		{NodeAddress: "0xbbb", StatusGroup: "running", StatusRank: 0, GPUName: "RTX 5090", GPUVram: 32, Version: "1.0.1", DelegationApr12m: 0.75, AprObservationDays: 12},
+	}
+	if err := db.Create(&snapshots).Error; err != nil {
+		t.Fatalf("create snapshots: %v", err)
+	}
+
+	res, total, err := getDelegatedNodes(context.Background(), db, &delegatedNodeListFilters{SortBy: "delegation_apr_12m"}, 0, 10)
+	if err != nil {
+		t.Fatalf("get delegated nodes: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected total 2, got %d", total)
+	}
+	if res[0].Node.Address != "0xbbb" {
+		t.Fatalf("unexpected first node %s", res[0].Node.Address)
+	}
+	if res[0].Snapshot.DelegationApr12m != 0.75 || res[0].Snapshot.AprObservationDays != 12 {
+		t.Fatalf("unexpected APR snapshot %+v", res[0].Snapshot)
 	}
 }
 
@@ -131,6 +163,9 @@ func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
 		EmissionWeekStart:                  1767830400,
 		EmissionWeekEnd:                    1768435200,
 		EstimateUpdatedAt:                  1768000000,
+		DelegationApr12m:                   0.25,
+		AprObservationDays:                 30,
+		DelegationAprUpdatedAt:             1768000001,
 	})
 	if err != nil {
 		t.Fatalf("marshal node: %v", err)
@@ -146,6 +181,9 @@ func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
 		"emission_week_start",
 		"emission_week_end",
 		"estimate_updated_at",
+		"delegation_apr_12m",
+		"apr_observation_days",
+		"delegation_apr_updated_at",
 	} {
 		if _, ok := fields[field]; !ok {
 			t.Fatalf("missing field %s in %s", field, payload)

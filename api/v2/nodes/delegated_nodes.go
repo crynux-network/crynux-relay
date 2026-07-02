@@ -26,6 +26,7 @@ var delegatedNodeSortColumns = map[string]string{
 	"prob_weight":          "prob_weight",
 	"qos":                  "qos",
 	"gpu_vram":             "gpu_vram",
+	"delegation_apr_12m":   "delegation_apr_12m",
 }
 
 type GetDelegatedNodesInput struct {
@@ -64,6 +65,11 @@ type delegatedNodeListFilters struct {
 	GPUNames     []string
 	Versions     []string
 	SortBy       string
+}
+
+type delegatedNodeListItem struct {
+	Node     *models.Node
+	Snapshot models.DelegatedStakingNodeListSnapshot
 }
 
 func getRepeatedQueryValues(c *gin.Context, key string) []string {
@@ -127,7 +133,7 @@ func applyDelegatedNodeSnapshotFilters(query *gorm.DB, filters *delegatedNodeLis
 	return query
 }
 
-func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeListFilters, offset, limit int) ([]*models.Node, int64, error) {
+func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeListFilters, offset, limit int) ([]*delegatedNodeListItem, int64, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -140,7 +146,7 @@ func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeL
 	sortColumn := delegatedNodeSortColumns[filters.SortBy]
 	var snapshots []models.DelegatedStakingNodeListSnapshot
 	if err := dbi.
-		Select("node_address").
+		Select("node_address, delegation_apr_12m, apr_observation_days, delegation_apr_updated_at").
 		Order("status_rank ASC").
 		Order(sortColumn + " DESC").
 		Order("node_address ASC").
@@ -155,7 +161,7 @@ func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeL
 		addresses = append(addresses, snapshot.NodeAddress)
 	}
 	if len(addresses) == 0 {
-		return []*models.Node{}, total, nil
+		return []*delegatedNodeListItem{}, total, nil
 	}
 
 	var loadedNodes []*models.Node
@@ -167,13 +173,16 @@ func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeL
 		nodeByAddress[node.Address] = node
 	}
 
-	nodes := make([]*models.Node, 0, len(snapshots))
+	items := make([]*delegatedNodeListItem, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		if node, ok := nodeByAddress[snapshot.NodeAddress]; ok {
-			nodes = append(nodes, node)
+			items = append(items, &delegatedNodeListItem{
+				Node:     node,
+				Snapshot: snapshot,
+			})
 		}
 	}
-	return nodes, total, nil
+	return items, total, nil
 }
 
 func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDelegatedNodesOutput, error) {
@@ -191,19 +200,19 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 	if err != nil {
 		return nil, err
 	}
-	nodes, total, err := getDelegatedNodes(c.Request.Context(), config.GetDB(), filters, offset, limit)
+	items, total, err := getDelegatedNodes(c.Request.Context(), config.GetDB(), filters, offset, limit)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 
 	nodeDatas := make([]*Node, 0)
-	results := make([]*Node, len(nodes))
+	results := make([]*Node, len(items))
 	semaphore := make(chan struct{}, 10)
-	errCh := make(chan error, len(nodes))
+	errCh := make(chan error, len(items))
 	var wg sync.WaitGroup
-	for i, node := range nodes {
+	for i, item := range items {
 		idx := i
-		n := node
+		listItem := item
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -211,11 +220,12 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 			defer func() {
 				<-semaphore
 			}()
-			nodeData, err := getNodeData(c.Request.Context(), n)
+			nodeData, err := getNodeData(c.Request.Context(), listItem.Node)
 			if err != nil {
 				errCh <- err
 				return
 			}
+			applyDelegationAPRSnapshot(nodeData, &listItem.Snapshot)
 			results[idx] = nodeData
 		}()
 	}

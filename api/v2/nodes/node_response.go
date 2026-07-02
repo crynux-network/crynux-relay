@@ -40,6 +40,9 @@ type Node struct {
 	EmissionWeekStart                  int64             `json:"emission_week_start"`
 	EmissionWeekEnd                    int64             `json:"emission_week_end"`
 	EstimateUpdatedAt                  int64             `json:"estimate_updated_at"`
+	DelegationApr12m                   float64           `json:"delegation_apr_12m"`
+	AprObservationDays                 uint32            `json:"apr_observation_days"`
+	DelegationAprUpdatedAt             int64             `json:"delegation_apr_updated_at"`
 }
 
 func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
@@ -119,6 +122,17 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 		EmissionWeekEnd:                    operatorEmissionEstimate.EmissionWeekEnd,
 		EstimateUpdatedAt:                  operatorEmissionEstimate.EstimateUpdatedAt,
 	}, nil
+}
+
+func applyDelegationAPRSnapshot(nodeData *Node, snapshot *models.DelegatedStakingNodeListSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	nodeData.DelegationApr12m = snapshot.DelegationApr12m
+	nodeData.AprObservationDays = snapshot.AprObservationDays
+	if !snapshot.DelegationAprUpdatedAt.IsZero() {
+		nodeData.DelegationAprUpdatedAt = snapshot.DelegationAprUpdatedAt.Unix()
+	}
 }
 
 type NodeResponse struct {

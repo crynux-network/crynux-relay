@@ -57,6 +57,84 @@ func TestNormalizeVestingInputRejectsInvalidType(t *testing.T) {
 	}
 }
 
+func TestNormalizeVestingDelegationDetailsRequiresAggregateSum(t *testing.T) {
+	payload := vestingSignPayload{
+		Address:      "0x0000000000000000000000000000000000000001",
+		TotalAmount:  "1000",
+		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		DurationDays: 10,
+		Type:         models.VestingTypeDelegation,
+		Source:       "emission",
+		ExternalID:   "item-1",
+	}
+	input := CreateVestingRecordInput{
+		DelegationDetails: []CreateVestingDelegationDetailInput{
+			{
+				UserAddress:      payload.Address,
+				NodeAddress:      "0x0000000000000000000000000000000000000002",
+				Network:          "base",
+				TaskFee:          "500",
+				EmissionAmount:   "400",
+				Source:           "emission",
+				DetailExternalID: "detail-1",
+				StartTime:        payload.StartTime,
+			},
+		},
+	}
+
+	_, err := normalizeVestingDelegationDetails(input, payload, big.NewInt(1000))
+	if !errors.Is(err, ErrInvalidVestingDelegationDetail) {
+		t.Fatalf("expected ErrInvalidVestingDelegationDetail, got %v", err)
+	}
+}
+
+func TestNormalizeVestingDelegationDetailsBuildsDetailRows(t *testing.T) {
+	payload := vestingSignPayload{
+		Address:      "0x0000000000000000000000000000000000000001",
+		TotalAmount:  "1000",
+		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		DurationDays: 10,
+		Type:         models.VestingTypeDelegation,
+		Source:       "emission",
+		ExternalID:   "item-1",
+	}
+	input := CreateVestingRecordInput{
+		DelegationDetails: []CreateVestingDelegationDetailInput{
+			{
+				UserAddress:      payload.Address,
+				NodeAddress:      "0x0000000000000000000000000000000000000002",
+				Network:          "base",
+				TaskFee:          "500",
+				EmissionAmount:   "400",
+				Source:           "emission",
+				DetailExternalID: "detail-1",
+				StartTime:        payload.StartTime,
+			},
+			{
+				UserAddress:      payload.Address,
+				NodeAddress:      "0x0000000000000000000000000000000000000003",
+				Network:          "near",
+				TaskFee:          "700",
+				EmissionAmount:   "600",
+				Source:           "emission",
+				DetailExternalID: "detail-2",
+				StartTime:        payload.StartTime,
+			},
+		},
+	}
+
+	details, err := normalizeVestingDelegationDetails(input, payload, big.NewInt(1000))
+	if err != nil {
+		t.Fatalf("expected valid details, got %v", err)
+	}
+	if len(details) != 2 {
+		t.Fatalf("expected 2 details, got %d", len(details))
+	}
+	if details[0].EmissionAmount.String() != "400" || details[1].EmissionAmount.String() != "600" {
+		t.Fatalf("unexpected details: %+v", details)
+	}
+}
+
 func TestProcessDueVestingReleasesSkipsWhenPendingReleaseExists(t *testing.T) {
 	ctx := context.Background()
 	db := newRelayAccountVestingTestDB(t)

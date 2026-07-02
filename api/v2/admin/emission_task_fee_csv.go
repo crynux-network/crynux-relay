@@ -15,9 +15,13 @@ import (
 )
 
 type emissionTaskFeeParticipant struct {
-	Address string
-	Type    string
-	TaskFee *big.Int
+	Address          string
+	Type             string
+	TaskFee          *big.Int
+	UserAddress      string
+	NodeAddress      string
+	Network          string
+	DetailExternalID string
 }
 
 type emissionTaskFeeAggregateRow struct {
@@ -25,12 +29,23 @@ type emissionTaskFeeAggregateRow struct {
 	TaskFee string
 }
 
+type emissionTaskFeeDelegationDetailRow struct {
+	UserAddress string
+	NodeAddress string
+	Network     string
+	TaskFee     string
+}
+
 type emissionTaskFeeCSVRow struct {
-	Address   string
-	Type      string
-	TaskFee   string
-	Emission  string
-	StartTime string
+	Address          string
+	Type             string
+	TaskFee          string
+	Emission         string
+	StartTime        string
+	UserAddress      string
+	NodeAddress      string
+	Network          string
+	DetailExternalID string
 }
 
 func ExportEmissionTaskFeeCSV(c *gin.Context) {
@@ -42,7 +57,8 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 		return
 	}
 
-	participants, err := loadEmissionTaskFeeParticipants(weekInfo.WeekStartDate, weekInfo.WeekEndDate)
+	emissionStartTime := fmt.Sprintf("%d", weekInfo.WeekEndDate.Unix())
+	participants, err := loadEmissionTaskFeeParticipants(weekInfo.WeekStartDate, weekInfo.WeekEndDate, emissionStartTime)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -54,6 +70,12 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 		cmp := participants[i].TaskFee.Cmp(participants[j].TaskFee)
 		if cmp == 0 {
 			if participants[i].Type == participants[j].Type {
+				if participants[i].Address == participants[j].Address {
+					if participants[i].NodeAddress == participants[j].NodeAddress {
+						return participants[i].Network < participants[j].Network
+					}
+					return participants[i].NodeAddress < participants[j].NodeAddress
+				}
 				return participants[i].Address < participants[j].Address
 			}
 			return participants[i].Type < participants[j].Type
@@ -66,14 +88,13 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 		totalTaskFee.Add(totalTaskFee, p.TaskFee)
 	}
 
-	emissionStartTime := fmt.Sprintf("%d", weekInfo.WeekEndDate.Unix())
 	rows := buildEmissionTaskFeeCSVRows(participants, totalTaskFee, weekInfo.NodeEmissionPoolCNX, emissionStartTime)
 
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=emission_task_fee_%s_%s.csv", weekInfo.WeekStartDate.Format("20060102"), weekInfo.WeekEndDate.AddDate(0, 0, -1).Format("20060102")))
 
 	writer := csv.NewWriter(c.Writer)
-	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time"}); err != nil {
+	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time", "user_address", "node_address", "network", "detail_external_id"}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
@@ -81,7 +102,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 
 	for _, row := range rows {
-		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime}); err != nil {
+		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime, row.UserAddress, row.NodeAddress, row.Network, row.DetailExternalID}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"message": err.Error(),
 			})
@@ -98,7 +119,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 }
 
-func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTaskFeeParticipant, error) {
+func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time, emissionStartTime string) ([]emissionTaskFeeParticipant, error) {
 	db := config.GetDB()
 
 	nodeRows := make([]emissionTaskFeeAggregateRow, 0)
@@ -110,11 +131,11 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 		return nil, err
 	}
 
-	delegatorRows := make([]emissionTaskFeeAggregateRow, 0)
-	if err := db.Model(&models.UserEarning{}).
-		Select("user_address as address, SUM(CAST(earning AS DECIMAL(65,0))) as task_fee").
+	delegatorRows := make([]emissionTaskFeeDelegationDetailRow, 0)
+	if err := db.Model(&models.UserStakingEarning{}).
+		Select("user_address, node_address, network, SUM(CAST(earning AS DECIMAL(65,0))) as task_fee").
 		Where("time >= ? AND time < ?", weekStart, weekEnd).
-		Group("user_address").
+		Group("user_address, node_address, network").
 		Scan(&delegatorRows).Error; err != nil {
 		return nil, err
 	}
@@ -138,9 +159,13 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 			continue
 		}
 		participants = append(participants, emissionTaskFeeParticipant{
-			Address: row.Address,
-			Type:    models.VestingTypeDelegation,
-			TaskFee: taskFee,
+			Address:          row.UserAddress,
+			Type:             models.VestingTypeDelegation,
+			TaskFee:          taskFee,
+			UserAddress:      row.UserAddress,
+			NodeAddress:      row.NodeAddress,
+			Network:          row.Network,
+			DetailExternalID: buildEmissionDetailExternalID(emissionStartTime, row.UserAddress, row.NodeAddress, row.Network),
 		})
 	}
 
@@ -158,11 +183,15 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 			emissionCNX := big.NewInt(0).Div(numerator, totalTaskFee).Int64()
 			remainingEmission -= emissionCNX
 			rows = append(rows, emissionTaskFeeCSVRow{
-				Address:   p.Address,
-				Type:      p.Type,
-				TaskFee:   formatCNXAmount(p.TaskFee),
-				Emission:  formatIntegerCNX(emissionCNX),
-				StartTime: emissionStartTime,
+				Address:          p.Address,
+				Type:             p.Type,
+				TaskFee:          formatCNXAmount(p.TaskFee),
+				Emission:         formatIntegerCNX(emissionCNX),
+				StartTime:        emissionStartTime,
+				UserAddress:      p.UserAddress,
+				NodeAddress:      p.NodeAddress,
+				Network:          p.Network,
+				DetailExternalID: p.DetailExternalID,
 			})
 		}
 	}
@@ -176,6 +205,10 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 	})
 
 	return rows
+}
+
+func buildEmissionDetailExternalID(emissionStartTime, userAddress, nodeAddress, network string) string {
+	return fmt.Sprintf("emission:%s:%s:%s:%s", emissionStartTime, userAddress, nodeAddress, network)
 }
 
 func getPreviousEmissionWeekInfo() (*service.EmissionWeekInfo, error) {

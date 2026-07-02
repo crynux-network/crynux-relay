@@ -17,29 +17,42 @@ import (
 )
 
 var (
-	ErrInvalidVestingAddress         = errors.New("invalid vesting address")
-	ErrInvalidVestingAmount          = errors.New("invalid vesting amount")
-	ErrInvalidVestingDuration        = errors.New("invalid vesting duration")
-	ErrInvalidVestingSignature       = errors.New("invalid vesting signature")
-	ErrInvalidVestingSigner          = errors.New("invalid vesting signer")
-	ErrInvalidVestingType            = errors.New("invalid vesting type")
-	ErrInvalidVestingSource          = errors.New("invalid vesting source")
-	ErrInvalidVestingExternalID      = errors.New("invalid vesting external id")
-	ErrVestingSignerAddressNotSet    = errors.New("vesting signer address not set")
-	ErrVestingRecordNotFound         = errors.New("vesting record not found")
-	ErrVestingReleaseRangeInvalid    = errors.New("vesting release range invalid")
-	ErrVestingReleaseExceedsSchedule = errors.New("vesting release exceeds schedule")
+	ErrInvalidVestingAddress          = errors.New("invalid vesting address")
+	ErrInvalidVestingAmount           = errors.New("invalid vesting amount")
+	ErrInvalidVestingDuration         = errors.New("invalid vesting duration")
+	ErrInvalidVestingSignature        = errors.New("invalid vesting signature")
+	ErrInvalidVestingSigner           = errors.New("invalid vesting signer")
+	ErrInvalidVestingType             = errors.New("invalid vesting type")
+	ErrInvalidVestingSource           = errors.New("invalid vesting source")
+	ErrInvalidVestingExternalID       = errors.New("invalid vesting external id")
+	ErrInvalidVestingDelegationDetail = errors.New("invalid vesting delegation detail")
+	ErrVestingSignerAddressNotSet     = errors.New("vesting signer address not set")
+	ErrVestingRecordNotFound          = errors.New("vesting record not found")
+	ErrVestingReleaseRangeInvalid     = errors.New("vesting release range invalid")
+	ErrVestingReleaseExceedsSchedule  = errors.New("vesting release exceeds schedule")
 )
 
+type CreateVestingDelegationDetailInput struct {
+	UserAddress      string `json:"user_address"`
+	NodeAddress      string `json:"node_address"`
+	Network          string `json:"network"`
+	TaskFee          string `json:"task_fee"`
+	EmissionAmount   string `json:"emission_amount"`
+	Source           string `json:"source"`
+	DetailExternalID string `json:"detail_external_id"`
+	StartTime        int64  `json:"start_time"`
+}
+
 type CreateVestingRecordInput struct {
-	Address        string `json:"address"`
-	TotalAmount    string `json:"total_amount"`
-	StartTime      int64  `json:"start_time"`
-	DurationDays   uint   `json:"duration_days"`
-	Type           string `json:"type"`
-	Source         string `json:"source"`
-	ExternalID     string `json:"external_id"`
-	AdminSignature string `json:"admin_signature"`
+	Address           string                               `json:"address"`
+	TotalAmount       string                               `json:"total_amount"`
+	StartTime         int64                                `json:"start_time"`
+	DurationDays      uint                                 `json:"duration_days"`
+	Type              string                               `json:"type"`
+	Source            string                               `json:"source"`
+	ExternalID        string                               `json:"external_id"`
+	AdminSignature    string                               `json:"admin_signature"`
+	DelegationDetails []CreateVestingDelegationDetailInput `json:"delegation_details"`
 }
 
 type vestingSignPayload struct {
@@ -137,6 +150,73 @@ func verifyVestingCreationSignature(input CreateVestingRecordInput, payload vest
 	return nil
 }
 
+func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload vestingSignPayload, totalAmount *big.Int) ([]models.VestingDelegationEmissionDetail, error) {
+	if len(input.DelegationDetails) == 0 {
+		return nil, nil
+	}
+	if payload.Type != models.VestingTypeDelegation || payload.Source != delegatedStakingAPREmissionSource {
+		return nil, ErrInvalidVestingDelegationDetail
+	}
+
+	verifier := blockchain.NewSignatureVerifier()
+	details := make([]models.VestingDelegationEmissionDetail, 0, len(input.DelegationDetails))
+	sum := big.NewInt(0)
+	seenDetailExternalIDs := make(map[string]struct{}, len(input.DelegationDetails))
+	for _, detail := range input.DelegationDetails {
+		if err := verifier.ValidateAddress(detail.UserAddress); err != nil {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		if !strings.EqualFold(detail.UserAddress, payload.Address) {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		if err := verifier.ValidateAddress(detail.NodeAddress); err != nil {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		network := strings.TrimSpace(detail.Network)
+		if network == "" {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		source := strings.TrimSpace(detail.Source)
+		if source != payload.Source {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		detailExternalID := strings.TrimSpace(detail.DetailExternalID)
+		if detailExternalID == "" {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		if _, ok := seenDetailExternalIDs[detailExternalID]; ok {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		seenDetailExternalIDs[detailExternalID] = struct{}{}
+		if detail.StartTime != payload.StartTime {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		taskFee, ok := big.NewInt(0).SetString(strings.TrimSpace(detail.TaskFee), 10)
+		if !ok || !isValidUint256Amount(taskFee) {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		emissionAmount, ok := big.NewInt(0).SetString(strings.TrimSpace(detail.EmissionAmount), 10)
+		if !ok || !isValidUint256Amount(emissionAmount) {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		sum.Add(sum, emissionAmount)
+		details = append(details, models.VestingDelegationEmissionDetail{
+			UserAddress:      payload.Address,
+			NodeAddress:      detail.NodeAddress,
+			Network:          network,
+			TaskFee:          models.BigInt{Int: *taskFee},
+			EmissionAmount:   models.BigInt{Int: *emissionAmount},
+			Source:           source,
+			DetailExternalID: detailExternalID,
+			StartTime:        time.Unix(detail.StartTime, 0).UTC(),
+		})
+	}
+	if sum.Cmp(totalAmount) != 0 {
+		return nil, ErrInvalidVestingDelegationDetail
+	}
+	return details, nil
+}
+
 func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVestingRecordInput) ([]models.VestingRecord, error) {
 	if len(inputs) == 0 {
 		return []models.VestingRecord{}, nil
@@ -150,6 +230,10 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 				return err
 			}
 			if err := verifyVestingCreationSignature(input, payload); err != nil {
+				return err
+			}
+			details, err := normalizeVestingDelegationDetails(input, payload, amount)
+			if err != nil {
 				return err
 			}
 			record := models.VestingRecord{
@@ -166,6 +250,14 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 			}
 			if err := tx.Create(&record).Error; err != nil {
 				return err
+			}
+			for i := range details {
+				details[i].VestingRecordID = record.ID
+			}
+			if len(details) > 0 {
+				if err := tx.Create(&details).Error; err != nil {
+					return err
+				}
 			}
 			if err := createVestingCreatedRelayAccountEvent(ctx, tx, record); err != nil {
 				return err

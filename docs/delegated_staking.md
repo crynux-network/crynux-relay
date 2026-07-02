@@ -52,6 +52,7 @@ Relay MUST store delegated staking in these places:
 | `node_earnings` | Operator-side and delegator-side earnings of a node |
 | `user_staking_earnings` | Earnings of one delegation tuple `(user, node, network)` |
 | `user_earnings` | Total delegated staking earnings of one user |
+| `vesting_delegation_emission_details` | Issued delegation emission mapped back to `(user, node, network)` details |
 | `node_stakings` | Historical operator staking and delegated staking snapshots |
 | `node_delegator_counts` | Historical delegator count snapshots |
 | `delegated_slash_jobs` | Durable node-level delegated slash progress |
@@ -194,6 +195,18 @@ Relay MUST also maintain historical snapshots for:
 - delegated staking
 - delegator count
 
+Relay MUST calculate node-level delegated staking APR as a simple annualized APR:
+
+```
+node delegation APR = node delegator income over the trailing 12 months * 365 / sum of daily delegated staking over the trailing 12 months
+```
+
+The numerator MUST include both delegated staking task fee income and issued delegation emission income. Delegated staking task fee income MUST use `node_earnings.delegator_earning` daily rows for the node. Issued delegation emission income MUST use `vesting_delegation_emission_details.emission_amount` rows for the node. Relay MUST count the full mapped vesting grant amount, including locked and released portions of the linked aggregate vesting record. Relay MUST NOT use current incomplete-week emission estimates in APR.
+
+The denominator MUST use `node_stakings.delegator_staking` daily rows for the node. Relay MUST calculate one APR for the node delegator pool and MUST NOT average per-delegation APR values. The APR value MUST be `0` when the denominator is `0`. Relay MUST NOT suppress APR only because the observation period contains fewer than 365 daily rows.
+
+Relay MUST refresh delegated staking APR in `delegated_staking_node_list_snapshots` as part of the delegated staking node list snapshot rebuild. The snapshot MUST store the APR value, the number of staking snapshot days used as the denominator observation count, and the APR refresh time. Stakeable node list APIs MUST use the snapshot fields for filtering, sorting, pagination, and response data and MUST NOT aggregate `delegations`, `node_stakings`, `node_earnings`, or `user_staking_earnings` during list requests.
+
 ## API Requirements
 
 Relay MUST expose delegated staking through these public APIs:
@@ -219,6 +232,8 @@ Relay MUST expose delegated staking statistics through these APIs:
 - `GET /v1/stats/line_chart/delegation/:user_address/:node_address/earnings`
 
 The delegated-staking-only node APIs and statistics APIs MUST return `404` when `delegator_share = 0`.
+
+`GET /v2/delegated_staking/nodes` and `GET /v2/delegated_staking/nodes/:address` MUST include node-level delegated staking APR fields in each node response. `delegation_apr_12m` MUST be the simple annualized APR ratio, where `1.0` means 100% APR. `apr_observation_days` MUST be the number of daily delegated staking snapshot rows used in the denominator. `delegation_apr_updated_at` MUST be the Unix timestamp for the APR snapshot refresh time. The delegated staking node list API MUST support `sort_by=delegation_apr_12m`.
 
 `GET /v1/delegator/:user_address/delegation` and `GET /v1/delegator/:user_address/delegations` MUST return user-visible delegation records with `status = active`, `status = inactive`, or `status = slashed`. They MUST include the delegation blockchain network and the node current blockchain network. Earnings lookup for these APIs MUST be keyed by `(node_address, network)`.
 
