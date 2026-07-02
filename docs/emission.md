@@ -46,7 +46,7 @@ Relay task settlement MUST split task payment into DAO income, node operator inc
 Emission allocation uses task fee income that has already been persisted in earning tables:
 
 - Node operator task fee MUST be read from `node_earnings.operator_earning` and grouped by `node_address`.
-- Delegator task fee MUST be read from `user_earnings.earning` and grouped by `user_address`.
+- Delegator task fee MUST be read from `user_staking_earnings.earning` and grouped by `(user_address, node_address, network)`.
 - Rows with non-positive task fee MUST be excluded.
 - Node and delegation rows MUST remain separate even when the same address appears in both roles.
 
@@ -71,7 +71,7 @@ row_emission = floor(row_task_fee * node_emission_pool / total_task_fee)
 
 The CSV MUST include `start_time` as the Unix timestamp for the vesting start time. `start_time` MUST equal the selected emission week's exclusive end boundary, which is the UTC `00:00:00` timestamp at `emission_week_anchor + (week_index + 1) * 7 days`. Every CSV row, including the `remainder` row, MUST contain the same `start_time` value.
 
-The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Relay MUST append a `remainder` row containing any integer CNX amount left after floor division. The remainder row is not a vesting recipient.
+The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Delegation rows MUST include `user_address`, `node_address`, `network`, and `detail_external_id`. The `address` column for a delegation row MUST equal `user_address`. `detail_external_id` MUST identify the delegation emission detail for the selected emission vesting start time, delegator, node, and blockchain network. Relay MUST append a `remainder` row containing any integer CNX amount left after floor division. The remainder row is not a vesting recipient.
 
 ## Vesting Creation
 
@@ -85,6 +85,7 @@ Emission grants MUST be created through `POST /v2/admin/vesting`. Each item MUST
 - `source`
 - `external_id`
 - `admin_signature`
+- `delegation_details`, only for delegation emission items that carry node attribution metadata
 
 The `type` field MUST be one of:
 
@@ -97,6 +98,10 @@ Relay MUST validate the admin signature against the configured `admin.vesting_si
 Relay MUST store created records in `vesting_records` with `released_amount = 0` and `status = active`. Relay MUST create a `VestingCreated` relay account event with zero amount for each created record. `VestingCreated` MUST anchor the signed vesting schedule and MUST NOT change relay account balance.
 
 The `(source, external_id)` pair MUST identify the external emission item and MUST remain unique.
+
+For `type = delegation` and `source = emission`, the admin submitter MUST create one signed aggregate vesting item per wallet-level group and attach the original delegation CSV rows as `delegation_details`. Relay MUST validate that every detail has the same `user_address` as the aggregate item address, non-empty `node_address`, non-empty `network`, positive `task_fee`, positive `emission_amount`, the same `source`, a unique `detail_external_id`, and the same `start_time`. Relay MUST reject the aggregate item unless the sum of `delegation_details.emission_amount` equals `total_amount`.
+
+Relay MUST create the aggregate `vesting_records` row and all linked `vesting_delegation_emission_details` rows in one transaction. The detail table MUST store delegation emission attribution by `vesting_record_id`, `user_address`, `node_address`, `network`, `task_fee`, `emission_amount`, `source`, `detail_external_id`, and `start_time`. The `(source, detail_external_id)` pair MUST remain unique. The vesting admin signature MUST continue to cover only the aggregate vesting record fields and MUST NOT include detail rows.
 
 Vesting records for a node address MAY be marked with `slashed = true` when that node address is slashed, regardless of vesting type. The `status` field MUST continue to represent only the release lifecycle. The `slashed` field MUST represent slash eligibility and release eligibility.
 
@@ -166,4 +171,4 @@ Chart aggregation MUST use only the canonical vesting types. The relay account c
 
 ## Relationship Summary
 
-Task settlement creates task fee income. Weekly emission allocation reads the settled task fee income for the previous complete emission week and computes emission amounts for node and delegation participants. Admin vesting creation turns those emission amounts into signed vesting records. Vesting release materializes those records into relay account balance over time. Emission charts read the original vesting grant amounts, split by vesting type and aligned to emission weeks.
+Task settlement creates task fee income. Weekly emission allocation reads the settled task fee income for the previous complete emission week and computes emission amounts for node operators and delegation details. Admin vesting creation turns those emission amounts into signed vesting records and stores delegation detail mappings for delegation emission records. Vesting release materializes those records into relay account balance over time. Emission charts read the original vesting grant amounts, split by vesting type and aligned to emission weeks.

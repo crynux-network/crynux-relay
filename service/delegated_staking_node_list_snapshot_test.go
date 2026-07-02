@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"crynux_relay/models"
+	"database/sql"
+	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -11,14 +13,32 @@ import (
 	"gorm.io/gorm"
 )
 
+func setupDelegationAPRTestTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.AutoMigrate(&models.VestingRecord{}, &models.VestingDelegationEmissionDetail{}, &models.NodeEarning{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	if err := db.Exec(`
+CREATE TABLE node_stakings (
+	id integer PRIMARY KEY AUTOINCREMENT,
+	created_at datetime,
+	updated_at datetime,
+	deleted_at datetime,
+	node_address text NOT NULL,
+	operator_staking text NOT NULL,
+	delegator_staking text NOT NULL,
+	time datetime NOT NULL
+)`).Error; err != nil {
+		t.Fatalf("create node_stakings: %v", err)
+	}
+}
+
 func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.VestingRecord{}); err != nil {
-		t.Fatalf("auto migrate: %v", err)
-	}
+	setupDelegationAPRTestTables(t, db)
 
 	network := "base"
 	nodeAddress := "0xnode"
@@ -31,8 +51,15 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 			userStakeAmount: map[string]*big.Int{},
 			nodeStakeAmount: map[string]*big.Int{},
 		},
+		"near": {
+			nodeDelegations: map[string]map[string]*big.Int{},
+			userDelegations: map[string]map[string]*big.Int{},
+			userStakeAmount: map[string]*big.Int{},
+			nodeStakeAmount: map[string]*big.Int{},
+		},
 	}
 	UpdateDelegation("0xdelegator", nodeAddress, big.NewInt(30), network)
+	UpdateDelegation("0xinactive", nodeAddress, big.NewInt(70), "near")
 	globalNodeVestingStakeCache = newNodeVestingStakeCache()
 	globalNodeVestingStakeCache.set(nodeAddress, []models.VestingRecord{
 		{
@@ -72,9 +99,51 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 			AdminSignature: "signature",
 			Status:         models.VestingStatusActive,
 		},
+		{
+			Address:        "0xdelegator",
+			TotalAmount:    models.BigInt{Int: *big.NewInt(285)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
+			StartTime:      time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC),
+			DurationDays:   180,
+			Type:           models.VestingTypeDelegation,
+			Source:         "emission",
+			ExternalID:     "emission-delegation-1",
+			AdminSignature: "signature",
+			Status:         models.VestingStatusActive,
+		},
 	}
 	if err := db.Create(&records).Error; err != nil {
 		t.Fatalf("create vesting records: %v", err)
+	}
+	if err := db.Create(&models.VestingDelegationEmissionDetail{
+		VestingRecordID:  records[2].ID,
+		UserAddress:      "0xdelegator",
+		NodeAddress:      nodeAddress,
+		Network:          network,
+		TaskFee:          models.BigInt{Int: *big.NewInt(30)},
+		EmissionAmount:   models.BigInt{Int: *big.NewInt(285)},
+		Source:           "emission",
+		DetailExternalID: "emission-detail-1",
+		StartTime:        time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC),
+	}).Error; err != nil {
+		t.Fatalf("create vesting delegation emission detail: %v", err)
+	}
+	earningTime := now.Add(-24 * time.Hour)
+	if err := db.Create(&models.NodeEarning{
+		NodeAddress:      nodeAddress,
+		OperatorEarning:  models.BigInt{Int: *big.NewInt(1)},
+		DelegatorEarning: models.BigInt{Int: *big.NewInt(15)},
+		Time:             sql.NullTime{Time: earningTime, Valid: true},
+	}).Error; err != nil {
+		t.Fatalf("create node earning: %v", err)
+	}
+	if err := db.Create(&models.NodeStaking{
+		NodeAddress:      nodeAddress,
+		OperatorStaking:  models.BigInt{Int: *big.NewInt(100)},
+		DelegatorStaking: models.BigInt{Int: *big.NewInt(300)},
+		Time:             earningTime,
+	}).Error; err != nil {
+		t.Fatalf("create node staking: %v", err)
 	}
 
 	snapshot, err := BuildDelegatedStakingNodeListSnapshot(context.Background(), db, models.Node{
@@ -110,5 +179,53 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 	}
 	if snapshot.StatusGroup != models.DelegatedStakingNodeStatusGroupRunning || snapshot.StatusRank != 0 {
 		t.Fatalf("unexpected status group/rank %s/%d", snapshot.StatusGroup, snapshot.StatusRank)
+	}
+	if math.Abs(snapshot.DelegationApr12m-365) > 0.000001 {
+		t.Fatalf("unexpected APR %f", snapshot.DelegationApr12m)
+	}
+	if snapshot.AprObservationDays != 1 {
+		t.Fatalf("unexpected APR observation days %d", snapshot.AprObservationDays)
+	}
+	if !snapshot.DelegationAprUpdatedAt.Equal(now.UTC()) {
+		t.Fatalf("unexpected APR updated at %s", snapshot.DelegationAprUpdatedAt)
+	}
+}
+
+func TestCalculateNodeDelegationAPR12mReturnsZeroForZeroDenominator(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	setupDelegationAPRTestTables(t, db)
+
+	nodeAddress := "0xnode"
+	now := time.Date(2026, 1, 29, 12, 0, 0, 0, time.UTC)
+	t1 := now.Add(-24 * time.Hour)
+	if err := db.Create(&models.NodeEarning{
+		NodeAddress:      nodeAddress,
+		OperatorEarning:  models.BigInt{Int: *big.NewInt(0)},
+		DelegatorEarning: models.BigInt{Int: *big.NewInt(50)},
+		Time:             sql.NullTime{Time: t1, Valid: true},
+	}).Error; err != nil {
+		t.Fatalf("create node earning: %v", err)
+	}
+	if err := db.Create(&models.NodeStaking{
+		NodeAddress:      nodeAddress,
+		OperatorStaking:  models.BigInt{Int: *big.NewInt(100)},
+		DelegatorStaking: models.BigInt{Int: *big.NewInt(0)},
+		Time:             t1,
+	}).Error; err != nil {
+		t.Fatalf("create node staking: %v", err)
+	}
+
+	apr, observationDays, err := CalculateNodeDelegationAPR12m(context.Background(), db, nodeAddress, now)
+	if err != nil {
+		t.Fatalf("calculate APR: %v", err)
+	}
+	if apr != 0 {
+		t.Fatalf("expected zero APR, got %f", apr)
+	}
+	if observationDays != 1 {
+		t.Fatalf("unexpected observation days %d", observationDays)
 	}
 }

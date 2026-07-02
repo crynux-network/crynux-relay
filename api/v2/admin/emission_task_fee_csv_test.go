@@ -14,9 +14,13 @@ func TestBuildEmissionTaskFeeCSVRowsAllocatesIntegerCNXAndRemainder(t *testing.T
 			TaskFee: big.NewInt(0).Mul(big.NewInt(2), wei),
 		},
 		{
-			Address: "0xdelegator",
-			Type:    "delegation",
-			TaskFee: big.NewInt(0).Mul(big.NewInt(1), wei),
+			Address:          "0xdelegator",
+			Type:             "delegation",
+			TaskFee:          big.NewInt(0).Mul(big.NewInt(1), wei),
+			UserAddress:      "0xdelegator",
+			NodeAddress:      "0xnode",
+			Network:          "base",
+			DetailExternalID: "emission:1767830400:0xdelegator:0xnode:base",
 		},
 	}
 	total := big.NewInt(0).Mul(big.NewInt(3), wei)
@@ -31,6 +35,9 @@ func TestBuildEmissionTaskFeeCSVRowsAllocatesIntegerCNXAndRemainder(t *testing.T
 	}
 	if rows[1].Address != "0xdelegator" || rows[1].Type != "delegation" || rows[1].TaskFee != "1.00" || rows[1].Emission != "3.00" || rows[1].StartTime != "1767830400" {
 		t.Fatalf("unexpected delegator row: %+v", rows[1])
+	}
+	if rows[1].UserAddress != "0xdelegator" || rows[1].NodeAddress != "0xnode" || rows[1].Network != "base" || rows[1].DetailExternalID != "emission:1767830400:0xdelegator:0xnode:base" {
+		t.Fatalf("unexpected delegator detail columns: %+v", rows[1])
 	}
 	if rows[2].Type != "remainder" || rows[2].TaskFee != "0.00" || rows[2].Emission != "1.00" || rows[2].StartTime != "1767830400" {
 		t.Fatalf("unexpected remainder row: %+v", rows[2])
