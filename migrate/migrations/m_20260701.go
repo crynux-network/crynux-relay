@@ -1,8 +1,6 @@
 package migrations
 
 import (
-	"time"
-
 	"github.com/go-gormigrate/gormigrate/v2"
 	"gorm.io/gorm"
 )
