@@ -28,5 +28,5 @@ type DelegatedStakingNodeListSnapshot struct {
 	QOS                    float64    `gorm:"column:qos;not null;default:0;index"`
 	DelegationApr12m       float64    `gorm:"column:delegation_apr_12m;not null;default:0;index"`
 	AprObservationDays     uint32     `gorm:"not null;default:0"`
-	DelegationAprUpdatedAt time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	DelegationAprUpdatedAt time.Time  `gorm:"type:datetime(3);not null;default:'1970-01-01 00:00:00.000'"`
 }
