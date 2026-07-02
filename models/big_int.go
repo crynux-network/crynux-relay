@@ -19,6 +19,26 @@ func (i *BigInt) Scan(val interface{}) error {
 		intStr = v
 	case []byte:
 		intStr = string(v)
+	case int:
+		intStr = fmt.Sprint(v)
+	case int8:
+		intStr = fmt.Sprint(v)
+	case int16:
+		intStr = fmt.Sprint(v)
+	case int32:
+		intStr = fmt.Sprint(v)
+	case int64:
+		intStr = fmt.Sprint(v)
+	case uint:
+		intStr = fmt.Sprint(v)
+	case uint8:
+		intStr = fmt.Sprint(v)
+	case uint16:
+		intStr = fmt.Sprint(v)
+	case uint32:
+		intStr = fmt.Sprint(v)
+	case uint64:
+		intStr = fmt.Sprint(v)
 	case nil:
 		return nil
 	default:

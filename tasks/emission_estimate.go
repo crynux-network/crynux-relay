@@ -15,6 +15,10 @@ func StartCurrentEmissionEstimateSnapshotRefresh(ctx context.Context) {
 	refresh := func(ctx context.Context) {
 		if err := service.RefreshCurrentEmissionEstimateSnapshot(ctx, config.GetDB(), time.Now().UTC(), config.GetConfig().Dao.MainnetStartTime); err != nil {
 			log.Errorf("CurrentEmissionEstimateSnapshot: refresh error %v", err)
+			return
+		}
+		if err := service.UpdateDelegatedStakingNodeListEmissionEstimates(ctx, config.GetDB()); err != nil {
+			log.Errorf("DelegatedStakingNodeListSnapshot: emission estimate update error %v", err)
 		}
 	}
 

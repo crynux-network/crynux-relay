@@ -64,6 +64,8 @@ Relay MUST build the snapshot with database aggregation queries during refresh. 
 
 Relay MUST refresh the snapshot on startup and every 4 hours after startup.
 
+After each current emission estimate snapshot refresh, Relay MUST update `delegated_staking_node_list_snapshots.estimated_upcoming_operator_emission` and `delegated_staking_node_list_snapshots.estimated_upcoming_delegator_emission` from the refreshed node estimates. Stakeable node list sorting MUST use these persisted snapshot columns for `sort_by=estimated_upcoming_operator_emission` and `sort_by=estimated_upcoming_delegator_emission`.
+
 ## Delegation Status
 
 Single-delegation estimates MUST be available for active, inactive, and slashed delegation records.
