@@ -65,7 +65,15 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 		return nil, nil
 	}
 
-	operatorEmission, err := getNodeOperatorEmission4w(ctx, db, node.Address, now, mainnetStartTime)
+	emissionChartRange, err := BuildEmissionChartRange(now, mainnetStartTime, 4)
+	if err != nil {
+		return nil, err
+	}
+	operatorEmission, err := getNodeOperatorEmission(ctx, db, node.Address, emissionChartRange.RangeStart, emissionChartRange.RangeEnd)
+	if err != nil {
+		return nil, err
+	}
+	delegatorEmission, err := getNodeDelegationEmission(ctx, db, node.Address, emissionChartRange.RangeStart, emissionChartRange.RangeEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +109,7 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 		GPUVram:                            node.GPUVram,
 		Version:                            buildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion),
 		OperatorEmission4w:                 models.BigInt{Int: *operatorEmission},
+		DelegatorEmission4w:                models.BigInt{Int: *delegatorEmission},
 		OperatorStaking:                    models.BigInt{Int: *operatorStaking},
 		DelegatorStaking:                   models.BigInt{Int: *delegatorStaking},
 		TotalStaking:                       models.BigInt{Int: *totalStaking},
@@ -205,12 +214,8 @@ func parseDecimalInteger(raw string) (*big.Int, bool) {
 	return parsed, true
 }
 
-func getNodeOperatorEmission4w(ctx context.Context, db *gorm.DB, nodeAddress string, now time.Time, mainnetStartTime string) (*big.Int, error) {
-	chartRange, err := BuildEmissionChartRange(now, mainnetStartTime, 4)
-	if err != nil {
-		return nil, err
-	}
-	records, err := models.ListVestingRecordsByAddressAndTypeAndStartTimeRange(ctx, db, nodeAddress, models.VestingTypeNode, chartRange.RangeStart, chartRange.RangeEnd)
+func getNodeOperatorEmission(ctx context.Context, db *gorm.DB, nodeAddress string, start, end time.Time) (*big.Int, error) {
+	records, err := models.ListVestingRecordsByAddressAndTypeAndStartTimeRange(ctx, db, nodeAddress, models.VestingTypeNode, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -374,6 +379,7 @@ func RefreshDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, n
 			"gpu_vram",
 			"version",
 			"operator_emission_4w",
+			"delegator_emission_4w",
 			"operator_staking",
 			"delegator_staking",
 			"total_staking",

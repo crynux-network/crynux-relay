@@ -165,6 +165,9 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 	if snapshot.OperatorEmission4w.Int.Cmp(big.NewInt(7)) != 0 {
 		t.Fatalf("unexpected operator emission %s", snapshot.OperatorEmission4w.String())
 	}
+	if snapshot.DelegatorEmission4w.Int.Cmp(big.NewInt(285)) != 0 {
+		t.Fatalf("unexpected delegator emission %s", snapshot.DelegatorEmission4w.String())
+	}
 	if snapshot.OperatorStaking.Int.Cmp(big.NewInt(120)) != 0 {
 		t.Fatalf("unexpected operator staking %s", snapshot.OperatorStaking.String())
 	}

@@ -19,6 +19,7 @@ const defaultDelegatedNodeSortBy = "operator_emission_4w"
 
 var delegatedNodeSortColumns = map[string]string{
 	"operator_emission_4w":                  "operator_emission_4w",
+	"delegator_emission_4w":                 "delegator_emission_4w",
 	"operator_staking":                      "operator_staking",
 	"delegator_staking":                     "delegator_staking",
 	"total_staking":                         "total_staking",

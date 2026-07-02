@@ -20,6 +20,7 @@ type DelegatedStakingNodeListSnapshot struct {
 	GPUVram                            uint64     `gorm:"not null;index"`
 	Version                            string     `gorm:"type:string;size:64;not null;index"`
 	OperatorEmission4w                 BigInt     `gorm:"column:operator_emission_4w;type:decimal(65,0);not null;default:0;index"`
+	DelegatorEmission4w                BigInt     `gorm:"column:delegator_emission_4w;type:decimal(65,0);not null;default:0;index"`
 	OperatorStaking                    BigInt     `gorm:"type:decimal(65,0);not null;default:0;index"`
 	DelegatorStaking                   BigInt     `gorm:"type:decimal(65,0);not null;default:0;index"`
 	TotalStaking                       BigInt     `gorm:"type:decimal(65,0);not null;default:0;index"`
