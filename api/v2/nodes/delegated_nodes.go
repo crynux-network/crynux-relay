@@ -18,15 +18,17 @@ import (
 const defaultDelegatedNodeSortBy = "operator_emission_4w"
 
 var delegatedNodeSortColumns = map[string]string{
-	"operator_emission_4w": "operator_emission_4w",
-	"operator_staking":     "operator_staking",
-	"delegator_staking":    "delegator_staking",
-	"total_staking":        "total_staking",
-	"delegators_num":       "delegators_num",
-	"prob_weight":          "prob_weight",
-	"qos":                  "qos",
-	"gpu_vram":             "gpu_vram",
-	"delegation_apr_12m":   "delegation_apr_12m",
+	"operator_emission_4w":                  "operator_emission_4w",
+	"operator_staking":                      "operator_staking",
+	"delegator_staking":                     "delegator_staking",
+	"total_staking":                         "total_staking",
+	"delegators_num":                        "delegators_num",
+	"prob_weight":                           "prob_weight",
+	"qos":                                   "qos",
+	"gpu_vram":                              "gpu_vram",
+	"estimated_upcoming_operator_emission":  "estimated_upcoming_operator_emission",
+	"estimated_upcoming_delegator_emission": "estimated_upcoming_delegator_emission",
+	"delegation_apr_12m":                    "delegation_apr_12m",
 }
 
 type GetDelegatedNodesInput struct {

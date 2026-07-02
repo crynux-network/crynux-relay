@@ -41,6 +41,10 @@ type delegationAPRInput struct {
 	ObservationDays        uint32
 }
 
+type delegatedStakingNodeListEstimateRow struct {
+	NodeAddress string
+}
+
 func BuildDelegatedStakingNodeStatusGroup(status models.NodeStatus) (string, uint8) {
 	if status == models.NodeStatusQuit {
 		return models.DelegatedStakingNodeStatusGroupStopped, 1
@@ -72,6 +76,8 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 	totalStaking := big.NewInt(0).Add(operatorStaking, delegatorStaking)
 	delegatorsNum := GetDelegatorCountOfNode(node.Address, node.Network)
 	selectingProb := CalculateNodeSelectingProb(node, now)
+	operatorEmissionEstimate := GetNodeOperatorEmissionEstimate(node.Address)
+	delegatorEmissionEstimate := GetNodeDelegationEmissionEstimate(node.Address)
 	statusGroup, statusRank := BuildDelegatedStakingNodeStatusGroup(node.Status)
 	var delegationAPR12m float64
 	var aprObservationDays uint32
@@ -86,24 +92,26 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 	}
 
 	return &models.DelegatedStakingNodeListSnapshot{
-		NodeAddress:            node.Address,
-		Network:                node.Network,
-		Status:                 node.Status,
-		StatusGroup:            statusGroup,
-		StatusRank:             statusRank,
-		GPUName:                node.GPUName,
-		GPUVram:                node.GPUVram,
-		Version:                buildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion),
-		OperatorEmission4w:     models.BigInt{Int: *operatorEmission},
-		OperatorStaking:        models.BigInt{Int: *operatorStaking},
-		DelegatorStaking:       models.BigInt{Int: *delegatorStaking},
-		TotalStaking:           models.BigInt{Int: *totalStaking},
-		DelegatorsNum:          uint64(delegatorsNum),
-		ProbWeight:             selectingProb.ProbWeight,
-		QOS:                    selectingProb.QOSScore,
-		DelegationApr12m:       delegationAPR12m,
-		AprObservationDays:     aprObservationDays,
-		DelegationAprUpdatedAt: now.UTC(),
+		NodeAddress:                        node.Address,
+		Network:                            node.Network,
+		Status:                             node.Status,
+		StatusGroup:                        statusGroup,
+		StatusRank:                         statusRank,
+		GPUName:                            node.GPUName,
+		GPUVram:                            node.GPUVram,
+		Version:                            buildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion),
+		OperatorEmission4w:                 models.BigInt{Int: *operatorEmission},
+		OperatorStaking:                    models.BigInt{Int: *operatorStaking},
+		DelegatorStaking:                   models.BigInt{Int: *delegatorStaking},
+		TotalStaking:                       models.BigInt{Int: *totalStaking},
+		DelegatorsNum:                      uint64(delegatorsNum),
+		ProbWeight:                         selectingProb.ProbWeight,
+		QOS:                                selectingProb.QOSScore,
+		EstimatedUpcomingOperatorEmission:  models.BigInt{Int: *operatorEmissionEstimate.EstimatedEmission},
+		EstimatedUpcomingDelegatorEmission: models.BigInt{Int: *delegatorEmissionEstimate.EstimatedEmission},
+		DelegationApr12m:                   delegationAPR12m,
+		AprObservationDays:                 aprObservationDays,
+		DelegationAprUpdatedAt:             now.UTC(),
 	}, nil
 }
 
@@ -372,6 +380,8 @@ func RefreshDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, n
 			"delegators_num",
 			"prob_weight",
 			"qos",
+			"estimated_upcoming_operator_emission",
+			"estimated_upcoming_delegator_emission",
 			"delegation_apr_12m",
 			"apr_observation_days",
 			"delegation_apr_updated_at",
@@ -382,4 +392,36 @@ func RefreshDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, n
 
 func deleteDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nodeAddress string) error {
 	return db.WithContext(ctx).Where("node_address = ?", nodeAddress).Delete(&models.DelegatedStakingNodeListSnapshot{}).Error
+}
+
+func UpdateDelegatedStakingNodeListEmissionEstimates(ctx context.Context, db *gorm.DB) error {
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	rows := make([]delegatedStakingNodeListEstimateRow, 0)
+	if err := db.WithContext(dbCtx).
+		Model(&models.DelegatedStakingNodeListSnapshot{}).
+		Select("node_address").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	return db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		for _, row := range rows {
+			operatorEstimate := GetNodeOperatorEmissionEstimate(row.NodeAddress)
+			delegatorEstimate := GetNodeDelegationEmissionEstimate(row.NodeAddress)
+			if err := tx.Model(&models.DelegatedStakingNodeListSnapshot{}).
+				Where("node_address = ?", row.NodeAddress).
+				Updates(map[string]interface{}{
+					"estimated_upcoming_operator_emission":  models.BigInt{Int: *operatorEstimate.EstimatedEmission},
+					"estimated_upcoming_delegator_emission": models.BigInt{Int: *delegatorEstimate.EstimatedEmission},
+				}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

@@ -27,7 +27,7 @@ Relay maintains `delegated_staking_node_list_snapshots` as the indexed list sour
 Each snapshot row stores:
 
 - identity and filter fields: node address, blockchain network, status group, GPU name, GPU VRAM, and normalized version
-- ranking fields: status rank, operator four-week emission, operator staking, delegator staking, total staking, delegator count, probability weight, QoS, and GPU VRAM
+- ranking fields: status rank, operator four-week emission, estimated upcoming operator emission, estimated upcoming delegator emission, operator staking, delegator staking, total staking, delegator count, probability weight, QoS, and GPU VRAM
 - maintenance timestamps
 
 The status group MUST be `running` for all non-quit node statuses and `stopped` for quit nodes. `running` MUST have a lower status rank than `stopped`.
@@ -67,6 +67,8 @@ Supported filters are:
 Supported sort keys are:
 
 - `operator_emission_4w`
+- `estimated_upcoming_operator_emission`
+- `estimated_upcoming_delegator_emission`
 - `operator_staking`
 - `delegator_staking`
 - `total_staking`
