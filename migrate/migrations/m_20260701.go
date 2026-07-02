@@ -8,9 +8,9 @@ import (
 )
 
 type delegatedStakingNodeListSnapshotAPRMigration struct {
-	DelegationApr12m       float64   `gorm:"column:delegation_apr_12m;not null;default:0;index"`
-	AprObservationDays     uint32    `gorm:"not null;default:0"`
-	DelegationAprUpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	DelegationApr12m       float64 `gorm:"column:delegation_apr_12m;not null;default:0;index"`
+	AprObservationDays     uint32  `gorm:"not null;default:0"`
+	DelegationAprUpdatedAt string  `gorm:"type:datetime(3);not null;default:'1970-01-01 00:00:00.000'"`
 }
 
 func (delegatedStakingNodeListSnapshotAPRMigration) TableName() string {
@@ -23,33 +23,61 @@ func M20260701(db *gorm.DB) *gormigrate.Gormigrate {
 			ID: "M20260701",
 			Migrate: func(tx *gorm.DB) error {
 				m := tx.Migrator()
-				if err := m.AddColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, "DelegationApr12m"); err != nil {
+				if err := addDelegatedStakingNodeListSnapshotAPRColumn(m, "DelegationApr12m"); err != nil {
 					return err
 				}
-				if err := m.AddColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, "AprObservationDays"); err != nil {
+				if err := addDelegatedStakingNodeListSnapshotAPRColumn(m, "AprObservationDays"); err != nil {
 					return err
 				}
-				if err := m.AddColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, "DelegationAprUpdatedAt"); err != nil {
+				if err := addDelegatedStakingNodeListSnapshotAPRColumn(m, "DelegationAprUpdatedAt"); err != nil {
 					return err
 				}
-				if err := m.CreateIndex(&delegatedStakingNodeListSnapshotAPRMigration{}, "DelegationApr12m"); err != nil {
+				if err := createDelegatedStakingNodeListSnapshotAPRIndex(m, "DelegationApr12m"); err != nil {
 					return err
 				}
 				return nil
 			},
 			Rollback: func(tx *gorm.DB) error {
 				m := tx.Migrator()
-				if err := m.DropIndex(&delegatedStakingNodeListSnapshotAPRMigration{}, "DelegationApr12m"); err != nil {
+				if err := dropDelegatedStakingNodeListSnapshotAPRIndex(m, "DelegationApr12m"); err != nil {
 					return err
 				}
-				if err := m.DropColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, "DelegationAprUpdatedAt"); err != nil {
+				if err := dropDelegatedStakingNodeListSnapshotAPRColumn(m, "DelegationAprUpdatedAt"); err != nil {
 					return err
 				}
-				if err := m.DropColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, "AprObservationDays"); err != nil {
+				if err := dropDelegatedStakingNodeListSnapshotAPRColumn(m, "AprObservationDays"); err != nil {
 					return err
 				}
-				return m.DropColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, "DelegationApr12m")
+				return dropDelegatedStakingNodeListSnapshotAPRColumn(m, "DelegationApr12m")
 			},
 		},
 	})
+}
+
+func addDelegatedStakingNodeListSnapshotAPRColumn(m gorm.Migrator, name string) error {
+	if m.HasColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, name) {
+		return nil
+	}
+	return m.AddColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, name)
+}
+
+func createDelegatedStakingNodeListSnapshotAPRIndex(m gorm.Migrator, name string) error {
+	if m.HasIndex(&delegatedStakingNodeListSnapshotAPRMigration{}, name) {
+		return nil
+	}
+	return m.CreateIndex(&delegatedStakingNodeListSnapshotAPRMigration{}, name)
+}
+
+func dropDelegatedStakingNodeListSnapshotAPRColumn(m gorm.Migrator, name string) error {
+	if !m.HasColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, name) {
+		return nil
+	}
+	return m.DropColumn(&delegatedStakingNodeListSnapshotAPRMigration{}, name)
+}
+
+func dropDelegatedStakingNodeListSnapshotAPRIndex(m gorm.Migrator, name string) error {
+	if !m.HasIndex(&delegatedStakingNodeListSnapshotAPRMigration{}, name) {
+		return nil
+	}
+	return m.DropIndex(&delegatedStakingNodeListSnapshotAPRMigration{}, name)
 }
