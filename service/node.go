@@ -62,11 +62,14 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	}
 	totalStakingAmount := big.NewInt(0).Add(stakingAmount, delegatedStakingAmount)
 
+	healthResetBefore := CaptureNodeQosTraceValues(node)
+	var healthResetAfter NodeQosTraceValues
 	err = db.Transaction(func(tx *gorm.DB) error {
 		node.Status = models.NodeStatusAvailable
 		node.JoinTime = time.Now()
 		node.HealthBase = 1.0
 		node.HealthUpdatedAt = sql.NullTime{Time: time.Now(), Valid: true}
+		healthResetAfter = CaptureNodeQosTraceValues(node)
 		node.DelegatorShare = delegatorShare
 		if err := node.Save(ctx, tx); err != nil {
 			return err
@@ -108,6 +111,12 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if err != nil {
 		return err
 	}
+	RecordNodeQosTrace(NodeQosTraceInput{
+		NodeAddress: node.Address,
+		EventType:   QosTraceEventNodeJoinHealthReset,
+		Before:      healthResetBefore,
+		After:       healthResetAfter,
+	})
 	ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
 	applyNodeDelegationsToCache(node.Address, node.Network, chainDelegations)
 	SetDelegatorShare(node.Address, node.Network, delegatorShare)

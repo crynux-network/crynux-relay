@@ -45,6 +45,11 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get node info"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetNode, 200))
+	nodeGroup.GET("/:address/qos/tracing", []fizz.OperationOption{
+		fizz.ID("node_qos_tracing_v2"),
+		fizz.Summary("Get node QoS tracing events"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(nodes.GetNodeQosTracing, 200))
 	nodeGroup.POST("/:address/join", []fizz.OperationOption{
 		fizz.ID("node_join_v2"),
 		fizz.Summary("Node join"),

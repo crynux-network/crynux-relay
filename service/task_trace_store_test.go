@@ -18,7 +18,9 @@ func initTaskTraceStoreTestConfig(t *testing.T, retentionDays uint64) {
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
-		"  task_tracing_duration_days: " + strconv.FormatUint(retentionDays, 10) + "\n"
+		"  task_tracing_duration_days: " + strconv.FormatUint(retentionDays, 10) + "\n" +
+		"qos:\n" +
+		"  tracing_max_task_events: 50\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}

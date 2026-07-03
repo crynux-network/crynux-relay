@@ -107,6 +107,7 @@ mac:
   secret_key_file: "config/secrets/mac_secret_key.txt"
 qos:
   score_pool_size: 50
+  tracing_max_task_events: 50
   kickout_threshold: 2.0
   rejoin_qos_long_floor: 0.3
   penalty_factor: 0.3
