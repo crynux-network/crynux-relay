@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"crynux_relay/api/v2/middleware"
 	"crynux_relay/api/v2/response"
 	"crynux_relay/api/v2/validate"
 	"crynux_relay/config"
@@ -20,26 +21,45 @@ type GetNodeInput struct {
 
 type GetNodeInputWithSignature struct {
 	GetNodeInput
-	Timestamp int64  `json:"timestamp" query:"timestamp" description:"Signature timestamp" validate:"required"`
-	Signature string `json:"signature" query:"signature" description:"Signature" validate:"required"`
+	Timestamp *int64 `json:"timestamp" query:"timestamp" description:"Signature timestamp"`
+	Signature string `json:"signature" query:"signature" description:"Signature"`
 }
 
-func GetNode(c *gin.Context, input *GetNodeInputWithSignature) (*NodeResponse, error) {
-	match, address, err := validate.ValidateSignature(input.GetNodeInput, input.Timestamp, input.Signature)
-
+func validateNodeSignature(input *GetNodeInputWithSignature) (string, error) {
+	if input.Timestamp == nil || input.Signature == "" {
+		return "", response.NewValidationErrorResponse("signature", "Invalid signature")
+	}
+	match, address, err := validate.ValidateSignature(input.GetNodeInput, *input.Timestamp, input.Signature)
 	if err != nil || !match {
-
 		if err != nil {
 			log.Debugln("error in sig validate: " + err.Error())
 		}
+		return "", response.NewValidationErrorResponse("signature", "Invalid signature")
+	}
+	return address, nil
+}
 
-		validationErr := response.NewValidationErrorResponse("signature", "Invalid signature")
-		return nil, validationErr
+func authorizeGetNode(c *gin.Context, input *GetNodeInputWithSignature) error {
+	if address, ok := middleware.GetAuthorizedAddress(c); ok {
+		if address != input.Address {
+			return response.NewValidationErrorResponse("address", "Signer not allowed")
+		}
+		return nil
 	}
 
+	address, err := validateNodeSignature(input)
+	if err != nil {
+		return err
+	}
 	if address != input.Address {
-		validationErr := response.NewValidationErrorResponse("address", "Signer not allowed")
-		return nil, validationErr
+		return response.NewValidationErrorResponse("address", "Signer not allowed")
+	}
+	return nil
+}
+
+func GetNode(c *gin.Context, input *GetNodeInputWithSignature) (*NodeResponse, error) {
+	if err := authorizeGetNode(c, input); err != nil {
+		return nil, err
 	}
 
 	node, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), input.Address)
