@@ -175,6 +175,7 @@ type AppConfig struct {
 
 	QoS struct {
 		ScorePoolSize               uint64  `mapstructure:"score_pool_size"`
+		TracingMaxTaskEvents        uint64  `mapstructure:"tracing_max_task_events"`
 		KickoutThreshold            float64 `mapstructure:"kickout_threshold"`
 		RejoinQosLongFloor          float64 `mapstructure:"rejoin_qos_long_floor"`
 		PenaltyFactor               float64 `mapstructure:"penalty_factor"`

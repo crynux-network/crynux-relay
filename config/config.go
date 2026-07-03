@@ -70,6 +70,9 @@ func InitConfig(configPath string) error {
 	if err := checkTaskConfig(); err != nil {
 		return err
 	}
+	if err := checkQosConfig(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -170,6 +173,13 @@ func checkStatsConfig() error {
 func checkTaskConfig() error {
 	if appConfig.Task.PassiveSlashMode == nil {
 		return errors.New("task.passive_slash_mode is not set")
+	}
+	return nil
+}
+
+func checkQosConfig() error {
+	if appConfig.QoS.TracingMaxTaskEvents == 0 {
+		return errors.New("qos.tracing_max_task_events is not set")
 	}
 	return nil
 }

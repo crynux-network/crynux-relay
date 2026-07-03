@@ -97,7 +97,9 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 	if node.Status != models.NodeStatusQuit {
 		return nil, response.NewValidationErrorResponse("address", "Node already joined")
 	}
+	rejoinQosFloorBefore := service.CaptureNodeQosTraceValues(node)
 	service.AdjustNodeQosForJoin(node, isNewNode)
+	rejoinQosFloorAfter := service.CaptureNodeQosTraceValues(node)
 
 	stakeAmount := &in.Staking.Int
 	if stakeAmount.Sign() == 0 {
@@ -112,5 +114,11 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 		}
 		return nil, response.NewExceptionResponse(err)
 	}
+	service.RecordNodeQosTrace(service.NodeQosTraceInput{
+		NodeAddress: in.Address,
+		EventType:   service.QosTraceEventNodeRejoinQosFloor,
+		Before:      rejoinQosFloorBefore,
+		After:       rejoinQosFloorAfter,
+	})
 	return &response.Response{}, nil
 }

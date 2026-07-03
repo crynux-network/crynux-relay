@@ -121,6 +121,59 @@ The penalty is temporary. Health recovers via two mechanisms:
    ```
 2. **Active success-based recovery**: Every successfully completed task adds a boost of `0.15` to H.
 
+## QoS Tracing
+
+Relay MUST keep an in-memory `qos_tracing` event list for each node address. The trace list is diagnostic data only and MUST NOT affect QoS calculation, task selection, node status, kickout decisions, or persisted task and node records.
+
+Relay MUST retain only the newest `qos.tracing_max_task_events` trace events for each node address. When a node trace list exceeds this limit, Relay MUST remove the oldest events for that node. Trace events are process-local and MUST be lost after Relay restarts.
+
+Relay MUST record a trace event only for explicit QoS mutation events. Relay MUST NOT record passive time-based health recovery, because passive recovery is calculated at read time and does not mutate QoS state.
+
+Each trace event MUST include:
+
+- `timestamp`
+- `node_address`
+- `event_type`
+- `qos_long_before`
+- `qos_long_after`
+- `qos_short_before`
+- `qos_short_after`
+- `qos_before`
+- `qos_after`
+
+Task-related trace events MUST include `task_id_commitment`. Validation-group rank events MUST include `task_qos_score` and `validation_rank`. Validation-group aborted trace events MUST include `task_qos_score` with value `0`.
+
+### Trace Event Types
+
+Relay MUST use the following `event_type` values:
+
+| Event Type | Trigger |
+|------------|---------|
+| `validation_group_rank_1` | A validation-group task receives rank 1 and task QoS score 10, then updates `Q_long`. |
+| `validation_group_rank_2` | A validation-group task receives rank 2 and task QoS score 5, then updates `Q_long`. |
+| `validation_group_rank_3` | A validation-group task receives rank 3 and task QoS score 2, then updates `Q_long`. |
+| `validation_group_aborted` | A validation-group task receives the special abort task QoS score 0, then updates `Q_long`. |
+| `task_timeout_penalty` | A task timeout abort applies the short-term health penalty. |
+| `task_result_upload_success_boost` | A validated task result upload succeeds and applies the short-term health boost. |
+| `validation_group_matched_boost` | A validation-group comparison accepts the node result and applies the short-term health boost. |
+| `node_join_health_reset` | Node join or rejoin resets short-term health to full health. |
+| `node_rejoin_qos_floor` | Existing node rejoin raises `Q_long` to the configured rejoin floor. |
+
+### Trace API
+
+Relay MUST expose node QoS trace events through:
+
+```
+GET /v2/node/:address/qos/tracing
+```
+
+The API MUST allow access when either authentication method succeeds:
+
+- JWT authentication: the JWT address MUST equal `:address`.
+- Signature authentication: the recovered signer address MUST equal `:address`.
+
+The API response `data` object MUST contain `node_address`, `max_task_events`, and `events`. The `events` array MUST contain the retained in-memory trace events for the requested node address.
+
 ## Key Constants and Config
 
 | Constant / Config | Value | Description |
@@ -128,6 +181,7 @@ The penalty is temporary. Health recovers via two mechanisms:
 | `TASK_SCORE_REWARDS` | [10, 5, 2] | Task scores for 1st, 2nd, 3rd place |
 | `maxQoSScore` | 10.0 | Fixed normalization denominator for QoS score |
 | `qos.score_pool_size` | 50 | Rolling pool size for node QoS calculation |
+| `qos.tracing_max_task_events` | 50 | Maximum number of in-memory QoS trace events retained per node |
 | `qos.penalty_factor` | 0.3 | Heavy timeout multiplier applied to H after first-timeout condition is no longer met |
 | `qos.first_timeout_penalty_factor` | 0.95 | Light timeout multiplier applied when node health is near full |
 | `qos.first_timeout_health_threshold` | 0.99 | Health threshold that determines whether timeout uses light or heavy penalty |
@@ -140,5 +194,6 @@ The penalty is temporary. Health recovers via two mechanisms:
 | File | Description |
 |------|-------------|
 | `service/qos.go` | Core QoS logic: long-term pool, short-term health (H), combined score calculation (`CalculateQosScore`) |
+| `service/qos_tracing.go` | In-memory QoS tracing event store, trace event types, retention, and API read helpers |
 | `service/task_status.go` | Task state transitions, QoS updates, health penalty/boost triggers |
 | `models/node.go` | Node model with `QOSScore` (long-term), `HealthBase`, `HealthUpdatedAt` |

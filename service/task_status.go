@@ -245,6 +245,7 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 		return err
 	}
 
+	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskGroupValidated,
@@ -254,14 +255,31 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 			return err
 		}
 		if task.QOSScore.Valid {
+			before := CaptureNodeQosTraceValues(node)
 			if err := updateNodeQosScore(ctx, tx, node, uint64(task.QOSScore.Int64)); err != nil {
 				return err
+			}
+			eventType, validationRank := BuildValidationGroupQosTraceMetadata(&task)
+			if eventType != "" {
+				taskQosScore := uint64(task.QOSScore.Int64)
+				qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+					NodeAddress:      node.Address,
+					TaskIDCommitment: task.TaskIDCommitment,
+					EventType:        eventType,
+					TaskQosScore:     &taskQosScore,
+					ValidationRank:   validationRank,
+					Before:           before,
+					After:            CaptureNodeQosTraceValues(node),
+				})
 			}
 		}
 
 		return emitEvent(ctx, tx, &models.TaskValidatedEvent{TaskIDCommitment: task.TaskIDCommitment, SelectedNode: task.SelectedNode})
 	}); err != nil {
 		return err
+	}
+	for _, event := range qosTraceEvents {
+		RecordNodeQosTrace(event)
 	}
 	*originTask = task
 	return nil
@@ -342,14 +360,29 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 
 	healthBoostMetrics := nodeHealthMetrics{}
 	logHealthBoost := false
+	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		commitFunc, err := refundTaskPaymentToRelayAccount(ctx, tx, task.TaskIDCommitment, task.Creator, &task.TaskFee.Int)
 		if err != nil {
 			return err
 		}
 		if task.QOSScore.Valid {
+			before := CaptureNodeQosTraceValues(node)
 			if err := updateNodeQosScore(ctx, tx, node, uint64(task.QOSScore.Int64)); err != nil {
 				return err
+			}
+			eventType, validationRank := BuildValidationGroupQosTraceMetadata(&task)
+			if eventType != "" {
+				taskQosScore := uint64(task.QOSScore.Int64)
+				qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+					NodeAddress:      node.Address,
+					TaskIDCommitment: task.TaskIDCommitment,
+					EventType:        eventType,
+					TaskQosScore:     &taskQosScore,
+					ValidationRank:   validationRank,
+					Before:           before,
+					After:            CaptureNodeQosTraceValues(node),
+				})
 			}
 		}
 
@@ -363,9 +396,17 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 		}
 		healthBoostMetrics = calculateBoostNodeHealthMetrics(node)
 		logHealthBoost = shouldLogHealthBoost(healthBoostMetrics)
+		before := CaptureNodeQosTraceValues(node)
 		if err := ApplyHealthBoost(ctx, tx, node); err != nil {
 			return err
 		}
+		qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+			NodeAddress:      node.Address,
+			TaskIDCommitment: task.TaskIDCommitment,
+			EventType:        QosTraceEventValidationGroupMatchedBoost,
+			Before:           before,
+			After:            CaptureNodeQosTraceValues(node),
+		})
 		if err := nodeFinishTask(ctx, tx, node); err != nil {
 			return err
 		}
@@ -382,6 +423,9 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	}
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
+	}
+	for _, event := range qosTraceEvents {
+		RecordNodeQosTrace(event)
 	}
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
@@ -407,6 +451,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	timeoutPenaltyMetrics := nodeHealthMetrics{}
 	logTimeoutPenalty := false
 	var timeoutPenaltyNode *models.Node
+	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		commitFunc, err := refundTaskPaymentToRelayAccount(ctx, tx, task.TaskIDCommitment, task.Creator, &task.TaskFee.Int)
 		if err != nil {
@@ -425,16 +470,38 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 				return err
 			} else {
 				if task.QOSScore.Valid {
+					before := CaptureNodeQosTraceValues(node)
 					if err := updateNodeQosScore(ctx, tx, node, uint64(task.QOSScore.Int64)); err != nil {
 						return err
+					}
+					eventType, validationRank := BuildValidationGroupQosTraceMetadata(&task)
+					if eventType != "" {
+						taskQosScore := uint64(task.QOSScore.Int64)
+						qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+							NodeAddress:      node.Address,
+							TaskIDCommitment: task.TaskIDCommitment,
+							EventType:        eventType,
+							TaskQosScore:     &taskQosScore,
+							ValidationRank:   validationRank,
+							Before:           before,
+							After:            CaptureNodeQosTraceValues(node),
+						})
 					}
 				}
 				// Apply health penalty on timeout when the node never submitted a result
 				if task.AbortReason == models.TaskAbortTimeout && !task.ScoreReadyTime.Valid {
 					timeoutPenaltyMetrics = calculatePenaltyNodeHealthMetrics(node)
+					before := CaptureNodeQosTraceValues(node)
 					if err := ApplyHealthPenalty(ctx, tx, node); err != nil {
 						return err
 					}
+					qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+						NodeAddress:      node.Address,
+						TaskIDCommitment: task.TaskIDCommitment,
+						EventType:        QosTraceEventTaskTimeoutPenalty,
+						Before:           before,
+						After:            CaptureNodeQosTraceValues(node),
+					})
 					timeoutPenaltyNode = node
 					logTimeoutPenalty = true
 				}
@@ -462,6 +529,9 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	}
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
+	}
+	for _, event := range qosTraceEvents {
+		RecordNodeQosTrace(event)
 	}
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
@@ -536,6 +606,7 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 
 	healthBoostMetrics := nodeHealthMetrics{}
 	logHealthBoost := false
+	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var commitFuncs []func() error
 		for _, payment := range payments {
@@ -556,9 +627,17 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 
 		healthBoostMetrics = calculateBoostNodeHealthMetrics(node)
 		logHealthBoost = shouldLogHealthBoost(healthBoostMetrics)
+		before := CaptureNodeQosTraceValues(node)
 		if err := ApplyHealthBoost(ctx, tx, node); err != nil {
 			return err
 		}
+		qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+			NodeAddress:      node.Address,
+			TaskIDCommitment: task.TaskIDCommitment,
+			EventType:        QosTraceEventTaskResultUploadSuccessBoost,
+			Before:           before,
+			After:            CaptureNodeQosTraceValues(node),
+		})
 
 		if err := nodeFinishTask(ctx, tx, node); err != nil {
 			return err
@@ -583,6 +662,9 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 	}
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
+	}
+	for _, event := range qosTraceEvents {
+		RecordNodeQosTrace(event)
 	}
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
