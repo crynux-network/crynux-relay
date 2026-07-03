@@ -221,6 +221,10 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get line chart data of a delegation's earnings"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(stats.GetDelegationEarningsLineChart, 200))
+	statsGroup.GET("/line_chart/delegation/:user_address/:node_address/emission", []fizz.OperationOption{
+		fizz.Summary("Get line chart data of a delegation's emission"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(stats.GetDelegationEmissionLineChart, 200))
 
 	statsGroup.GET("/histogram/task_execution_time", []fizz.OperationOption{
 		fizz.Summary("Get histogram data of task execution time"),
