@@ -163,6 +163,76 @@ func TestGetDelegatedNodesSortsByDelegationAPRFromSnapshot(t *testing.T) {
 	}
 }
 
+func TestGetDelegatedNodesSortsByEstimatedNextDelegationAPRFromSnapshot(t *testing.T) {
+	db := setupDelegatedNodesTestDB(t)
+	nodes := []models.Node{
+		{Address: "0xaaa", Network: "base", DelegatorShare: 10},
+		{Address: "0xbbb", Network: "base", DelegatorShare: 10},
+		{Address: "0xccc", Network: "base", DelegatorShare: 10},
+	}
+	if err := db.Create(&nodes).Error; err != nil {
+		t.Fatalf("create nodes: %v", err)
+	}
+	snapshots := []models.DelegatedStakingNodeListSnapshot{
+		{NodeAddress: "0xaaa", StatusGroup: "running", StatusRank: 0, GPUName: "RTX 4090", GPUVram: 24, Version: "1.0.0", EstimatedNext10kDelegationApr: 0.20, EstimatedNext100kDelegationApr: 0.80, EstimatedNext1mDelegationApr: 0.10, DelegationAprUpdatedAt: delegatedNodesTestSnapshotTime},
+		{NodeAddress: "0xbbb", StatusGroup: "running", StatusRank: 0, GPUName: "RTX 5090", GPUVram: 32, Version: "1.0.1", EstimatedNext10kDelegationApr: 0.90, EstimatedNext100kDelegationApr: 0.30, EstimatedNext1mDelegationApr: 0.70, DelegationAprUpdatedAt: delegatedNodesTestSnapshotTime},
+		{NodeAddress: "0xccc", StatusGroup: "stopped", StatusRank: 1, GPUName: "RTX 6000", GPUVram: 48, Version: "1.0.2", EstimatedNext10kDelegationApr: 1.00, EstimatedNext100kDelegationApr: 1.00, EstimatedNext1mDelegationApr: 1.00, DelegationAprUpdatedAt: delegatedNodesTestSnapshotTime},
+	}
+	if err := db.Create(&snapshots).Error; err != nil {
+		t.Fatalf("create snapshots: %v", err)
+	}
+
+	cases := []struct {
+		sortBy        string
+		firstAddress  string
+		expectedValue float64
+		value         func(snapshot models.DelegatedStakingNodeListSnapshot) float64
+	}{
+		{
+			sortBy:        "estimated_next_10k_delegation_apr",
+			firstAddress:  "0xbbb",
+			expectedValue: 0.90,
+			value: func(snapshot models.DelegatedStakingNodeListSnapshot) float64 {
+				return snapshot.EstimatedNext10kDelegationApr
+			},
+		},
+		{
+			sortBy:        "estimated_next_100k_delegation_apr",
+			firstAddress:  "0xaaa",
+			expectedValue: 0.80,
+			value: func(snapshot models.DelegatedStakingNodeListSnapshot) float64 {
+				return snapshot.EstimatedNext100kDelegationApr
+			},
+		},
+		{
+			sortBy:        "estimated_next_1m_delegation_apr",
+			firstAddress:  "0xbbb",
+			expectedValue: 0.70,
+			value: func(snapshot models.DelegatedStakingNodeListSnapshot) float64 {
+				return snapshot.EstimatedNext1mDelegationApr
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.sortBy, func(t *testing.T) {
+			res, total, err := getDelegatedNodes(context.Background(), db, &delegatedNodeListFilters{SortBy: tc.sortBy}, 0, 10)
+			if err != nil {
+				t.Fatalf("get delegated nodes: %v", err)
+			}
+			if total != 3 {
+				t.Fatalf("expected total 3, got %d", total)
+			}
+			if res[0].Node.Address != tc.firstAddress {
+				t.Fatalf("unexpected first node %s", res[0].Node.Address)
+			}
+			if got := tc.value(res[0].Snapshot); got != tc.expectedValue {
+				t.Fatalf("expected snapshot APR %f, got %f", tc.expectedValue, got)
+			}
+		})
+	}
+}
+
 func TestGetDelegatedNodesSortsByEstimatedUpcomingDelegatorEmissionFromSnapshot(t *testing.T) {
 	db := setupDelegatedNodesTestDB(t)
 	nodes := []models.Node{
@@ -263,6 +333,9 @@ func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
 		EmissionWeekEnd:                    1768435200,
 		EstimateUpdatedAt:                  1768000000,
 		DelegationApr12m:                   0.25,
+		EstimatedNext10kDelegationApr:      0.20,
+		EstimatedNext100kDelegationApr:     0.15,
+		EstimatedNext1mDelegationApr:       0.10,
 		AprObservationDays:                 30,
 		DelegationAprUpdatedAt:             1768000001,
 	})
@@ -281,6 +354,9 @@ func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
 		"emission_week_end",
 		"estimate_updated_at",
 		"delegation_apr_12m",
+		"estimated_next_10k_delegation_apr",
+		"estimated_next_100k_delegation_apr",
+		"estimated_next_1m_delegation_apr",
 		"apr_observation_days",
 		"delegation_apr_updated_at",
 	} {

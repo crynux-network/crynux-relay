@@ -41,6 +41,9 @@ type Node struct {
 	EmissionWeekEnd                    int64             `json:"emission_week_end"`
 	EstimateUpdatedAt                  int64             `json:"estimate_updated_at"`
 	DelegationApr12m                   float64           `json:"delegation_apr_12m"`
+	EstimatedNext10kDelegationApr      float64           `json:"estimated_next_10k_delegation_apr"`
+	EstimatedNext100kDelegationApr     float64           `json:"estimated_next_100k_delegation_apr"`
+	EstimatedNext1mDelegationApr       float64           `json:"estimated_next_1m_delegation_apr"`
 	AprObservationDays                 uint32            `json:"apr_observation_days"`
 	DelegationAprUpdatedAt             int64             `json:"delegation_apr_updated_at"`
 }
@@ -129,6 +132,9 @@ func applyDelegationAPRSnapshot(nodeData *Node, snapshot *models.DelegatedStakin
 		return
 	}
 	nodeData.DelegationApr12m = snapshot.DelegationApr12m
+	nodeData.EstimatedNext10kDelegationApr = snapshot.EstimatedNext10kDelegationApr
+	nodeData.EstimatedNext100kDelegationApr = snapshot.EstimatedNext100kDelegationApr
+	nodeData.EstimatedNext1mDelegationApr = snapshot.EstimatedNext1mDelegationApr
 	nodeData.AprObservationDays = snapshot.AprObservationDays
 	if !snapshot.DelegationAprUpdatedAt.IsZero() {
 		nodeData.DelegationAprUpdatedAt = snapshot.DelegationAprUpdatedAt.Unix()

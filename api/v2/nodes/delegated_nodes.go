@@ -30,6 +30,9 @@ var delegatedNodeSortColumns = map[string]string{
 	"estimated_upcoming_operator_emission":  "estimated_upcoming_operator_emission",
 	"estimated_upcoming_delegator_emission": "estimated_upcoming_delegator_emission",
 	"delegation_apr_12m":                    "delegation_apr_12m",
+	"estimated_next_10k_delegation_apr":     "estimated_next_10k_delegation_apr",
+	"estimated_next_100k_delegation_apr":    "estimated_next_100k_delegation_apr",
+	"estimated_next_1m_delegation_apr":      "estimated_next_1m_delegation_apr",
 }
 
 type GetDelegatedNodesInput struct {
@@ -149,7 +152,7 @@ func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeL
 	sortColumn := delegatedNodeSortColumns[filters.SortBy]
 	var snapshots []models.DelegatedStakingNodeListSnapshot
 	if err := dbi.
-		Select("node_address, delegation_apr_12m, apr_observation_days, delegation_apr_updated_at").
+		Select("node_address, delegation_apr_12m, estimated_next_10k_delegation_apr, estimated_next_100k_delegation_apr, estimated_next_1m_delegation_apr, apr_observation_days, delegation_apr_updated_at").
 		Order("status_rank ASC").
 		Order(sortColumn + " DESC").
 		Order("node_address ASC").

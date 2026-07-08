@@ -240,3 +240,113 @@ func TestCalculateNodeDelegationAPR12mReturnsZeroForZeroDenominator(t *testing.T
 		t.Fatalf("unexpected observation days %d", observationDays)
 	}
 }
+
+func TestCalculateEstimatedNextDelegationAPRUsesPoolAfterDelegation(t *testing.T) {
+	input := &delegationAPRInput{
+		TotalDelegatorEarning:  big.NewInt(100),
+		TotalDelegatorEmission: big.NewInt(0),
+		ObservationDays:        10,
+	}
+
+	got := calculateEstimatedNextDelegationAPR(input, big.NewInt(100), big.NewInt(100), 0.5, 0.5)
+	expected := 18.25
+	if math.Abs(got-expected) > 0.000001 {
+		t.Fatalf("expected %f, got %f", expected, got)
+	}
+}
+
+func TestCalculateEstimatedNextDelegationAPRAppliesWeightShareMultiplier(t *testing.T) {
+	input := &delegationAPRInput{
+		TotalDelegatorEarning:  big.NewInt(100),
+		TotalDelegatorEmission: big.NewInt(0),
+		ObservationDays:        10,
+	}
+
+	got := calculateEstimatedNextDelegationAPR(input, big.NewInt(100), big.NewInt(100), 0.25, 0.5)
+	expected := 36.5
+	if math.Abs(got-expected) > 0.000001 {
+		t.Fatalf("expected %f, got %f", expected, got)
+	}
+}
+
+func TestDelegationAPRProjectionContextHandlesProjectedMaxStakingChange(t *testing.T) {
+	now := time.Date(2026, 1, 29, 12, 0, 0, 0, time.UTC)
+	network := "base"
+	globalDelegationCaches = map[string]*delegationCache{
+		network: {
+			nodeDelegations: map[string]map[string]*big.Int{},
+			userDelegations: map[string]map[string]*big.Int{},
+			userStakeAmount: map[string]*big.Int{},
+			nodeStakeAmount: map[string]*big.Int{},
+		},
+	}
+	globalNodeVestingStakeCache = newNodeVestingStakeCache()
+
+	nodes := []models.Node{
+		{
+			Address:     "0xaaa",
+			Network:     network,
+			Status:      models.NodeStatusAvailable,
+			StakeAmount: models.BigInt{Int: *big.NewInt(100)},
+			HealthBase:  1,
+		},
+		{
+			Address:     "0xbbb",
+			Network:     network,
+			Status:      models.NodeStatusAvailable,
+			StakeAmount: models.BigInt{Int: *big.NewInt(400)},
+			HealthBase:  1,
+		},
+	}
+	projectionContext := newDelegationAPRProjectionContext(nodes, now)
+
+	currentShare, projectedShare := projectionContext.projectedNodeWeightShare("0xaaa", big.NewInt(500))
+	if currentShare == 0 || projectedShare == 0 {
+		t.Fatalf("expected non-zero shares, got %f/%f", currentShare, projectedShare)
+	}
+	if projectedShare <= currentShare {
+		t.Fatalf("expected projected share to increase, got current %f projected %f", currentShare, projectedShare)
+	}
+}
+
+func TestCalculateEstimatedNextDelegationAPRReturnsZeroForMissingInputs(t *testing.T) {
+	validInput := &delegationAPRInput{
+		TotalDelegatorEarning:  big.NewInt(100),
+		TotalDelegatorEmission: big.NewInt(0),
+		ObservationDays:        10,
+	}
+	zeroIncomeInput := &delegationAPRInput{
+		TotalDelegatorEarning:  big.NewInt(0),
+		TotalDelegatorEmission: big.NewInt(0),
+		ObservationDays:        10,
+	}
+	zeroObservationInput := &delegationAPRInput{
+		TotalDelegatorEarning:  big.NewInt(100),
+		TotalDelegatorEmission: big.NewInt(0),
+		ObservationDays:        0,
+	}
+
+	cases := []struct {
+		name      string
+		input     *delegationAPRInput
+		amount    *big.Int
+		current   float64
+		projected float64
+	}{
+		{name: "nil input", input: nil, amount: big.NewInt(100), current: 0.5, projected: 0.5},
+		{name: "zero income", input: zeroIncomeInput, amount: big.NewInt(100), current: 0.5, projected: 0.5},
+		{name: "zero observation days", input: zeroObservationInput, amount: big.NewInt(100), current: 0.5, projected: 0.5},
+		{name: "zero amount", input: validInput, amount: big.NewInt(0), current: 0.5, projected: 0.5},
+		{name: "zero current share", input: validInput, amount: big.NewInt(100), current: 0, projected: 0.5},
+		{name: "zero projected share", input: validInput, amount: big.NewInt(100), current: 0.5, projected: 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := calculateEstimatedNextDelegationAPR(tc.input, big.NewInt(100), tc.amount, tc.current, tc.projected)
+			if got != 0 {
+				t.Fatalf("expected zero APR, got %f", got)
+			}
+		})
+	}
+}

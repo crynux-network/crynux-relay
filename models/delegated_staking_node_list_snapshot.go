@@ -30,6 +30,9 @@ type DelegatedStakingNodeListSnapshot struct {
 	EstimatedUpcomingOperatorEmission  BigInt     `gorm:"type:decimal(65,0);not null;default:0;index"`
 	EstimatedUpcomingDelegatorEmission BigInt     `gorm:"type:decimal(65,0);not null;default:0;index"`
 	DelegationApr12m                   float64    `gorm:"column:delegation_apr_12m;not null;default:0;index"`
+	EstimatedNext10kDelegationApr      float64    `gorm:"column:estimated_next_10k_delegation_apr;not null;default:0;index"`
+	EstimatedNext100kDelegationApr     float64    `gorm:"column:estimated_next_100k_delegation_apr;not null;default:0;index"`
+	EstimatedNext1mDelegationApr       float64    `gorm:"column:estimated_next_1m_delegation_apr;not null;default:0;index"`
 	AprObservationDays                 uint32     `gorm:"not null;default:0"`
 	DelegationAprUpdatedAt             time.Time  `gorm:"not null"`
 }

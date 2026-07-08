@@ -4,6 +4,7 @@ import (
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/utils"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,6 +17,10 @@ import (
 
 const delegatedStakingNodeSnapshotBatchSize = 100
 const delegatedStakingAPRObservationMonths = 12
+
+type estimatedNextDelegationAPRAmount struct {
+	amount *big.Int
+}
 
 type delegationEmissionGrantRow struct {
 	NodeAddress   string
@@ -40,6 +45,19 @@ type delegationAPRInput struct {
 	ObservationDays        uint32
 }
 
+type delegationAPRProjectionNode struct {
+	Address          string
+	ScoreStakeAmount *big.Int
+	QOSScore         float64
+	ProbWeight       float64
+}
+
+type delegationAPRProjectionContext struct {
+	Nodes       []delegationAPRProjectionNode
+	TotalWeight float64
+	MaxStaking  *big.Int
+}
+
 type delegatedStakingNodeListEstimateRow struct {
 	NodeAddress string
 }
@@ -56,10 +74,10 @@ func buildNodeVersion(major, minor, patch uint64) string {
 }
 
 func BuildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, node models.Node, now time.Time, mainnetStartTime string) (*models.DelegatedStakingNodeListSnapshot, error) {
-	return buildDelegatedStakingNodeListSnapshot(ctx, db, node, now, mainnetStartTime, nil)
+	return buildDelegatedStakingNodeListSnapshot(ctx, db, node, now, mainnetStartTime, nil, nil)
 }
 
-func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, node models.Node, now time.Time, mainnetStartTime string, aprInput *delegationAPRInput) (*models.DelegatedStakingNodeListSnapshot, error) {
+func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, node models.Node, now time.Time, mainnetStartTime string, aprInput *delegationAPRInput, projectionContext *delegationAPRProjectionContext) (*models.DelegatedStakingNodeListSnapshot, error) {
 	if node.DelegatorShare == 0 {
 		return nil, nil
 	}
@@ -89,14 +107,19 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 	var delegationAPR12m float64
 	var aprObservationDays uint32
 	if aprInput == nil {
-		var err error
-		delegationAPR12m, aprObservationDays, err = CalculateNodeDelegationAPR12m(ctx, db, node.Address, now)
+		start, end, err := buildDelegationAPRRange(now, configuredDelegationAPRStartTime())
 		if err != nil {
 			return nil, err
 		}
+		aprInput, err = loadNodeDelegationAPRInput(ctx, db, node.Address, start, end)
+		if err != nil {
+			return nil, err
+		}
+		delegationAPR12m, aprObservationDays = calculateDelegationAPR(aprInput)
 	} else {
 		delegationAPR12m, aprObservationDays = calculateDelegationAPR(aprInput)
 	}
+	estimatedNextAPRs := calculateEstimatedNextDelegationAPRs(node.Address, delegatorStaking, aprInput, projectionContext)
 
 	return &models.DelegatedStakingNodeListSnapshot{
 		NodeAddress:                        node.Address,
@@ -118,6 +141,9 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 		EstimatedUpcomingOperatorEmission:  models.BigInt{Int: *operatorEmissionEstimate.EstimatedEmission},
 		EstimatedUpcomingDelegatorEmission: models.BigInt{Int: *delegatorEmissionEstimate.EstimatedEmission},
 		DelegationApr12m:                   delegationAPR12m,
+		EstimatedNext10kDelegationApr:      estimatedNextAPRs[0],
+		EstimatedNext100kDelegationApr:     estimatedNextAPRs[1],
+		EstimatedNext1mDelegationApr:       estimatedNextAPRs[2],
 		AprObservationDays:                 aprObservationDays,
 		DelegationAprUpdatedAt:             now.UTC(),
 	}, nil
@@ -204,6 +230,142 @@ func calculateDelegationAPR(input *delegationAPRInput) (float64, uint32) {
 	return aprFloat, input.ObservationDays
 }
 
+func estimatedNextDelegationAPRAmounts() []estimatedNextDelegationAPRAmount {
+	return []estimatedNextDelegationAPRAmount{
+		{amount: utils.EtherToWei(big.NewInt(10000))},
+		{amount: utils.EtherToWei(big.NewInt(100000))},
+		{amount: utils.EtherToWei(big.NewInt(1000000))},
+	}
+}
+
+func calculateEstimatedNextDelegationAPRs(nodeAddress string, currentDelegatorStaking *big.Int, aprInput *delegationAPRInput, projectionContext *delegationAPRProjectionContext) [3]float64 {
+	var res [3]float64
+	if aprInput == nil || projectionContext == nil {
+		return res
+	}
+
+	amounts := estimatedNextDelegationAPRAmounts()
+	for i, amount := range amounts {
+		currentShare, projectedShare := projectionContext.projectedNodeWeightShare(nodeAddress, amount.amount)
+		res[i] = calculateEstimatedNextDelegationAPR(aprInput, currentDelegatorStaking, amount.amount, currentShare, projectedShare)
+	}
+	return res
+}
+
+func calculateEstimatedNextDelegationAPR(aprInput *delegationAPRInput, currentDelegatorStaking, newDelegationAmount *big.Int, currentNodeWeightShare, projectedNodeWeightShare float64) float64 {
+	if aprInput == nil ||
+		aprInput.ObservationDays == 0 ||
+		newDelegationAmount == nil ||
+		newDelegationAmount.Sign() <= 0 ||
+		currentNodeWeightShare == 0 ||
+		projectedNodeWeightShare == 0 {
+		return 0
+	}
+
+	totalDelegatorIncome := big.NewInt(0).Add(aprInput.TotalDelegatorEarning, aprInput.TotalDelegatorEmission)
+	if totalDelegatorIncome.Sign() == 0 {
+		return 0
+	}
+
+	poolAfterDelegation := big.NewInt(0)
+	if currentDelegatorStaking != nil {
+		poolAfterDelegation.Set(currentDelegatorStaking)
+	}
+	poolAfterDelegation.Add(poolAfterDelegation, newDelegationAmount)
+	if poolAfterDelegation.Sign() == 0 {
+		return 0
+	}
+
+	apr := new(big.Rat).SetInt(totalDelegatorIncome)
+	apr.Mul(apr, big.NewRat(365, 1))
+	apr.Quo(apr, big.NewRat(int64(aprInput.ObservationDays), 1))
+	apr.Quo(apr, new(big.Rat).SetInt(poolAfterDelegation))
+	aprFloat, _ := apr.Float64()
+	return aprFloat * projectedNodeWeightShare / currentNodeWeightShare
+}
+
+func newDelegationAPRProjectionContext(nodes []models.Node, now time.Time) *delegationAPRProjectionContext {
+	projectionNodes := make([]delegationAPRProjectionNode, 0, len(nodes))
+	maxStaking := big.NewInt(0)
+	scoreStakeByAddress := make(map[string]*big.Int, len(nodes))
+	for _, node := range nodes {
+		scoreStake := GetNodeScoreStakeAmount(node, now)
+		scoreStakeByAddress[node.Address] = scoreStake
+		if scoreStake.Cmp(maxStaking) > 0 {
+			maxStaking = big.NewInt(0).Set(scoreStake)
+		}
+	}
+
+	totalWeight := 0.0
+	for _, node := range nodes {
+		scoreStake := scoreStakeByAddress[node.Address]
+		qosScore := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
+		_, _, probWeight := CalculateSelectingProb(scoreStake, maxStaking, qosScore)
+		totalWeight += probWeight
+		projectionNodes = append(projectionNodes, delegationAPRProjectionNode{
+			Address:          node.Address,
+			ScoreStakeAmount: big.NewInt(0).Set(scoreStake),
+			QOSScore:         qosScore,
+			ProbWeight:       probWeight,
+		})
+	}
+
+	return &delegationAPRProjectionContext{
+		Nodes:       projectionNodes,
+		TotalWeight: totalWeight,
+		MaxStaking:  maxStaking,
+	}
+}
+
+func loadDelegationAPRProjectionContext(ctx context.Context, db *gorm.DB, now time.Time) (*delegationAPRProjectionContext, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var nodes []models.Node
+	if err := db.WithContext(dbCtx).Model(&models.Node{}).Where("status != ?", models.NodeStatusQuit).Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	return newDelegationAPRProjectionContext(nodes, now), nil
+}
+
+func (c *delegationAPRProjectionContext) projectedNodeWeightShare(nodeAddress string, addedStake *big.Int) (float64, float64) {
+	if c == nil || c.TotalWeight == 0 || addedStake == nil || addedStake.Sign() <= 0 {
+		return 0, 0
+	}
+
+	projectedMaxStaking := big.NewInt(0).Set(c.MaxStaking)
+	for _, node := range c.Nodes {
+		if node.Address != nodeAddress {
+			continue
+		}
+		projectedStake := big.NewInt(0).Add(node.ScoreStakeAmount, addedStake)
+		if projectedStake.Cmp(projectedMaxStaking) > 0 {
+			projectedMaxStaking = projectedStake
+		}
+		break
+	}
+
+	currentNodeWeight := 0.0
+	projectedNodeWeight := 0.0
+	projectedTotalWeight := 0.0
+	for _, node := range c.Nodes {
+		projectedStake := node.ScoreStakeAmount
+		if node.Address == nodeAddress {
+			currentNodeWeight = node.ProbWeight
+			projectedStake = big.NewInt(0).Add(node.ScoreStakeAmount, addedStake)
+		}
+		_, _, projectedWeight := CalculateSelectingProb(projectedStake, projectedMaxStaking, node.QOSScore)
+		projectedTotalWeight += projectedWeight
+		if node.Address == nodeAddress {
+			projectedNodeWeight = projectedWeight
+		}
+	}
+	if currentNodeWeight == 0 || projectedNodeWeight == 0 || projectedTotalWeight == 0 {
+		return 0, 0
+	}
+	return currentNodeWeight / c.TotalWeight, projectedNodeWeight / projectedTotalWeight
+}
+
 func getNodeDelegationEmission(ctx context.Context, db *gorm.DB, nodeAddress string, start, end time.Time) (*big.Int, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -266,9 +428,13 @@ func RebuildDelegatedStakingNodeListSnapshots(ctx context.Context, db *gorm.DB, 
 	if err != nil {
 		return err
 	}
+	projectionContext, err := loadDelegationAPRProjectionContext(ctx, db, now)
+	if err != nil {
+		return err
+	}
 	snapshots := make([]models.DelegatedStakingNodeListSnapshot, 0, len(nodes))
 	for _, node := range nodes {
-		snapshot, err := buildDelegatedStakingNodeListSnapshot(ctx, db, *node, now, mainnetStartTime, aprInputs[node.Address])
+		snapshot, err := buildDelegatedStakingNodeListSnapshot(ctx, db, *node, now, mainnetStartTime, aprInputs[node.Address], projectionContext)
 		if err != nil {
 			return err
 		}
@@ -391,7 +557,12 @@ func RefreshDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, n
 		return deleteDelegatedStakingNodeListSnapshot(ctx, db, nodeAddress)
 	}
 
-	snapshot, err := BuildDelegatedStakingNodeListSnapshot(ctx, db, *node, time.Now().UTC(), appConfig.Dao.MainnetStartTime)
+	now := time.Now().UTC()
+	projectionContext, err := loadDelegationAPRProjectionContext(ctx, db, now)
+	if err != nil {
+		return err
+	}
+	snapshot, err := buildDelegatedStakingNodeListSnapshot(ctx, db, *node, now, appConfig.Dao.MainnetStartTime, nil, projectionContext)
 	if err != nil {
 		return err
 	}
@@ -420,6 +591,9 @@ func RefreshDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, n
 			"estimated_upcoming_operator_emission",
 			"estimated_upcoming_delegator_emission",
 			"delegation_apr_12m",
+			"estimated_next_10k_delegation_apr",
+			"estimated_next_100k_delegation_apr",
+			"estimated_next_1m_delegation_apr",
 			"apr_observation_days",
 			"delegation_apr_updated_at",
 			"updated_at",
