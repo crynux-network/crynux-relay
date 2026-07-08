@@ -209,6 +209,26 @@ The denominator MUST use `node_stakings.delegator_staking` daily rows for the no
 
 Relay MUST refresh delegated staking APR in `delegated_staking_node_list_snapshots` as part of the delegated staking node list snapshot rebuild. The snapshot MUST store the APR value, the number of staking snapshot days used as the denominator observation count, and the APR refresh time. Stakeable node list APIs MUST use the snapshot fields for filtering, sorting, pagination, and response data and MUST NOT aggregate `delegations`, `node_stakings`, `node_earnings`, or `user_staking_earnings` during list requests.
 
+Relay MUST calculate estimated next delegation APR values for fixed new delegation amounts of `10,000 CNX`, `100,000 CNX`, and `1,000,000 CNX`. These values estimate the simple annualized APR a new delegation of that amount would receive if current node conditions, QoS, task volume, and reward distribution remain stable over the APR observation window.
+
+For each fixed new delegation amount `X`, Relay MUST calculate:
+
+```
+estimated next X delegation APR = projected annualized income for new X / X
+```
+
+The projected annualized income MUST use:
+
+```
+new delegation pool share = X / (current delegated staking + X)
+node income multiplier = projected node weight share after X / current node weight share
+projected annualized income for new X = node delegator income over APR observation window * node income multiplier * new delegation pool share * 365 / APR observation days
+```
+
+`current delegated staking` MUST be the node's active delegated staking on the node current blockchain network at the APR refresh time. `node delegator income over APR observation window` MUST use the same task fee income and issued delegation emission inputs as `delegation_apr_12m`. `current node weight share` and `projected node weight share after X` MUST use the same staking score and QoS base weight formula used by node selection. The projected node weight share after `X` MUST simulate adding `X` to the node's active delegated staking and MUST NOT mutate Relay's live staking, delegation, or max-staking caches.
+
+The estimated APR value MUST be `0` when the node is quit, the APR observation days are `0`, the current node weight share is `0`, the projected node weight share is `0`, or the node delegator income over the APR observation window is `0`.
+
 ## API Requirements
 
 Relay MUST expose delegated staking through these public APIs:
@@ -235,7 +255,7 @@ Relay MUST expose delegated staking statistics through these APIs:
 
 The delegated-staking-only node APIs and statistics APIs MUST return `404` when `delegator_share = 0`.
 
-`GET /v2/delegated_staking/nodes` and `GET /v2/delegated_staking/nodes/:address` MUST include node-level delegated staking APR fields in each node response. `delegation_apr_12m` MUST be the simple annualized APR ratio, where `1.0` means 100% APR. `apr_observation_days` MUST be the number of daily delegated staking snapshot rows used in the denominator. `delegation_apr_updated_at` MUST be the Unix timestamp for the APR snapshot refresh time. The delegated staking node list API MUST support `sort_by=delegation_apr_12m`.
+`GET /v2/delegated_staking/nodes` and `GET /v2/delegated_staking/nodes/:address` MUST include node-level delegated staking APR fields in each node response. `delegation_apr_12m` MUST be the simple annualized APR ratio, where `1.0` means 100% APR. `estimated_next_10k_delegation_apr`, `estimated_next_100k_delegation_apr`, and `estimated_next_1m_delegation_apr` MUST be estimated simple annualized APR ratios for the corresponding fixed new delegation amounts, where `1.0` means 100% APR. `apr_observation_days` MUST be the number of daily delegated staking snapshot rows used in the denominator. `delegation_apr_updated_at` MUST be the Unix timestamp for the APR snapshot refresh time. The delegated staking node list API MUST support `sort_by=delegation_apr_12m`, `sort_by=estimated_next_10k_delegation_apr`, `sort_by=estimated_next_100k_delegation_apr`, and `sort_by=estimated_next_1m_delegation_apr`.
 
 `GET /v1/delegator/:user_address/delegation` and `GET /v1/delegator/:user_address/delegations` MUST return user-visible delegation records with `status = active`, `status = inactive`, or `status = slashed`. They MUST include the delegation blockchain network and the node current blockchain network. Earnings lookup for these APIs MUST be keyed by `(node_address, network)`.
 
