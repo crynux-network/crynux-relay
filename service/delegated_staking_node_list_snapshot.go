@@ -124,8 +124,10 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 }
 
 func CalculateNodeDelegationAPR12m(ctx context.Context, db *gorm.DB, nodeAddress string, now time.Time) (float64, uint32, error) {
-	end := now.UTC()
-	start := end.AddDate(0, -delegatedStakingAPRObservationMonths, 0)
+	start, end, err := buildDelegationAPRRange(now, configuredDelegationAPRStartTime())
+	if err != nil {
+		return 0, 0, err
+	}
 
 	input, err := loadNodeDelegationAPRInput(ctx, db, nodeAddress, start, end)
 	if err != nil {
@@ -133,6 +135,34 @@ func CalculateNodeDelegationAPR12m(ctx context.Context, db *gorm.DB, nodeAddress
 	}
 	apr, observationDays := calculateDelegationAPR(input)
 	return apr, observationDays, nil
+}
+
+func configuredDelegationAPRStartTime() string {
+	appConfig := config.GetConfig()
+	if appConfig == nil {
+		return ""
+	}
+	return appConfig.Dao.AprStartTime
+}
+
+func buildDelegationAPRRange(now time.Time, aprStartTime string) (time.Time, time.Time, error) {
+	end := now.UTC()
+	start := end.AddDate(0, -delegatedStakingAPRObservationMonths, 0)
+	rawAprStartTime := strings.TrimSpace(aprStartTime)
+	if rawAprStartTime == "" {
+		return start, end, nil
+	}
+
+	parsedAprStartTime, err := time.Parse(time.RFC3339, rawAprStartTime)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("dao.apr_start_time must be RFC3339 format: %w", err)
+	}
+	aprStartUTC := parsedAprStartTime.UTC()
+	aprStartDate := time.Date(aprStartUTC.Year(), aprStartUTC.Month(), aprStartUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if aprStartDate.After(start) {
+		start = aprStartDate
+	}
+	return start, end, nil
 }
 
 func loadNodeDelegationAPRInput(ctx context.Context, db *gorm.DB, nodeAddress string, start, end time.Time) (*delegationAPRInput, error) {
@@ -282,8 +312,10 @@ func loadDelegationAPRInputs(ctx context.Context, db *gorm.DB, nodes []*models.N
 
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	end := now.UTC()
-	start := end.AddDate(0, -delegatedStakingAPRObservationMonths, 0)
+	start, end, err := buildDelegationAPRRange(now, configuredDelegationAPRStartTime())
+	if err != nil {
+		return nil, err
+	}
 
 	earningRows := make([]delegationAPREarningRow, 0)
 	if err := db.WithContext(dbCtx).

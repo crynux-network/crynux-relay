@@ -198,8 +198,10 @@ Relay MUST also maintain historical snapshots for:
 Relay MUST calculate node-level delegated staking APR as a simple annualized APR:
 
 ```
-node delegation APR = node delegator income over the trailing 12 months * 365 / sum of daily delegated staking over the trailing 12 months
+node delegation APR = node delegator income over the APR observation window * 365 / sum of daily delegated staking over the APR observation window
 ```
+
+The APR observation window MUST end at the APR refresh time. Its start time MUST be the later of the trailing 12-month start time and `dao.apr_start_time` when `dao.apr_start_time` is configured. Relay MUST parse `dao.apr_start_time` as RFC3339, convert it to UTC, cut it to the beginning of that UTC date at `00:00:00`, and use that timestamp as the earliest APR observation time. When `dao.apr_start_time` is empty, Relay MUST use only the trailing 12-month start time.
 
 The numerator MUST include both delegated staking task fee income and issued delegation emission income. Delegated staking task fee income MUST use `node_earnings.delegator_earning` daily rows for the node. Issued delegation emission income MUST use `vesting_delegation_emission_details.emission_amount` rows for the node. Relay MUST count the full mapped vesting grant amount, including locked and released portions of the linked aggregate vesting record. Relay MUST NOT use current incomplete-week emission estimates in APR.
 
@@ -246,5 +248,6 @@ Each blockchain network configuration MUST provide:
 | `blockchains.<network>.contracts.delegated_staking` | On-chain `DelegatedStaking` contract address |
 | `blockchains.<network>.delegated_staking_slash_batch_size` | Maximum delegator addresses in one delegated slash transaction |
 | `blockchains.<network>.delegated_staking_read_page_size` | Page size for contract delegation reads |
+| `dao.apr_start_time` | Earliest UTC date included in delegated staking APR observation |
 
 Delegated staking state, earnings, and queries MUST always use the delegation blockchain network as the isolation key. Selection and settlement MUST use the selected node's current blockchain network.

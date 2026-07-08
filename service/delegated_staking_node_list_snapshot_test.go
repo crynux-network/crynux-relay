@@ -33,6 +33,22 @@ CREATE TABLE node_stakings (
 	}
 }
 
+func TestBuildDelegationAPRRangeUsesConfiguredStartTime(t *testing.T) {
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	start, end, err := buildDelegationAPRRange(now, "2026-07-01T08:30:00+08:00")
+	if err != nil {
+		t.Fatalf("build APR range: %v", err)
+	}
+
+	expectedStart := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	if !start.Equal(expectedStart) {
+		t.Fatalf("unexpected start %s", start)
+	}
+	if !end.Equal(now) {
+		t.Fatalf("unexpected end %s", end)
+	}
+}
+
 func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
