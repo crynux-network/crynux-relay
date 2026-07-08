@@ -162,6 +162,7 @@ type AppConfig struct {
 		TaskFeeShareAddress string `mapstructure:"task_fee_share_address"`
 		TaskFeeSharePercent uint64 `mapstructure:"task_fee_share_percent"`
 		MainnetStartTime    string `mapstructure:"mainnet_start_time"`
+		AprStartTime        string `mapstructure:"apr_start_time"`
 	} `mapstructure:"dao"`
 
 	RelayAccount struct {

@@ -78,6 +78,39 @@ func BuildDelegationEmissionIncomeSeries(details []models.VestingDelegationEmiss
 	return timestamps, emissionAmounts
 }
 
+func BuildNodeDelegationEmissionIncomeSeries(totals []models.NodeDelegationEmissionWeeklyTotal, chartRange *EmissionChartRange) ([]int64, []models.BigInt) {
+	timestamps := make([]int64, 0, len(chartRange.WeekStarts))
+	emissionAmounts := make([]models.BigInt, 0, len(chartRange.WeekStarts))
+	bucketSums := make(map[int64]*big.Int, len(chartRange.WeekStarts))
+
+	for _, weekStart := range chartRange.WeekStarts {
+		bucketSums[weekStart.Unix()] = big.NewInt(0)
+	}
+
+	for _, total := range totals {
+		alignedStart, ok := AlignToMainnetEmissionWeekStart(total.StartTime, chartRange.MainnetWeekStart)
+		if !ok {
+			continue
+		}
+		if alignedStart.Before(chartRange.RangeStart) || !alignedStart.Before(chartRange.RangeEnd) {
+			continue
+		}
+		bucket, exists := bucketSums[alignedStart.Unix()]
+		if !exists {
+			continue
+		}
+		bucket.Add(bucket, &total.EmissionAmount.Int)
+	}
+
+	for _, weekStart := range chartRange.WeekStarts {
+		ts := weekStart.Unix()
+		timestamps = append(timestamps, ts)
+		emissionAmounts = append(emissionAmounts, models.BigInt{Int: *new(big.Int).Set(bucketSums[ts])})
+	}
+
+	return timestamps, emissionAmounts
+}
+
 func BuildTypedEmissionIncomeSeries(records []models.VestingRecord, chartRange *EmissionChartRange) *TypedEmissionIncomeSeries {
 	timestamps := make([]int64, 0, len(chartRange.WeekStarts))
 	nodeEmissionAmounts := make([]models.BigInt, 0, len(chartRange.WeekStarts))

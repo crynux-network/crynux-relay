@@ -73,6 +73,9 @@ func InitConfig(configPath string) error {
 	if err := checkQosConfig(); err != nil {
 		return err
 	}
+	if err := checkDaoConfig(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -181,6 +184,18 @@ func checkQosConfig() error {
 	if appConfig.QoS.TracingMaxTaskEvents == 0 {
 		return errors.New("qos.tracing_max_task_events is not set")
 	}
+	return nil
+}
+
+func checkDaoConfig() error {
+	rawAPRStartTime := strings.TrimSpace(appConfig.Dao.AprStartTime)
+	if rawAPRStartTime == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, rawAPRStartTime); err != nil {
+		return fmt.Errorf("dao.apr_start_time must be RFC3339: %w", err)
+	}
+	appConfig.Dao.AprStartTime = rawAPRStartTime
 	return nil
 }
 

@@ -37,3 +37,19 @@ func ListVestingDelegationEmissionDetailsByUserNodeNetworkAndStartTimeRange(ctx 
 	}
 	return details, nil
 }
+
+func ListVestingDelegationEmissionDetailsByNodeAndStartTimeRange(ctx context.Context, db *gorm.DB, nodeAddress string, startTime, endTime time.Time) ([]VestingDelegationEmissionDetail, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var details []VestingDelegationEmissionDetail
+	if err := db.WithContext(dbCtx).
+		Model(&VestingDelegationEmissionDetail{}).
+		Where("node_address = ?", nodeAddress).
+		Where("start_time >= ? AND start_time < ?", startTime, endTime).
+		Order("start_time ASC").
+		Find(&details).Error; err != nil {
+		return nil, err
+	}
+	return details, nil
+}
