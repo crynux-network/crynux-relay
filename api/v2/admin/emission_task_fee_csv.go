@@ -169,19 +169,22 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 
 func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, totalTaskFee *big.Int, nodeEmissionPoolCNX int64, emissionStartTime string) []emissionTaskFeeCSVRow {
 	rows := make([]emissionTaskFeeCSVRow, 0, len(participants)+1)
-	remainingEmission := big.NewInt(0).Mul(big.NewInt(nodeEmissionPoolCNX), big.NewInt(1_000_000))
+	remainingEmission := nodeEmissionPoolCNX
 
 	if totalTaskFee.Sign() > 0 {
-		pool := big.NewInt(0).Set(remainingEmission)
+		pool := big.NewInt(nodeEmissionPoolCNX)
 		for _, p := range participants {
 			numerator := big.NewInt(0).Mul(p.TaskFee, pool)
-			emissionMicroCNX := big.NewInt(0).Div(numerator, totalTaskFee)
-			remainingEmission.Sub(remainingEmission, emissionMicroCNX)
+			emissionCNX := big.NewInt(0).Div(numerator, totalTaskFee).Int64()
+			if emissionCNX < 1 {
+				continue
+			}
+			remainingEmission -= emissionCNX
 			rows = append(rows, emissionTaskFeeCSVRow{
 				Address:     p.Address,
 				Type:        p.Type,
 				TaskFee:     formatEmissionDecimalCNX(p.TaskFee, big.NewInt(1_000_000_000_000)),
-				Emission:    formatMicroCNX(emissionMicroCNX),
+				Emission:    formatIntegerCNX(emissionCNX),
 				StartTime:   emissionStartTime,
 				NodeAddress: p.NodeAddress,
 				Network:     p.Network,
@@ -193,7 +196,7 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 		Address:   "",
 		Type:      "remainder",
 		TaskFee:   "0.000000",
-		Emission:  formatMicroCNX(remainingEmission),
+		Emission:  formatIntegerCNX(remainingEmission),
 		StartTime: emissionStartTime,
 	})
 
@@ -207,6 +210,10 @@ func getPreviousEmissionWeekInfo() (*service.EmissionWeekInfo, error) {
 func formatEmissionDecimalCNX(amount *big.Int, unit *big.Int) string {
 	scaled := big.NewInt(0).Div(amount, unit)
 	return formatMicroCNX(scaled)
+}
+
+func formatIntegerCNX(amount int64) string {
+	return fmt.Sprintf("%d.000000", amount)
 }
 
 func formatMicroCNX(amount *big.Int) string {
