@@ -63,15 +63,17 @@ The CSV MUST include task fee participants from the selected week. Relay MUST co
 - Year selection MUST use the zero-based internal emission week index divided by 52.
 - Emission weeks outside Years 1 through 20 MUST be rejected.
 
-Relay MUST allocate the node emission pool across all node and delegation participants in proportion to each row's task fee. The CSV MUST include `task fee` and `emission` as CNX amounts with exactly six decimal places. Relay MUST allocate emission in micro-CNX units:
+Relay MUST allocate the node emission pool across all node and delegation participants in proportion to each row's task fee. Relay MUST allocate emission in integer CNX units:
 
 ```text
-row_emission_micro_cnx = floor(row_task_fee * node_emission_pool_micro_cnx / total_task_fee)
+row_emission = floor(row_task_fee * node_emission_pool / total_task_fee)
 ```
+
+The CSV MUST include `task fee` and `emission` as CNX amounts with exactly six decimal places. Emission values MUST represent integer CNX amounts formatted with six fractional zero digits. Relay MUST omit participant rows whose allocated emission is less than `1` CNX. Omitted sub-1-CNX allocations MUST remain in the `remainder` row.
 
 The CSV MUST include `start_time` as the Unix timestamp for the vesting start time. `start_time` MUST equal the selected emission week's exclusive end boundary, which is the UTC `00:00:00` timestamp at `emission_week_anchor + (week_index + 1) * 7 days`. Every CSV row, including the `remainder` row, MUST contain the same `start_time` value.
 
-The CSV MUST contain `address`, `type`, `task fee`, `emission`, `start_time`, `node_address`, and `network` columns. The CSV MUST NOT contain a `user_address` column. The `address` column is the vesting recipient address. The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Node rows MUST leave `node_address` and `network` empty. Delegation rows MUST include the delegated staking node address in `node_address` and the blockchain network in `network`; the delegator wallet address MUST be read from `address`. Relay MUST append a `remainder` row containing any micro-CNX amount left after floor division. The remainder row is not a vesting recipient.
+The CSV MUST contain `address`, `type`, `task fee`, `emission`, `start_time`, `node_address`, and `network` columns. The CSV MUST NOT contain a `user_address` column. The `address` column is the vesting recipient address. The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Node rows MUST leave `node_address` and `network` empty. Delegation rows MUST include the delegated staking node address in `node_address` and the blockchain network in `network`; the delegator wallet address MUST be read from `address`. Relay MUST append a `remainder` row containing any integer CNX amount left after floor division. The remainder row is not a vesting recipient.
 
 ## Vesting Creation
 
