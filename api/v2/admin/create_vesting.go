@@ -21,7 +21,6 @@ type CreateVestingItem struct {
 }
 
 type CreateVestingDelegationDetail struct {
-	UserAddress    string `json:"user_address" validate:"required"`
 	NodeAddress    string `json:"node_address" validate:"required"`
 	Network        string `json:"network" validate:"required"`
 	TaskFee        string `json:"task_fee" validate:"required"`
@@ -48,7 +47,6 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 		details := make([]service.CreateVestingDelegationDetailInput, 0, len(item.DelegationDetails))
 		for _, detail := range item.DelegationDetails {
 			details = append(details, service.CreateVestingDelegationDetailInput{
-				UserAddress:    detail.UserAddress,
 				NodeAddress:    detail.NodeAddress,
 				Network:        detail.Network,
 				TaskFee:        detail.TaskFee,
