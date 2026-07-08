@@ -23,8 +23,6 @@ var (
 	ErrInvalidVestingSignature        = errors.New("invalid vesting signature")
 	ErrInvalidVestingSigner           = errors.New("invalid vesting signer")
 	ErrInvalidVestingType             = errors.New("invalid vesting type")
-	ErrInvalidVestingSource           = errors.New("invalid vesting source")
-	ErrInvalidVestingExternalID       = errors.New("invalid vesting external id")
 	ErrInvalidVestingDelegationDetail = errors.New("invalid vesting delegation detail")
 	ErrVestingSignerAddressNotSet     = errors.New("vesting signer address not set")
 	ErrVestingRecordNotFound          = errors.New("vesting record not found")
@@ -33,14 +31,12 @@ var (
 )
 
 type CreateVestingDelegationDetailInput struct {
-	UserAddress      string `json:"user_address"`
-	NodeAddress      string `json:"node_address"`
-	Network          string `json:"network"`
-	TaskFee          string `json:"task_fee"`
-	EmissionAmount   string `json:"emission_amount"`
-	Source           string `json:"source"`
-	DetailExternalID string `json:"detail_external_id"`
-	StartTime        int64  `json:"start_time"`
+	UserAddress    string `json:"user_address"`
+	NodeAddress    string `json:"node_address"`
+	Network        string `json:"network"`
+	TaskFee        string `json:"task_fee"`
+	EmissionAmount string `json:"emission_amount"`
+	StartTime      int64  `json:"start_time"`
 }
 
 type CreateVestingRecordInput struct {
@@ -49,8 +45,6 @@ type CreateVestingRecordInput struct {
 	StartTime         int64                                `json:"start_time"`
 	DurationDays      uint                                 `json:"duration_days"`
 	Type              string                               `json:"type"`
-	Source            string                               `json:"source"`
-	ExternalID        string                               `json:"external_id"`
 	AdminSignature    string                               `json:"admin_signature"`
 	DelegationDetails []CreateVestingDelegationDetailInput `json:"delegation_details"`
 }
@@ -61,8 +55,6 @@ type vestingSignPayload struct {
 	StartTime    int64  `json:"start_time"`
 	DurationDays uint   `json:"duration_days"`
 	Type         string `json:"type"`
-	Source       string `json:"source"`
-	ExternalID   string `json:"external_id"`
 }
 
 func isValidUint256Amount(amount *big.Int) bool {
@@ -71,14 +63,12 @@ func isValidUint256Amount(amount *big.Int) bool {
 
 func buildVestingSignMessage(payload vestingSignPayload) string {
 	return fmt.Sprintf(
-		"Crynux Relay Vesting\nAddress: %s\nTotalAmount: %s\nStartTime: %d\nDurationDays: %d\nType: %s\nSource: %s\nExternalID: %s",
+		"Crynux Relay Vesting\nAddress: %s\nTotalAmount: %s\nStartTime: %d\nDurationDays: %d\nType: %s",
 		payload.Address,
 		payload.TotalAmount,
 		payload.StartTime,
 		payload.DurationDays,
 		payload.Type,
-		payload.Source,
-		payload.ExternalID,
 	)
 }
 
@@ -95,12 +85,6 @@ func normalizeVestingInput(input CreateVestingRecordInput) (vestingSignPayload, 
 	verifier := blockchain.NewSignatureVerifier()
 	if err := verifier.ValidateAddress(input.Address); err != nil {
 		return vestingSignPayload{}, nil, ErrInvalidVestingAddress
-	}
-	if strings.TrimSpace(input.Source) == "" {
-		return vestingSignPayload{}, nil, ErrInvalidVestingSource
-	}
-	if strings.TrimSpace(input.ExternalID) == "" {
-		return vestingSignPayload{}, nil, ErrInvalidVestingExternalID
 	}
 	if input.DurationDays == 0 {
 		return vestingSignPayload{}, nil, ErrInvalidVestingDuration
@@ -119,8 +103,6 @@ func normalizeVestingInput(input CreateVestingRecordInput) (vestingSignPayload, 
 		StartTime:    input.StartTime,
 		DurationDays: input.DurationDays,
 		Type:         normalizedType,
-		Source:       strings.TrimSpace(input.Source),
-		ExternalID:   strings.TrimSpace(input.ExternalID),
 	}
 	return payload, amount, nil
 }
@@ -154,14 +136,14 @@ func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload v
 	if len(input.DelegationDetails) == 0 {
 		return nil, nil
 	}
-	if payload.Type != models.VestingTypeDelegation || payload.Source != delegatedStakingAPREmissionSource {
+	if payload.Type != models.VestingTypeDelegation {
 		return nil, ErrInvalidVestingDelegationDetail
 	}
 
 	verifier := blockchain.NewSignatureVerifier()
 	details := make([]models.VestingDelegationEmissionDetail, 0, len(input.DelegationDetails))
 	sum := big.NewInt(0)
-	seenDetailExternalIDs := make(map[string]struct{}, len(input.DelegationDetails))
+	seenDetailKeys := make(map[string]struct{}, len(input.DelegationDetails))
 	for _, detail := range input.DelegationDetails {
 		if err := verifier.ValidateAddress(detail.UserAddress); err != nil {
 			return nil, ErrInvalidVestingDelegationDetail
@@ -176,21 +158,14 @@ func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload v
 		if network == "" {
 			return nil, ErrInvalidVestingDelegationDetail
 		}
-		source := strings.TrimSpace(detail.Source)
-		if source != payload.Source {
-			return nil, ErrInvalidVestingDelegationDetail
-		}
-		detailExternalID := strings.TrimSpace(detail.DetailExternalID)
-		if detailExternalID == "" {
-			return nil, ErrInvalidVestingDelegationDetail
-		}
-		if _, ok := seenDetailExternalIDs[detailExternalID]; ok {
-			return nil, ErrInvalidVestingDelegationDetail
-		}
-		seenDetailExternalIDs[detailExternalID] = struct{}{}
 		if detail.StartTime != payload.StartTime {
 			return nil, ErrInvalidVestingDelegationDetail
 		}
+		detailKey := strings.Join([]string{strings.ToLower(detail.UserAddress), strings.ToLower(detail.NodeAddress), network, fmt.Sprint(detail.StartTime)}, "|")
+		if _, ok := seenDetailKeys[detailKey]; ok {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
+		seenDetailKeys[detailKey] = struct{}{}
 		taskFee, ok := big.NewInt(0).SetString(strings.TrimSpace(detail.TaskFee), 10)
 		if !ok || !isValidUint256Amount(taskFee) {
 			return nil, ErrInvalidVestingDelegationDetail
@@ -201,14 +176,12 @@ func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload v
 		}
 		sum.Add(sum, emissionAmount)
 		details = append(details, models.VestingDelegationEmissionDetail{
-			UserAddress:      payload.Address,
-			NodeAddress:      detail.NodeAddress,
-			Network:          network,
-			TaskFee:          models.BigInt{Int: *taskFee},
-			EmissionAmount:   models.BigInt{Int: *emissionAmount},
-			Source:           source,
-			DetailExternalID: detailExternalID,
-			StartTime:        time.Unix(detail.StartTime, 0).UTC(),
+			UserAddress:    payload.Address,
+			NodeAddress:    detail.NodeAddress,
+			Network:        network,
+			TaskFee:        models.BigInt{Int: *taskFee},
+			EmissionAmount: models.BigInt{Int: *emissionAmount},
+			StartTime:      time.Unix(detail.StartTime, 0).UTC(),
 		})
 	}
 	if sum.Cmp(totalAmount) != 0 {
@@ -243,8 +216,6 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 				StartTime:      time.Unix(payload.StartTime, 0).UTC(),
 				DurationDays:   payload.DurationDays,
 				Type:           payload.Type,
-				Source:         payload.Source,
-				ExternalID:     payload.ExternalID,
 				AdminSignature: input.AdminSignature,
 				Status:         models.VestingStatusActive,
 			}

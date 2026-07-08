@@ -16,7 +16,6 @@ import (
 
 const delegatedStakingNodeSnapshotBatchSize = 100
 const delegatedStakingAPRObservationMonths = 12
-const delegatedStakingAPREmissionSource = "emission"
 
 type delegationEmissionGrantRow struct {
 	NodeAddress   string

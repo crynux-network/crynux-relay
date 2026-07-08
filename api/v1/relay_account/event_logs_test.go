@@ -72,8 +72,6 @@ func TestBuildEventPayloadVestingCreatedUsesCreationSnapshot(t *testing.T) {
 		StartTime:      startTime,
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "item-1",
 		AdminSignature: "0xsig",
 	}
 	record.ID = 42

@@ -61,8 +61,6 @@ func TestGetNodeScoreStakeAmountIncludesUnslashedLockedVestings(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "active-node",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}).Error; err != nil {
@@ -72,11 +70,9 @@ func TestGetNodeScoreStakeAmountIncludesUnslashedLockedVestings(t *testing.T) {
 		Address:        address,
 		TotalAmount:    models.BigInt{Int: *big.NewInt(5000)},
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
-		StartTime:      start,
+		StartTime:      start.Add(time.Hour),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "slashed-node",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 		Slashed:        true,
@@ -90,8 +86,6 @@ func TestGetNodeScoreStakeAmountIncludesUnslashedLockedVestings(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeDelegation,
-		Source:         "airdrop",
-		ExternalID:     "delegation",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}).Error; err != nil {
@@ -134,8 +128,6 @@ func TestSlashAndRestoreNodeVestingsRefreshScoreStake(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "active-node",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}).Error; err != nil {
@@ -148,8 +140,6 @@ func TestSlashAndRestoreNodeVestingsRefreshScoreStake(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeOther,
-		Source:         "airdrop",
-		ExternalID:     "active-other",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}).Error; err != nil {
@@ -162,8 +152,6 @@ func TestSlashAndRestoreNodeVestingsRefreshScoreStake(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeDelegation,
-		Source:         "airdrop",
-		ExternalID:     "active-delegation",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}).Error; err != nil {
@@ -223,8 +211,6 @@ func TestRefreshNodeVestingScoreStakesClearsCompletedVestingCache(t *testing.T) 
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "completed-node",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}).Error; err != nil {

@@ -82,8 +82,6 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 			StartTime:      time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 			DurationDays:   180,
 			Type:           models.VestingTypeNode,
-			Source:         "test",
-			ExternalID:     "node-1",
 			AdminSignature: "signature",
 			Status:         models.VestingStatusActive,
 		},
@@ -94,8 +92,6 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 			StartTime:      time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
 			DurationDays:   180,
 			Type:           models.VestingTypeDelegation,
-			Source:         "test",
-			ExternalID:     "delegation-1",
 			AdminSignature: "signature",
 			Status:         models.VestingStatusActive,
 		},
@@ -106,8 +102,6 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 			StartTime:      time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC),
 			DurationDays:   180,
 			Type:           models.VestingTypeDelegation,
-			Source:         "emission",
-			ExternalID:     "emission-delegation-1",
 			AdminSignature: "signature",
 			Status:         models.VestingStatusActive,
 		},
@@ -116,15 +110,13 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 		t.Fatalf("create vesting records: %v", err)
 	}
 	if err := db.Create(&models.VestingDelegationEmissionDetail{
-		VestingRecordID:  records[2].ID,
-		UserAddress:      "0xdelegator",
-		NodeAddress:      nodeAddress,
-		Network:          network,
-		TaskFee:          models.BigInt{Int: *big.NewInt(30)},
-		EmissionAmount:   models.BigInt{Int: *big.NewInt(285)},
-		Source:           "emission",
-		DetailExternalID: "emission-detail-1",
-		StartTime:        time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC),
+		VestingRecordID: records[2].ID,
+		UserAddress:     "0xdelegator",
+		NodeAddress:     nodeAddress,
+		Network:         network,
+		TaskFee:         models.BigInt{Int: *big.NewInt(30)},
+		EmissionAmount:  models.BigInt{Int: *big.NewInt(285)},
+		StartTime:       time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC),
 	}).Error; err != nil {
 		t.Fatalf("create vesting delegation emission detail: %v", err)
 	}

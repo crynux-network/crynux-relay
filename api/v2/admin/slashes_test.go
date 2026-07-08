@@ -282,8 +282,6 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			DurationDays:   10,
 			Type:           models.VestingTypeNode,
-			Source:         "emission",
-			ExternalID:     "node-vesting",
 			AdminSignature: "0xsig",
 			Status:         models.VestingStatusActive,
 			Slashed:        true,
@@ -295,8 +293,6 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			DurationDays:   10,
 			Type:           models.VestingTypeDelegation,
-			Source:         "emission",
-			ExternalID:     "delegation-vesting",
 			AdminSignature: "0xsig",
 			Status:         models.VestingStatusActive,
 		},
@@ -312,11 +308,11 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 	if total != 2 || len(result) != 2 {
 		t.Fatalf("expected two vesting records, total=%d len=%d", total, len(result))
 	}
-	recordsByExternalID := make(map[string]SlashVestingRecord)
+	recordsByType := make(map[string]SlashVestingRecord)
 	for _, record := range result {
-		recordsByExternalID[record.ExternalID] = record
+		recordsByType[record.Type] = record
 	}
-	nodeVesting := recordsByExternalID["node-vesting"]
+	nodeVesting := recordsByType[models.VestingTypeNode]
 	if nodeVesting.Amount != "1000" {
 		t.Fatalf("expected node amount 1000, got %s", nodeVesting.Amount)
 	}
@@ -326,7 +322,7 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 	if !nodeVesting.Slashed {
 		t.Fatal("expected slashed vesting record")
 	}
-	delegationVesting := recordsByExternalID["delegation-vesting"]
+	delegationVesting := recordsByType[models.VestingTypeDelegation]
 	if delegationVesting.Amount != "2000" {
 		t.Fatalf("expected delegation amount 2000, got %s", delegationVesting.Amount)
 	}
