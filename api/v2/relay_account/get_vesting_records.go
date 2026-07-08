@@ -37,8 +37,6 @@ type VestingRecord struct {
 	LockedAmount    string               `json:"locked_amount"`
 	Status          models.VestingStatus `json:"status"`
 	Slashed         bool                 `json:"slashed"`
-	Source          string               `json:"source"`
-	ExternalID      string               `json:"external_id"`
 }
 
 type GetVestingRecordsData struct {
@@ -87,8 +85,6 @@ func buildVestingRecord(record models.VestingRecord, now time.Time) VestingRecor
 		LockedAmount:    lockedAmount.String(),
 		Status:          record.Status,
 		Slashed:         record.Slashed,
-		Source:          record.Source,
-		ExternalID:      record.ExternalID,
 	}
 }
 

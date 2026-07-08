@@ -77,8 +77,6 @@ func TestVestingReasonRoundTrip(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "item-1",
 		AdminSignature: "0xsig",
 	}
 	createdReason := BuildVestingCreatedReason(record)
@@ -93,8 +91,6 @@ func TestVestingReasonRoundTrip(t *testing.T) {
 		createdPayload.StartTime != start.Unix() ||
 		createdPayload.DurationDays != record.DurationDays ||
 		createdPayload.Type != record.Type ||
-		createdPayload.Source != record.Source ||
-		createdPayload.ExternalID != record.ExternalID ||
 		createdPayload.AdminSignature != record.AdminSignature {
 		t.Fatalf("created payload mismatch: %#v", createdPayload)
 	}
@@ -127,8 +123,6 @@ func TestVestingRecordSlashedDefaultsFalse(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "item-1",
 		AdminSignature: "0xsig",
 		Status:         VestingStatusActive,
 	}

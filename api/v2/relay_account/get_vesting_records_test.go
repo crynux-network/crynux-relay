@@ -51,21 +51,19 @@ func TestQueryAddressVestingRecordsSortsByCreatedAtDescAndIDDesc(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}
 
 	rec1 := base
-	rec1.ExternalID = "item-1"
 	rec1 = createVestingRecord(t, db, rec1, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
 
 	rec2 := base
-	rec2.ExternalID = "item-2"
+	rec2.StartTime = rec2.StartTime.Add(time.Hour)
 	rec2 = createVestingRecord(t, db, rec2, time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC))
 
 	rec3 := base
-	rec3.ExternalID = "item-3"
+	rec3.StartTime = rec3.StartTime.Add(2 * time.Hour)
 	rec3 = createVestingRecord(t, db, rec3, time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC))
 
 	records, total, err := queryAddressVestingRecords(context.Background(), db, address, 1, 20, now)
@@ -99,8 +97,6 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "item-a",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}
@@ -111,8 +107,6 @@ func TestQueryAddressVestingRecordsComputesAmountsAndPaginates(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeDelegation,
-		Source:         "airdrop",
-		ExternalID:     "item-b",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusCompleted,
 	}
@@ -166,8 +160,6 @@ func TestQueryAddressVestingRecordsIncludesSlashedRecords(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "slashed-a",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 		Slashed:        true,

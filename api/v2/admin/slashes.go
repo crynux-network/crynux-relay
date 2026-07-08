@@ -82,8 +82,6 @@ type SlashVestingRecord struct {
 	LockedAmount   string               `json:"locked_amount"`
 	ReleasedAmount string               `json:"released_amount"`
 	Slashed        bool                 `json:"slashed"`
-	Source         string               `json:"source"`
-	ExternalID     string               `json:"external_id"`
 	Status         models.VestingStatus `json:"status"`
 	Type           string               `json:"type"`
 	CreatedAt      int64                `json:"created_at"`
@@ -560,8 +558,6 @@ func buildSlashVestingRecord(record models.VestingRecord, now time.Time) SlashVe
 		LockedAmount:   lockedAmount.String(),
 		ReleasedAmount: record.ReleasedAmount.String(),
 		Slashed:        record.Slashed,
-		Source:         record.Source,
-		ExternalID:     record.ExternalID,
 		Status:         record.Status,
 		Type:           record.Type,
 		CreatedAt:      record.CreatedAt.Unix(),

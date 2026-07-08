@@ -101,3 +101,33 @@ func TestFilterNodesByNodeNamePolicy(t *testing.T) {
 		t.Fatalf("unexpected filtered node: %#v", filtered[0])
 	}
 }
+
+func TestBuildTaskTraceNodeSelectionCandidatePoolUsesFinalWeights(t *testing.T) {
+	nodes := []models.Node{
+		{Address: "0xnode1", GPUName: "RTX 4090"},
+		{Address: "0xnode2", GPUName: "A100"},
+	}
+	probs := []NodeSelectingProb{
+		{StakingScore: 0.5, QOSScore: 0.8, ProbWeight: 0.31},
+		{StakingScore: 1, QOSScore: 0.9, ProbWeight: 0.47},
+	}
+	finalWeights := []float64{0.62, 0.47}
+
+	candidatePool, totalCount, truncated := buildTaskTraceNodeSelectionCandidatePool(nodes, probs, finalWeights)
+
+	if totalCount != 2 {
+		t.Fatalf("expected total count 2, got %d", totalCount)
+	}
+	if truncated {
+		t.Fatal("expected candidate pool not to be truncated")
+	}
+	if len(candidatePool) != 2 {
+		t.Fatalf("expected two candidate pool records, got %d", len(candidatePool))
+	}
+	if candidatePool[0].ProbWeight != 0.62 {
+		t.Fatalf("expected final prob weight 0.62, got %f", candidatePool[0].ProbWeight)
+	}
+	if candidatePool[0].StakingScore != 0.5 || candidatePool[0].QOSScore != 0.8 {
+		t.Fatalf("expected staking and QoS scores from base probability inputs, got %#v", candidatePool[0])
+	}
+}

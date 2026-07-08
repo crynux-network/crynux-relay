@@ -34,8 +34,6 @@ func TestNormalizeVestingInputRejectsAmountAboveUint256(t *testing.T) {
 		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		DurationDays: 10,
 		Type:         models.VestingTypeNode,
-		Source:       "airdrop",
-		ExternalID:   "item-1",
 	})
 	if err != ErrInvalidVestingAmount {
 		t.Fatalf("expected ErrInvalidVestingAmount, got %v", err)
@@ -49,11 +47,24 @@ func TestNormalizeVestingInputRejectsInvalidType(t *testing.T) {
 		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		DurationDays: 10,
 		Type:         "invalid",
-		Source:       "airdrop",
-		ExternalID:   "item-1",
 	})
 	if err != ErrInvalidVestingType {
 		t.Fatalf("expected ErrInvalidVestingType, got %v", err)
+	}
+}
+
+func TestNormalizeVestingDelegationDetailsRejectsEmptyDetailsForDelegation(t *testing.T) {
+	payload := vestingSignPayload{
+		Address:      "0x0000000000000000000000000000000000000001",
+		TotalAmount:  "1000",
+		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		DurationDays: 10,
+		Type:         models.VestingTypeDelegation,
+	}
+
+	_, err := normalizeVestingDelegationDetails(CreateVestingRecordInput{}, payload, big.NewInt(1000))
+	if !errors.Is(err, ErrInvalidVestingDelegationDetail) {
+		t.Fatalf("expected ErrInvalidVestingDelegationDetail, got %v", err)
 	}
 }
 
@@ -64,20 +75,16 @@ func TestNormalizeVestingDelegationDetailsRequiresAggregateSum(t *testing.T) {
 		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		DurationDays: 10,
 		Type:         models.VestingTypeDelegation,
-		Source:       "emission",
-		ExternalID:   "item-1",
 	}
 	input := CreateVestingRecordInput{
 		DelegationDetails: []CreateVestingDelegationDetailInput{
 			{
-				UserAddress:      payload.Address,
-				NodeAddress:      "0x0000000000000000000000000000000000000002",
-				Network:          "base",
-				TaskFee:          "500",
-				EmissionAmount:   "400",
-				Source:           "emission",
-				DetailExternalID: "detail-1",
-				StartTime:        payload.StartTime,
+				UserAddress:    payload.Address,
+				NodeAddress:    "0x0000000000000000000000000000000000000002",
+				Network:        "base",
+				TaskFee:        "500",
+				EmissionAmount: "400",
+				StartTime:      payload.StartTime,
 			},
 		},
 	}
@@ -95,30 +102,24 @@ func TestNormalizeVestingDelegationDetailsBuildsDetailRows(t *testing.T) {
 		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		DurationDays: 10,
 		Type:         models.VestingTypeDelegation,
-		Source:       "emission",
-		ExternalID:   "item-1",
 	}
 	input := CreateVestingRecordInput{
 		DelegationDetails: []CreateVestingDelegationDetailInput{
 			{
-				UserAddress:      payload.Address,
-				NodeAddress:      "0x0000000000000000000000000000000000000002",
-				Network:          "base",
-				TaskFee:          "500",
-				EmissionAmount:   "400",
-				Source:           "emission",
-				DetailExternalID: "detail-1",
-				StartTime:        payload.StartTime,
+				UserAddress:    payload.Address,
+				NodeAddress:    "0x0000000000000000000000000000000000000002",
+				Network:        "base",
+				TaskFee:        "500",
+				EmissionAmount: "400",
+				StartTime:      payload.StartTime,
 			},
 			{
-				UserAddress:      payload.Address,
-				NodeAddress:      "0x0000000000000000000000000000000000000003",
-				Network:          "near",
-				TaskFee:          "700",
-				EmissionAmount:   "600",
-				Source:           "emission",
-				DetailExternalID: "detail-2",
-				StartTime:        payload.StartTime,
+				UserAddress:    payload.Address,
+				NodeAddress:    "0x0000000000000000000000000000000000000003",
+				Network:        "near",
+				TaskFee:        "700",
+				EmissionAmount: "600",
+				StartTime:      payload.StartTime,
 			},
 		},
 	}
@@ -146,8 +147,6 @@ func TestProcessDueVestingReleasesSkipsWhenPendingReleaseExists(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "item-1",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}
@@ -225,8 +224,6 @@ func TestGetAddressLockedVestingAmountOnlyCountsActiveRecords(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "active-1",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 	}
@@ -234,11 +231,9 @@ func TestGetAddressLockedVestingAmountOnlyCountsActiveRecords(t *testing.T) {
 		Address:        address,
 		TotalAmount:    models.BigInt{Int: *big.NewInt(4000)},
 		ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
-		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		StartTime:      time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "completed-1",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusCompleted,
 	}
@@ -273,8 +268,6 @@ func TestGetAddressLockedVestingAmountExcludesSlashedRecords(t *testing.T) {
 			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			DurationDays:   10,
 			Type:           models.VestingTypeNode,
-			Source:         "airdrop",
-			ExternalID:     "active-1",
 			AdminSignature: "0xsig",
 			Status:         models.VestingStatusActive,
 		},
@@ -282,11 +275,9 @@ func TestGetAddressLockedVestingAmountExcludesSlashedRecords(t *testing.T) {
 			Address:        address,
 			TotalAmount:    models.BigInt{Int: *big.NewInt(4000)},
 			ReleasedAmount: models.BigInt{Int: *big.NewInt(0)},
-			StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			StartTime:      time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
 			DurationDays:   10,
 			Type:           models.VestingTypeNode,
-			Source:         "airdrop",
-			ExternalID:     "slashed-1",
 			AdminSignature: "0xsig",
 			Status:         models.VestingStatusActive,
 			Slashed:        true,
@@ -315,8 +306,6 @@ func TestProcessDueVestingReleasesSkipsSlashedRecords(t *testing.T) {
 		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
-		Source:         "airdrop",
-		ExternalID:     "slashed-1",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 		Slashed:        true,
@@ -360,8 +349,6 @@ func TestRestoredSlashedVestingCatchesUpRelease(t *testing.T) {
 		StartTime:      start,
 		DurationDays:   10,
 		Type:           models.VestingTypeOther,
-		Source:         "airdrop",
-		ExternalID:     "restore-1",
 		AdminSignature: "0xsig",
 		Status:         models.VestingStatusActive,
 		Slashed:        true,

@@ -16,21 +16,17 @@ type CreateVestingItem struct {
 	StartTime         int64                           `json:"start_time" validate:"required"`
 	DurationDays      uint                            `json:"duration_days" validate:"required"`
 	Type              string                          `json:"type" validate:"required"`
-	Source            string                          `json:"source" validate:"required"`
-	ExternalID        string                          `json:"external_id" validate:"required"`
 	AdminSignature    string                          `json:"admin_signature" validate:"required"`
 	DelegationDetails []CreateVestingDelegationDetail `json:"delegation_details"`
 }
 
 type CreateVestingDelegationDetail struct {
-	UserAddress      string `json:"user_address" validate:"required"`
-	NodeAddress      string `json:"node_address" validate:"required"`
-	Network          string `json:"network" validate:"required"`
-	TaskFee          string `json:"task_fee" validate:"required"`
-	EmissionAmount   string `json:"emission_amount" validate:"required"`
-	Source           string `json:"source" validate:"required"`
-	DetailExternalID string `json:"detail_external_id" validate:"required"`
-	StartTime        int64  `json:"start_time" validate:"required"`
+	UserAddress    string `json:"user_address" validate:"required"`
+	NodeAddress    string `json:"node_address" validate:"required"`
+	Network        string `json:"network" validate:"required"`
+	TaskFee        string `json:"task_fee" validate:"required"`
+	EmissionAmount string `json:"emission_amount" validate:"required"`
+	StartTime      int64  `json:"start_time" validate:"required"`
 }
 
 type CreateVestingInput struct {
@@ -52,14 +48,12 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 		details := make([]service.CreateVestingDelegationDetailInput, 0, len(item.DelegationDetails))
 		for _, detail := range item.DelegationDetails {
 			details = append(details, service.CreateVestingDelegationDetailInput{
-				UserAddress:      detail.UserAddress,
-				NodeAddress:      detail.NodeAddress,
-				Network:          detail.Network,
-				TaskFee:          detail.TaskFee,
-				EmissionAmount:   detail.EmissionAmount,
-				Source:           detail.Source,
-				DetailExternalID: detail.DetailExternalID,
-				StartTime:        detail.StartTime,
+				UserAddress:    detail.UserAddress,
+				NodeAddress:    detail.NodeAddress,
+				Network:        detail.Network,
+				TaskFee:        detail.TaskFee,
+				EmissionAmount: detail.EmissionAmount,
+				StartTime:      detail.StartTime,
 			})
 		}
 		inputs = append(inputs, service.CreateVestingRecordInput{
@@ -68,8 +62,6 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 			StartTime:         item.StartTime,
 			DurationDays:      item.DurationDays,
 			Type:              item.Type,
-			Source:            item.Source,
-			ExternalID:        item.ExternalID,
 			AdminSignature:    item.AdminSignature,
 			DelegationDetails: details,
 		})
@@ -81,8 +73,6 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 			errors.Is(err, service.ErrInvalidVestingAmount) ||
 			errors.Is(err, service.ErrInvalidVestingDuration) ||
 			errors.Is(err, service.ErrInvalidVestingType) ||
-			errors.Is(err, service.ErrInvalidVestingSource) ||
-			errors.Is(err, service.ErrInvalidVestingExternalID) ||
 			errors.Is(err, service.ErrInvalidVestingDelegationDetail) ||
 			errors.Is(err, service.ErrInvalidVestingSignature) ||
 			errors.Is(err, service.ErrInvalidVestingSigner) ||
@@ -93,7 +83,7 @@ func CreateVestingRecords(c *gin.Context, in *CreateVestingInput) (*CreateVestin
 		}
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return nil, &response.ErrorResponse{
-				Response: response.Response{Message: "duplicate vesting source and external id"},
+				Response: response.Response{Message: "duplicate vesting business key"},
 			}
 		}
 		return nil, response.NewExceptionResponse(err)

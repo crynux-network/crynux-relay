@@ -26,14 +26,12 @@ const (
 
 type VestingRecord struct {
 	gorm.Model
-	Address        string        `json:"address" gorm:"not null;index"`
+	Address        string        `json:"address" gorm:"not null;index;uniqueIndex:idx_vesting_type_address_start,priority:2"`
 	TotalAmount    BigInt        `json:"total_amount" gorm:"not null"`
 	ReleasedAmount BigInt        `json:"released_amount" gorm:"not null"`
-	StartTime      time.Time     `json:"start_time" gorm:"not null;index"`
+	StartTime      time.Time     `json:"start_time" gorm:"not null;index;uniqueIndex:idx_vesting_type_address_start,priority:3"`
 	DurationDays   uint          `json:"duration_days" gorm:"not null"`
-	Type           string        `json:"type" gorm:"not null;size:32;index"`
-	Source         string        `json:"source" gorm:"not null;size:64;uniqueIndex:idx_vesting_source_external_id"`
-	ExternalID     string        `json:"external_id" gorm:"not null;size:128;uniqueIndex:idx_vesting_source_external_id"`
+	Type           string        `json:"type" gorm:"not null;size:32;index;uniqueIndex:idx_vesting_type_address_start,priority:1"`
 	AdminSignature string        `json:"admin_signature" gorm:"not null;size:255"`
 	Status         VestingStatus `json:"status" gorm:"not null;default:0;index"`
 	Slashed        bool          `json:"slashed" gorm:"not null;default:false;index"`
@@ -47,8 +45,6 @@ type VestingCreatedReasonPayload struct {
 	StartTime      int64  `json:"start_time"`
 	DurationDays   uint   `json:"duration_days"`
 	Type           string `json:"type"`
-	Source         string `json:"source"`
-	ExternalID     string `json:"external_id"`
 	AdminSignature string `json:"admin_signature"`
 }
 
@@ -97,8 +93,6 @@ func BuildVestingCreatedPayload(record VestingRecord) VestingCreatedReasonPayloa
 		StartTime:      record.StartTime.Unix(),
 		DurationDays:   record.DurationDays,
 		Type:           record.Type,
-		Source:         record.Source,
-		ExternalID:     record.ExternalID,
 		AdminSignature: record.AdminSignature,
 	}
 }
