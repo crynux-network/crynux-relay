@@ -73,3 +73,74 @@ func TestListVestingDelegationEmissionDetailsByUserNodeNetworkAndStartTimeRangeS
 		t.Fatalf("unexpected detail: %+v", got[0])
 	}
 }
+
+func TestListVestingDelegationEmissionDetailsByNodeAndStartTimeRange(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	if err := db.AutoMigrate(&VestingDelegationEmissionDetail{}); err != nil {
+		t.Fatalf("failed to migrate vesting delegation emission detail: %v", err)
+	}
+
+	start := time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC)
+	details := []VestingDelegationEmissionDetail{
+		{
+			VestingRecordID: 1,
+			UserAddress:     "0xuser-a",
+			NodeAddress:     "0xnode",
+			Network:         "base",
+			TaskFee:         BigInt{Int: *big.NewInt(10)},
+			EmissionAmount:  BigInt{Int: *big.NewInt(100)},
+			StartTime:       start,
+		},
+		{
+			VestingRecordID: 2,
+			UserAddress:     "0xuser-b",
+			NodeAddress:     "0xnode",
+			Network:         "near",
+			TaskFee:         BigInt{Int: *big.NewInt(20)},
+			EmissionAmount:  BigInt{Int: *big.NewInt(200)},
+			StartTime:       start.Add(24 * time.Hour),
+		},
+		{
+			VestingRecordID: 3,
+			UserAddress:     "0xuser-c",
+			NodeAddress:     "0xother",
+			Network:         "base",
+			TaskFee:         BigInt{Int: *big.NewInt(30)},
+			EmissionAmount:  BigInt{Int: *big.NewInt(300)},
+			StartTime:       start,
+		},
+		{
+			VestingRecordID: 4,
+			UserAddress:     "0xuser-d",
+			NodeAddress:     "0xnode",
+			Network:         "base",
+			TaskFee:         BigInt{Int: *big.NewInt(40)},
+			EmissionAmount:  BigInt{Int: *big.NewInt(400)},
+			StartTime:       start.Add(14 * 24 * time.Hour),
+		},
+	}
+	if err := db.Create(&details).Error; err != nil {
+		t.Fatalf("failed to create details: %v", err)
+	}
+
+	got, err := ListVestingDelegationEmissionDetailsByNodeAndStartTimeRange(
+		context.Background(),
+		db,
+		"0xnode",
+		start,
+		start.Add(7*24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("list details failed: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 node details in range, got %d", len(got))
+	}
+	if got[0].EmissionAmount.Int.Cmp(big.NewInt(100)) != 0 || got[1].EmissionAmount.Int.Cmp(big.NewInt(200)) != 0 {
+		t.Fatalf("unexpected details: %+v", got)
+	}
+}

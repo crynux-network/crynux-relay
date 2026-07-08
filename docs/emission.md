@@ -101,7 +101,7 @@ The `(type, address, start_time)` tuple MUST identify a vesting item and MUST re
 
 For `type = delegation`, the admin submitter MUST create one signed aggregate vesting item per wallet-level group and attach the original delegation CSV rows as `delegation_details`. Relay MUST reject `type = delegation` items with an empty `delegation_details` list. Each delegation detail MUST contain `node_address`, `network`, `task_fee`, `emission_amount`, and `start_time`; it MUST NOT contain `user_address`. Relay MUST derive the detail user address from the aggregate item `address`. Relay MUST validate that every detail has non-empty `node_address`, non-empty `network`, positive `task_fee`, positive `emission_amount`, and the same `start_time` as the aggregate item. Relay MUST reject duplicate delegation details with the same `(address, node_address, network, start_time)` tuple. Relay MUST reject the aggregate item unless the sum of `delegation_details.emission_amount` equals `total_amount`.
 
-Relay MUST create the aggregate `vesting_records` row and all linked `vesting_delegation_emission_details` rows in one transaction. The detail table MUST store delegation emission attribution by `vesting_record_id`, `user_address`, `node_address`, `network`, `task_fee`, `emission_amount`, and `start_time`. The `(user_address, node_address, network, start_time)` tuple MUST remain unique. The vesting admin signature MUST continue to cover only the aggregate vesting record fields and MUST NOT include detail rows.
+Relay MUST create the aggregate `vesting_records` row and all linked `vesting_delegation_emission_details` rows in one transaction. The detail table MUST store delegation emission attribution by `vesting_record_id`, `user_address`, `node_address`, `network`, `task_fee`, `emission_amount`, and `start_time`. The `(user_address, node_address, network, start_time)` tuple MUST remain unique. Relay MUST maintain `node_delegation_emission_weekly_totals` in the same transaction by adding each delegation detail `emission_amount` to the row identified by `(node_address, start_time)`. The vesting admin signature MUST continue to cover only the aggregate vesting record fields and MUST NOT include detail rows.
 
 Vesting records for a node address MAY be marked with `slashed = true` when that node address is slashed, regardless of vesting type. The `status` field MUST continue to represent only the release lifecycle. The `slashed` field MUST represent slash eligibility and release eligibility.
 
@@ -130,7 +130,7 @@ The admin endpoint `POST /v2/admin/vesting/restore` MUST restore slashed vesting
 
 ## Emission Chart Aggregation
 
-Emission chart APIs MUST aggregate from `vesting_records.total_amount`. Chart data represents emission grants by vesting start week, not released vesting balance. Slashed vesting records MUST remain included in emission chart totals because slashing does not remove the historical grant.
+Emission chart APIs MUST aggregate from original grant amounts. Relay account charts MUST aggregate from `vesting_records.total_amount`. Stakeable node delegation charts MUST read node-level delegation amounts from `node_delegation_emission_weekly_totals.emission_amount`. Chart data represents emission grants by vesting start week, not released vesting balance. Slashed vesting records MUST remain included in emission chart totals because slashing does not remove the historical grant.
 
 Each vesting record MUST be assigned to the emission week containing `vesting_records.start_time`, using the exact `emission_week_anchor + n * 7 days` week boundaries. Vesting records before the emission week anchor MUST be excluded from emission chart buckets.
 
@@ -166,9 +166,10 @@ The endpoint MUST be accessible only for a node that exists and has active deleg
 
 - `timestamps`: emission week start Unix timestamps
 - `node_emission_income`: node-type vesting totals per week
+- `delegation_emission_income`: node delegation emission totals per week
 
-Chart aggregation MUST use only the canonical vesting types. The relay account chart MUST include only `type = node` and `type = delegation`. The stakeable node chart MUST include only `type = node`. Chart aggregation MUST NOT include `type = other`, `type = delegator`, or any other non-canonical type.
+Chart aggregation MUST use only the canonical vesting types. The relay account chart MUST include only `type = node` and `type = delegation`. The stakeable node chart `node_emission_income` series MUST include only `type = node`. The stakeable node chart `delegation_emission_income` series MUST be served from `node_delegation_emission_weekly_totals` and MUST NOT scan `vesting_delegation_emission_details` at request time. Chart aggregation MUST NOT include `type = other`, `type = delegator`, or any other non-canonical type.
 
 ## Relationship Summary
 
-Task settlement creates task fee income. Weekly emission allocation reads the settled task fee income for the previous complete emission week and computes emission amounts for node operators and delegation details. Admin vesting creation turns those emission amounts into signed vesting records and stores delegation detail mappings for delegation emission records. Vesting release materializes those records into relay account balance over time. Emission charts read the original vesting grant amounts, split by vesting type and aligned to emission weeks.
+Task settlement creates task fee income. Weekly emission allocation reads the settled task fee income for the previous complete emission week and computes emission amounts for node operators and delegation details. Admin vesting creation turns those emission amounts into signed vesting records, stores delegation detail mappings for delegation emission records, and updates node-week delegation emission totals. Vesting release materializes those records into relay account balance over time. Emission charts read the original vesting grant amounts, split by vesting type and aligned to emission weeks.

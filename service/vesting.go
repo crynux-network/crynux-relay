@@ -186,6 +186,22 @@ func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload v
 	return details, nil
 }
 
+func accumulateDelegationEmissionWeeklyTotals(totals map[string]models.NodeDelegationEmissionWeeklyIncrement, details []models.VestingDelegationEmissionDetail) {
+	for _, detail := range details {
+		key := strings.Join([]string{strings.ToLower(detail.NodeAddress), fmt.Sprint(detail.StartTime.Unix())}, "|")
+		increment, ok := totals[key]
+		if !ok {
+			increment = models.NodeDelegationEmissionWeeklyIncrement{
+				NodeAddress:    detail.NodeAddress,
+				StartTime:      detail.StartTime,
+				EmissionAmount: big.NewInt(0),
+			}
+		}
+		increment.EmissionAmount.Add(increment.EmissionAmount, &detail.EmissionAmount.Int)
+		totals[key] = increment
+	}
+}
+
 func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVestingRecordInput) ([]models.VestingRecord, error) {
 	if len(inputs) == 0 {
 		return []models.VestingRecord{}, nil
@@ -193,6 +209,7 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 
 	created := make([]models.VestingRecord, 0, len(inputs))
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		delegationEmissionTotals := make(map[string]models.NodeDelegationEmissionWeeklyIncrement)
 		for _, input := range inputs {
 			payload, amount, err := normalizeVestingInput(input)
 			if err != nil {
@@ -225,11 +242,19 @@ func CreateVestingRecords(ctx context.Context, db *gorm.DB, inputs []CreateVesti
 				if err := tx.Create(&details).Error; err != nil {
 					return err
 				}
+				accumulateDelegationEmissionWeeklyTotals(delegationEmissionTotals, details)
 			}
 			if err := createVestingCreatedRelayAccountEvent(ctx, tx, record); err != nil {
 				return err
 			}
 			created = append(created, record)
+		}
+		increments := make([]models.NodeDelegationEmissionWeeklyIncrement, 0, len(delegationEmissionTotals))
+		for _, increment := range delegationEmissionTotals {
+			increments = append(increments, increment)
+		}
+		if err := models.UpsertNodeDelegationEmissionWeeklyTotalIncrements(ctx, tx, increments); err != nil {
+			return err
 		}
 		return nil
 	})

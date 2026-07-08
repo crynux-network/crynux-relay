@@ -19,11 +19,14 @@ func TestHasNodeEmissionAccessReturnsFalseWhenDelegatorShareDisabled(t *testing.
 	}
 }
 
-func TestNodeEmissionChartDataUsesNodeEmissionIncomeField(t *testing.T) {
+func TestNodeEmissionChartDataUsesTypedEmissionIncomeFields(t *testing.T) {
 	payload, err := json.Marshal(NodeEmissionChartData{
 		Timestamps: []int64{1},
 		NodeEmissionIncome: []models.BigInt{
 			{Int: *big.NewInt(100)},
+		},
+		DelegationEmissionIncome: []models.BigInt{
+			{Int: *big.NewInt(200)},
 		},
 	})
 	if err != nil {
@@ -36,6 +39,9 @@ func TestNodeEmissionChartDataUsesNodeEmissionIncomeField(t *testing.T) {
 	}
 	if _, ok := data["node_emission_income"]; !ok {
 		t.Fatalf("expected node_emission_income field, got %v", data)
+	}
+	if _, ok := data["delegation_emission_income"]; !ok {
+		t.Fatalf("expected delegation_emission_income field, got %v", data)
 	}
 	if _, ok := data["emission_income"]; ok {
 		t.Fatalf("did not expect legacy emission_income field, got %v", data)
