@@ -31,7 +31,6 @@ var (
 )
 
 type CreateVestingDelegationDetailInput struct {
-	UserAddress    string `json:"user_address"`
 	NodeAddress    string `json:"node_address"`
 	Network        string `json:"network"`
 	TaskFee        string `json:"task_fee"`
@@ -148,12 +147,6 @@ func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload v
 	sum := big.NewInt(0)
 	seenDetailKeys := make(map[string]struct{}, len(input.DelegationDetails))
 	for _, detail := range input.DelegationDetails {
-		if err := verifier.ValidateAddress(detail.UserAddress); err != nil {
-			return nil, ErrInvalidVestingDelegationDetail
-		}
-		if !strings.EqualFold(detail.UserAddress, payload.Address) {
-			return nil, ErrInvalidVestingDelegationDetail
-		}
 		if err := verifier.ValidateAddress(detail.NodeAddress); err != nil {
 			return nil, ErrInvalidVestingDelegationDetail
 		}
@@ -164,7 +157,7 @@ func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload v
 		if detail.StartTime != payload.StartTime {
 			return nil, ErrInvalidVestingDelegationDetail
 		}
-		detailKey := strings.Join([]string{strings.ToLower(detail.UserAddress), strings.ToLower(detail.NodeAddress), network, fmt.Sprint(detail.StartTime)}, "|")
+		detailKey := strings.Join([]string{strings.ToLower(payload.Address), strings.ToLower(detail.NodeAddress), network, fmt.Sprint(detail.StartTime)}, "|")
 		if _, ok := seenDetailKeys[detailKey]; ok {
 			return nil, ErrInvalidVestingDelegationDetail
 		}

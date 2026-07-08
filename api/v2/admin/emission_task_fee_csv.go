@@ -18,7 +18,6 @@ type emissionTaskFeeParticipant struct {
 	Address     string
 	Type        string
 	TaskFee     *big.Int
-	UserAddress string
 	NodeAddress string
 	Network     string
 }
@@ -36,12 +35,12 @@ type emissionTaskFeeDelegationDetailRow struct {
 }
 
 type emissionTaskFeeCSVRow struct {
-	Address     string
-	Type        string
-	TaskFee     string
-	Emission    string
-	StartTime   string
-	UserAddress string
+	Address   string
+	Type      string
+	TaskFee   string
+	Emission  string
+	StartTime string
+
 	NodeAddress string
 	Network     string
 }
@@ -92,7 +91,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=emission_task_fee_%s_%s.csv", weekInfo.WeekStartDate.Format("20060102"), weekInfo.WeekEndDate.AddDate(0, 0, -1).Format("20060102")))
 
 	writer := csv.NewWriter(c.Writer)
-	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time", "user_address", "node_address", "network"}); err != nil {
+	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time", "node_address", "network"}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
@@ -100,7 +99,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 
 	for _, row := range rows {
-		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime, row.UserAddress, row.NodeAddress, row.Network}); err != nil {
+		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime, row.NodeAddress, row.Network}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"message": err.Error(),
 			})
@@ -160,7 +159,6 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 			Address:     row.UserAddress,
 			Type:        models.VestingTypeDelegation,
 			TaskFee:     taskFee,
-			UserAddress: row.UserAddress,
 			NodeAddress: row.NodeAddress,
 			Network:     row.Network,
 		})
@@ -171,21 +169,20 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTa
 
 func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, totalTaskFee *big.Int, nodeEmissionPoolCNX int64, emissionStartTime string) []emissionTaskFeeCSVRow {
 	rows := make([]emissionTaskFeeCSVRow, 0, len(participants)+1)
-	remainingEmission := nodeEmissionPoolCNX
+	remainingEmission := big.NewInt(0).Mul(big.NewInt(nodeEmissionPoolCNX), big.NewInt(1_000_000))
 
 	if totalTaskFee.Sign() > 0 {
-		pool := big.NewInt(nodeEmissionPoolCNX)
+		pool := big.NewInt(0).Set(remainingEmission)
 		for _, p := range participants {
 			numerator := big.NewInt(0).Mul(p.TaskFee, pool)
-			emissionCNX := big.NewInt(0).Div(numerator, totalTaskFee).Int64()
-			remainingEmission -= emissionCNX
+			emissionMicroCNX := big.NewInt(0).Div(numerator, totalTaskFee)
+			remainingEmission.Sub(remainingEmission, emissionMicroCNX)
 			rows = append(rows, emissionTaskFeeCSVRow{
 				Address:     p.Address,
 				Type:        p.Type,
-				TaskFee:     formatCNXAmount(p.TaskFee),
-				Emission:    formatIntegerCNX(emissionCNX),
+				TaskFee:     formatEmissionDecimalCNX(p.TaskFee, big.NewInt(1_000_000_000_000)),
+				Emission:    formatMicroCNX(emissionMicroCNX),
 				StartTime:   emissionStartTime,
-				UserAddress: p.UserAddress,
 				NodeAddress: p.NodeAddress,
 				Network:     p.Network,
 			})
@@ -195,8 +192,8 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 	rows = append(rows, emissionTaskFeeCSVRow{
 		Address:   "",
 		Type:      "remainder",
-		TaskFee:   "0.00",
-		Emission:  formatIntegerCNX(remainingEmission),
+		TaskFee:   "0.000000",
+		Emission:  formatMicroCNX(remainingEmission),
 		StartTime: emissionStartTime,
 	})
 
@@ -207,6 +204,13 @@ func getPreviousEmissionWeekInfo() (*service.EmissionWeekInfo, error) {
 	return service.GetPreviousEmissionWeekInfo(time.Now().UTC(), config.GetConfig().Dao.MainnetStartTime)
 }
 
-func formatIntegerCNX(amount int64) string {
-	return fmt.Sprintf("%d.00", amount)
+func formatEmissionDecimalCNX(amount *big.Int, unit *big.Int) string {
+	scaled := big.NewInt(0).Div(amount, unit)
+	return formatMicroCNX(scaled)
+}
+
+func formatMicroCNX(amount *big.Int) string {
+	whole := big.NewInt(0).Div(amount, big.NewInt(1_000_000))
+	fraction := big.NewInt(0).Mod(amount, big.NewInt(1_000_000))
+	return fmt.Sprintf("%s.%06d", whole.String(), fraction.Int64())
 }

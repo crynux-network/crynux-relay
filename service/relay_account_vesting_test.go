@@ -79,7 +79,6 @@ func TestNormalizeVestingDelegationDetailsRequiresAggregateSum(t *testing.T) {
 	input := CreateVestingRecordInput{
 		DelegationDetails: []CreateVestingDelegationDetailInput{
 			{
-				UserAddress:    payload.Address,
 				NodeAddress:    "0x0000000000000000000000000000000000000002",
 				Network:        "base",
 				TaskFee:        "500",
@@ -106,7 +105,6 @@ func TestNormalizeVestingDelegationDetailsBuildsDetailRows(t *testing.T) {
 	input := CreateVestingRecordInput{
 		DelegationDetails: []CreateVestingDelegationDetailInput{
 			{
-				UserAddress:    payload.Address,
 				NodeAddress:    "0x0000000000000000000000000000000000000002",
 				Network:        "base",
 				TaskFee:        "500",
@@ -114,7 +112,6 @@ func TestNormalizeVestingDelegationDetailsBuildsDetailRows(t *testing.T) {
 				StartTime:      payload.StartTime,
 			},
 			{
-				UserAddress:    payload.Address,
 				NodeAddress:    "0x0000000000000000000000000000000000000003",
 				Network:        "near",
 				TaskFee:        "700",
