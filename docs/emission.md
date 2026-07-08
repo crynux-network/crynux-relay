@@ -71,7 +71,7 @@ row_emission = floor(row_task_fee * node_emission_pool / total_task_fee)
 
 The CSV MUST include `start_time` as the Unix timestamp for the vesting start time. `start_time` MUST equal the selected emission week's exclusive end boundary, which is the UTC `00:00:00` timestamp at `emission_week_anchor + (week_index + 1) * 7 days`. Every CSV row, including the `remainder` row, MUST contain the same `start_time` value.
 
-The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Delegation rows MUST include `user_address`, `node_address`, `network`, and `detail_external_id`. The `address` column for a delegation row MUST equal `user_address`. `detail_external_id` MUST identify the delegation emission detail for the selected emission vesting start time, delegator, node, and blockchain network. Relay MUST append a `remainder` row containing any integer CNX amount left after floor division. The remainder row is not a vesting recipient.
+The CSV MUST use `type = node` for node operator rows and `type = delegation` for delegator rows. Delegation rows MUST include `user_address`, `node_address`, and `network`. The `address` column for a delegation row MUST equal `user_address`. Relay MUST append a `remainder` row containing any integer CNX amount left after floor division. The remainder row is not a vesting recipient.
 
 ## Vesting Creation
 
@@ -83,7 +83,7 @@ Emission grants MUST be created through `POST /v2/admin/vesting`. Each item MUST
 - `duration_days`
 - `type`
 - `admin_signature`
-- `delegation_details`, only for delegation emission items that carry node attribution metadata
+- `delegation_details`, required for `type = delegation` items and forbidden for other types
 
 The `type` field MUST be one of:
 
@@ -97,7 +97,7 @@ Relay MUST store created records in `vesting_records` with `released_amount = 0`
 
 The `(type, address, start_time)` tuple MUST identify a vesting item and MUST remain unique.
 
-For `type = delegation`, the admin submitter MUST create one signed aggregate vesting item per wallet-level group and attach the original delegation CSV rows as `delegation_details`. Relay MUST validate that every detail has the same `user_address` as the aggregate item address, non-empty `node_address`, non-empty `network`, positive `task_fee`, positive `emission_amount`, and the same `start_time`. Relay MUST reject duplicate delegation details with the same `(user_address, node_address, network, start_time)` tuple. Relay MUST reject the aggregate item unless the sum of `delegation_details.emission_amount` equals `total_amount`.
+For `type = delegation`, the admin submitter MUST create one signed aggregate vesting item per wallet-level group and attach the original delegation CSV rows as `delegation_details`. Relay MUST reject `type = delegation` items with an empty `delegation_details` list. Relay MUST validate that every detail has the same `user_address` as the aggregate item address, non-empty `node_address`, non-empty `network`, positive `task_fee`, positive `emission_amount`, and the same `start_time`. Relay MUST reject duplicate delegation details with the same `(user_address, node_address, network, start_time)` tuple. Relay MUST reject the aggregate item unless the sum of `delegation_details.emission_amount` equals `total_amount`.
 
 Relay MUST create the aggregate `vesting_records` row and all linked `vesting_delegation_emission_details` rows in one transaction. The detail table MUST store delegation emission attribution by `vesting_record_id`, `user_address`, `node_address`, `network`, `task_fee`, `emission_amount`, and `start_time`. The `(user_address, node_address, network, start_time)` tuple MUST remain unique. The vesting admin signature MUST continue to cover only the aggregate vesting record fields and MUST NOT include detail rows.
 

@@ -15,13 +15,12 @@ import (
 )
 
 type emissionTaskFeeParticipant struct {
-	Address          string
-	Type             string
-	TaskFee          *big.Int
-	UserAddress      string
-	NodeAddress      string
-	Network          string
-	DetailExternalID string
+	Address     string
+	Type        string
+	TaskFee     *big.Int
+	UserAddress string
+	NodeAddress string
+	Network     string
 }
 
 type emissionTaskFeeAggregateRow struct {
@@ -37,15 +36,14 @@ type emissionTaskFeeDelegationDetailRow struct {
 }
 
 type emissionTaskFeeCSVRow struct {
-	Address          string
-	Type             string
-	TaskFee          string
-	Emission         string
-	StartTime        string
-	UserAddress      string
-	NodeAddress      string
-	Network          string
-	DetailExternalID string
+	Address     string
+	Type        string
+	TaskFee     string
+	Emission    string
+	StartTime   string
+	UserAddress string
+	NodeAddress string
+	Network     string
 }
 
 func ExportEmissionTaskFeeCSV(c *gin.Context) {
@@ -58,7 +56,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 
 	emissionStartTime := fmt.Sprintf("%d", weekInfo.WeekEndDate.Unix())
-	participants, err := loadEmissionTaskFeeParticipants(weekInfo.WeekStartDate, weekInfo.WeekEndDate, emissionStartTime)
+	participants, err := loadEmissionTaskFeeParticipants(weekInfo.WeekStartDate, weekInfo.WeekEndDate)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -94,7 +92,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=emission_task_fee_%s_%s.csv", weekInfo.WeekStartDate.Format("20060102"), weekInfo.WeekEndDate.AddDate(0, 0, -1).Format("20060102")))
 
 	writer := csv.NewWriter(c.Writer)
-	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time", "user_address", "node_address", "network", "detail_external_id"}); err != nil {
+	if err := writer.Write([]string{"address", "type", "task fee", "emission", "start_time", "user_address", "node_address", "network"}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
@@ -102,7 +100,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 
 	for _, row := range rows {
-		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime, row.UserAddress, row.NodeAddress, row.Network, row.DetailExternalID}); err != nil {
+		if err := writer.Write([]string{row.Address, row.Type, row.TaskFee, row.Emission, row.StartTime, row.UserAddress, row.NodeAddress, row.Network}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"message": err.Error(),
 			})
@@ -119,7 +117,7 @@ func ExportEmissionTaskFeeCSV(c *gin.Context) {
 	}
 }
 
-func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time, emissionStartTime string) ([]emissionTaskFeeParticipant, error) {
+func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time) ([]emissionTaskFeeParticipant, error) {
 	db := config.GetDB()
 
 	nodeRows := make([]emissionTaskFeeAggregateRow, 0)
@@ -159,13 +157,12 @@ func loadEmissionTaskFeeParticipants(weekStart, weekEnd time.Time, emissionStart
 			continue
 		}
 		participants = append(participants, emissionTaskFeeParticipant{
-			Address:          row.UserAddress,
-			Type:             models.VestingTypeDelegation,
-			TaskFee:          taskFee,
-			UserAddress:      row.UserAddress,
-			NodeAddress:      row.NodeAddress,
-			Network:          row.Network,
-			DetailExternalID: buildEmissionDetailExternalID(emissionStartTime, row.UserAddress, row.NodeAddress, row.Network),
+			Address:     row.UserAddress,
+			Type:        models.VestingTypeDelegation,
+			TaskFee:     taskFee,
+			UserAddress: row.UserAddress,
+			NodeAddress: row.NodeAddress,
+			Network:     row.Network,
 		})
 	}
 
@@ -183,15 +180,14 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 			emissionCNX := big.NewInt(0).Div(numerator, totalTaskFee).Int64()
 			remainingEmission -= emissionCNX
 			rows = append(rows, emissionTaskFeeCSVRow{
-				Address:          p.Address,
-				Type:             p.Type,
-				TaskFee:          formatCNXAmount(p.TaskFee),
-				Emission:         formatIntegerCNX(emissionCNX),
-				StartTime:        emissionStartTime,
-				UserAddress:      p.UserAddress,
-				NodeAddress:      p.NodeAddress,
-				Network:          p.Network,
-				DetailExternalID: p.DetailExternalID,
+				Address:     p.Address,
+				Type:        p.Type,
+				TaskFee:     formatCNXAmount(p.TaskFee),
+				Emission:    formatIntegerCNX(emissionCNX),
+				StartTime:   emissionStartTime,
+				UserAddress: p.UserAddress,
+				NodeAddress: p.NodeAddress,
+				Network:     p.Network,
 			})
 		}
 	}
@@ -205,10 +201,6 @@ func buildEmissionTaskFeeCSVRows(participants []emissionTaskFeeParticipant, tota
 	})
 
 	return rows
-}
-
-func buildEmissionDetailExternalID(emissionStartTime, userAddress, nodeAddress, network string) string {
-	return fmt.Sprintf("emission:%s:%s:%s:%s", emissionStartTime, userAddress, nodeAddress, network)
 }
 
 func getPreviousEmissionWeekInfo() (*service.EmissionWeekInfo, error) {

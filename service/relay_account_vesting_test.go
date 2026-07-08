@@ -53,6 +53,21 @@ func TestNormalizeVestingInputRejectsInvalidType(t *testing.T) {
 	}
 }
 
+func TestNormalizeVestingDelegationDetailsRejectsEmptyDetailsForDelegation(t *testing.T) {
+	payload := vestingSignPayload{
+		Address:      "0x0000000000000000000000000000000000000001",
+		TotalAmount:  "1000",
+		StartTime:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+		DurationDays: 10,
+		Type:         models.VestingTypeDelegation,
+	}
+
+	_, err := normalizeVestingDelegationDetails(CreateVestingRecordInput{}, payload, big.NewInt(1000))
+	if !errors.Is(err, ErrInvalidVestingDelegationDetail) {
+		t.Fatalf("expected ErrInvalidVestingDelegationDetail, got %v", err)
+	}
+}
+
 func TestNormalizeVestingDelegationDetailsRequiresAggregateSum(t *testing.T) {
 	payload := vestingSignPayload{
 		Address:      "0x0000000000000000000000000000000000000001",

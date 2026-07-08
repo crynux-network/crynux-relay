@@ -99,6 +99,9 @@ func M20260705(db *gorm.DB) *gormigrate.Gormigrate {
 				if err := m.DropColumn(&vestingDelegationEmissionDetailBusinessKeyMigration{}, "DetailExternalID"); err != nil {
 					return err
 				}
+				if err := m.DropIndex(&vestingDelegationEmissionDetailBusinessKeyMigration{}, "idx_vded_user_node_network_start"); err != nil {
+					return err
+				}
 				return m.CreateIndex(&vestingDelegationEmissionDetailBusinessKeyMigration{}, "idx_vded_user_node_network_start")
 			},
 			Rollback: func(tx *gorm.DB) error {

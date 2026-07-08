@@ -133,10 +133,13 @@ func verifyVestingCreationSignature(input CreateVestingRecordInput, payload vest
 }
 
 func normalizeVestingDelegationDetails(input CreateVestingRecordInput, payload vestingSignPayload, totalAmount *big.Int) ([]models.VestingDelegationEmissionDetail, error) {
-	if len(input.DelegationDetails) == 0 {
+	if payload.Type != models.VestingTypeDelegation {
+		if len(input.DelegationDetails) > 0 {
+			return nil, ErrInvalidVestingDelegationDetail
+		}
 		return nil, nil
 	}
-	if payload.Type != models.VestingTypeDelegation {
+	if len(input.DelegationDetails) == 0 {
 		return nil, ErrInvalidVestingDelegationDetail
 	}
 
