@@ -159,7 +159,14 @@ func selectNodesByScore(nodes []models.Node, scores []float64, n int) []models.N
 	return res
 }
 
-func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask) (*models.Node, error) {
+type TaskNodeSelectionResult struct {
+	Node                    *models.Node
+	CandidatePool           []TaskTraceNodeSelectionCandidate
+	CandidatePoolTotalCount int
+	CandidatePoolTruncated  bool
+}
+
+func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask) (*TaskNodeSelectionResult, error) {
 	var nodes []models.Node
 	var err error
 	taskVersionNumbers := task.VersionNumbers()
@@ -197,13 +204,26 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 	}
 
 	now := time.Now().UTC()
+	traceSelection := GetTaskTraceStore().Enabled()
 	scores := make([]float64, len(nodes))
+	var probs []NodeSelectingProb
+	if traceSelection {
+		probs = make([]NodeSelectingProb, len(nodes))
+	}
 	for i, node := range nodes {
-		scores[i] = CalculateNodeSelectingProb(node, now).ProbWeight
+		prob := CalculateNodeSelectingProb(node, now)
+		scores[i] = prob.ProbWeight
+		if traceSelection {
+			probs[i] = prob
+		}
 	}
 
 	changedNodes := make([]models.Node, 0)
 	changedScores := make([]float64, 0)
+	var changedProbs []NodeSelectingProb
+	if traceSelection {
+		changedProbs = make([]NodeSelectingProb, 0)
+	}
 	for i, node := range nodes {
 		localModelIDs := make([]string, 0)
 		inUseModelIDs := make([]string, 0)
@@ -227,6 +247,9 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 			total := float64(len(task.ModelIDs))
 			changedScore *= (1 + 0.7*float64(cnt)/total + 0.3*float64(inUseCnt)/total)
 			changedScores = append(changedScores, changedScore)
+			if traceSelection {
+				changedProbs = append(changedProbs, probs[i])
+			}
 		}
 
 	}
@@ -234,12 +257,43 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 	if len(changedNodes) > 0 {
 		nodes = changedNodes
 		scores = changedScores
+		if traceSelection {
+			probs = changedProbs
+		}
 	}
 
 	logTaskAssignmentEvent(ctx, task, nodes)
 
 	node := selectNodesByScore(nodes, scores, 1)[0]
-	return &node, nil
+	result := &TaskNodeSelectionResult{
+		Node: &node,
+	}
+	if traceSelection {
+		result.CandidatePool, result.CandidatePoolTotalCount, result.CandidatePoolTruncated = buildTaskTraceNodeSelectionCandidatePool(nodes, probs, scores)
+	}
+	return result, nil
+}
+
+func buildTaskTraceNodeSelectionCandidatePool(nodes []models.Node, probs []NodeSelectingProb, scores []float64) ([]TaskTraceNodeSelectionCandidate, int, bool) {
+	totalCount := len(nodes)
+	limit := totalCount
+	truncated := false
+	if limit > taskTraceCandidatePoolLimit {
+		limit = taskTraceCandidatePoolLimit
+		truncated = true
+	}
+
+	candidatePool := make([]TaskTraceNodeSelectionCandidate, 0, limit)
+	for i := 0; i < limit; i++ {
+		candidatePool = append(candidatePool, TaskTraceNodeSelectionCandidate{
+			Address:      nodes[i].Address,
+			CardName:     nodes[i].GPUName,
+			StakingScore: probs[i].StakingScore,
+			QOSScore:     probs[i].QOSScore,
+			ProbWeight:   scores[i],
+		})
+	}
+	return candidatePool, totalCount, truncated
 }
 
 func selectNodesForDownloadTask(ctx context.Context, task *models.InferenceTask, modelID string, n int) ([]models.Node, error) {

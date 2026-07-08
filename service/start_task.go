@@ -15,12 +15,15 @@ import (
 )
 
 type DispatchedTask struct {
-	task      *models.InferenceTask
-	node      *models.Node
-	resChan   chan bool
-	createdAt time.Time
-	finished  bool
-	mu        sync.RWMutex
+	task                   *models.InferenceTask
+	node                   *models.Node
+	candidatePool          []TaskTraceNodeSelectionCandidate
+	candidatePoolTotal     int
+	candidatePoolTruncated bool
+	resChan                chan bool
+	createdAt              time.Time
+	finished               bool
+	mu                     sync.RWMutex
 }
 
 type TaskDispatcher struct {
@@ -298,13 +301,17 @@ func processTaskTimeouts(ctx context.Context) {
 	}
 }
 
-func (d *TaskDispatcher) Process(ctx context.Context, task *models.InferenceTask, node *models.Node) bool {
+func (d *TaskDispatcher) Process(ctx context.Context, task *models.InferenceTask, selection *TaskNodeSelectionResult) bool {
+	node := selection.Node
 	dispatchedTask, loaded := d.taskMap.LoadOrStore(node.Address, &DispatchedTask{
-		task:      task,
-		node:      node,
-		resChan:   make(chan bool, 1),
-		createdAt: time.Now(),
-		finished:  false,
+		task:                   task,
+		node:                   node,
+		candidatePool:          selection.CandidatePool,
+		candidatePoolTotal:     selection.CandidatePoolTotalCount,
+		candidatePoolTruncated: selection.CandidatePoolTruncated,
+		resChan:                make(chan bool, 1),
+		createdAt:              time.Now(),
+		finished:               false,
 	})
 	if !loaded {
 		log.Debugf("StartTask: new dispatched task %s on node %s", task.TaskIDCommitment, node.Address)
@@ -336,6 +343,9 @@ func (d *TaskDispatcher) Process(ctx context.Context, task *models.InferenceTask
 			log.Debugf("StartTask: task %s fee is higher than original task fee, replace", task.TaskIDCommitment)
 			log.Debugf("StartTask: task %s is replaced by task %s", originalTask.TaskIDCommitment, task.TaskIDCommitment)
 			dispatchedTask.task = task
+			dispatchedTask.candidatePool = selection.CandidatePool
+			dispatchedTask.candidatePoolTotal = selection.CandidatePoolTotalCount
+			dispatchedTask.candidatePoolTruncated = selection.CandidatePoolTruncated
 			dispatchedTask.resChan <- false
 			newResChan := make(chan bool, 1)
 			dispatchedTask.resChan = newResChan
@@ -360,20 +370,20 @@ func (d *TaskDispatcher) Dispatch(ctx context.Context, task *models.InferenceTas
 		case <-ctx.Done():
 			return
 		default:
-			selectedNode, err := selectNodeForInferenceTask(ctx, task)
+			selection, err := selectNodeForInferenceTask(ctx, task)
 
-			if err == nil && selectedNode != nil {
-				log.Debugf("StartTask: select node %s for task: %s", selectedNode.Address, task.TaskIDCommitment)
-				ok := d.Process(ctx, task, selectedNode)
+			if err == nil && selection != nil {
+				log.Debugf("StartTask: select node %s for task: %s", selection.Node.Address, task.TaskIDCommitment)
+				ok := d.Process(ctx, task, selection)
 				if ok {
-					log.Debugf("StartTask: dispatch task %s to node %s success", task.TaskIDCommitment, selectedNode.Address)
+					log.Debugf("StartTask: dispatch task %s to node %s success", task.TaskIDCommitment, selection.Node.Address)
 					return
 				} else {
-					log.Debugf("StartTask: dispatch task %s to node %s failed", task.TaskIDCommitment, selectedNode.Address)
+					log.Debugf("StartTask: dispatch task %s to node %s failed", task.TaskIDCommitment, selection.Node.Address)
 				}
 			} else if err != nil {
 				log.Errorf("StartTask: select node for task %s error: %v", task.TaskIDCommitment, err)
-			} else if selectedNode == nil {
+			} else if selection == nil {
 				log.Debugf("StartTask: no available node for task %s", task.TaskIDCommitment)
 			}
 			randomSleep := rand.Intn(500) + 500
@@ -410,7 +420,14 @@ func (d *TaskDispatcher) processDispatchedTasks(ctx context.Context) error {
 					err := SetTaskStatusStarted(ctx, config.GetDB(), dispatchedTask.task, dispatchedTask.node)
 					success := err == nil
 					if success {
-						GetTaskTraceStore().RecordNodeSelected(dispatchedTask.task.TaskIDCommitment, dispatchedTask.node.Address, dispatchedTask.createdAt)
+						GetTaskTraceStore().RecordNodeSelected(
+							dispatchedTask.task.TaskIDCommitment,
+							dispatchedTask.node.Address,
+							dispatchedTask.createdAt,
+							dispatchedTask.candidatePool,
+							dispatchedTask.candidatePoolTotal,
+							dispatchedTask.candidatePoolTruncated,
+						)
 					}
 
 					dispatchedTask.resChan <- success

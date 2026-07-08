@@ -8,7 +8,18 @@ import (
 	"time"
 )
 
-const taskTraceCleanupInterval = time.Hour
+const (
+	taskTraceCleanupInterval    = time.Hour
+	taskTraceCandidatePoolLimit = 200
+)
+
+type TaskTraceNodeSelectionCandidate struct {
+	Address      string  `json:"address"`
+	CardName     string  `json:"card_name"`
+	StakingScore float64 `json:"staking_score"`
+	QOSScore     float64 `json:"qos_score"`
+	ProbWeight   float64 `json:"prob_weight"`
+}
 
 type TaskTraceValidationTask struct {
 	TaskIDCommitment string                 `json:"task_id_commitment"`
@@ -48,8 +59,11 @@ type TaskTraceRecord struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 	ExpiresAt        time.Time `json:"expires_at"`
 
-	SelectedNode     string     `json:"selected_node,omitempty"`
-	NodeSelectedTime *time.Time `json:"node_selected_time,omitempty"`
+	SelectedNode                         string                            `json:"selected_node,omitempty"`
+	NodeSelectedTime                     *time.Time                        `json:"node_selected_time,omitempty"`
+	NodeSelectionCandidatePool           []TaskTraceNodeSelectionCandidate `json:"node_selection_candidate_pool,omitempty"`
+	NodeSelectionCandidatePoolTotalCount int                               `json:"node_selection_candidate_pool_total_count,omitempty"`
+	NodeSelectionCandidatePoolTruncated  bool                              `json:"node_selection_candidate_pool_truncated,omitempty"`
 
 	StartNodeSnapshot *models.SlashEvidenceNodeSnapshot `json:"start_node_snapshot,omitempty"`
 
@@ -138,11 +152,12 @@ func (s *TaskTraceStore) upsert(taskIDCommitment string, now time.Time, fn func(
 	}
 }
 
-func (s *TaskTraceStore) RecordNodeSelected(taskIDCommitment, selectedNode string, selectedTime time.Time) {
+func (s *TaskTraceStore) RecordNodeSelected(taskIDCommitment, selectedNode string, selectedTime time.Time, candidatePool []TaskTraceNodeSelectionCandidate, candidatePoolTotalCount int, candidatePoolTruncated bool) {
 	s.upsert(taskIDCommitment, time.Now().UTC(), func(record *TaskTraceRecord) {
 		t := selectedTime.UTC()
 		record.SelectedNode = selectedNode
 		record.NodeSelectedTime = &t
+		record.NodeSelectionCandidatePool, record.NodeSelectionCandidatePoolTotalCount, record.NodeSelectionCandidatePoolTruncated = normalizeTaskTraceCandidatePool(candidatePool, candidatePoolTotalCount, candidatePoolTruncated)
 	})
 }
 
@@ -315,6 +330,7 @@ func (s *TaskTraceStore) deleteLocked(taskIDCommitment string) {
 
 func cloneTaskTraceRecord(record *TaskTraceRecord) *TaskTraceRecord {
 	clone := *record
+	clone.NodeSelectionCandidatePool = append([]TaskTraceNodeSelectionCandidate(nil), record.NodeSelectionCandidatePool...)
 	clone.ValidationCommitments = append([]string(nil), record.ValidationCommitments...)
 	clone.ResultUploadFiles = append([]TaskTraceUploadFile(nil), record.ResultUploadFiles...)
 	clone.AppResultFetches = append([]TaskTraceResultFetch(nil), record.AppResultFetches...)
@@ -329,6 +345,20 @@ func cloneTaskTraceRecord(record *TaskTraceRecord) *TaskTraceRecord {
 		clone.ValidationResult = &result
 	}
 	return &clone
+}
+
+func normalizeTaskTraceCandidatePool(candidatePool []TaskTraceNodeSelectionCandidate, totalCount int, truncated bool) ([]TaskTraceNodeSelectionCandidate, int, bool) {
+	if totalCount < len(candidatePool) {
+		totalCount = len(candidatePool)
+	}
+	if len(candidatePool) > taskTraceCandidatePoolLimit {
+		candidatePool = candidatePool[:taskTraceCandidatePoolLimit]
+		truncated = true
+	}
+	if totalCount > len(candidatePool) {
+		truncated = true
+	}
+	return append([]TaskTraceNodeSelectionCandidate(nil), candidatePool...), totalCount, truncated
 }
 
 func buildTaskTraceValidationResult(tasks []*models.InferenceTask) *TaskTraceValidationResult {

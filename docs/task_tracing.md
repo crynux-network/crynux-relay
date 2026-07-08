@@ -26,6 +26,8 @@ Target trace data:
 - Node selected:
   - Timestamp: time when Relay selects a node for the task before task start.
   - Details: selected node address.
+  - Details: final candidate pool used by weighted random selection, including each recorded candidate's address, card name, staking score, runtime QoS score, and final probability weight after all node selection calculations and model locality boosts are applied.
+  - Details: the candidate pool MUST include `candidate_pool_total_count` and `candidate_pool_truncated`. Relay MUST cap the stored candidate list and MUST set `candidate_pool_truncated` to true when the final candidate pool contains more nodes than the stored list.
   - Duration: queue waiting time, calculated as node selected time minus queue entry time.
 - Queue abort:
   - Timestamp: task aborted time when the task is aborted before node selection.

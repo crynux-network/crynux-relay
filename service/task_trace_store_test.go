@@ -33,10 +33,84 @@ func TestTaskTraceStoreDisabledDoesNotWriteRecords(t *testing.T) {
 	initTaskTraceStoreTestConfig(t, 0)
 	store := NewTaskTraceStore()
 
-	store.RecordNodeSelected("0xtask", "0xnode", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	store.RecordNodeSelected(
+		"0xtask",
+		"0xnode",
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		[]TaskTraceNodeSelectionCandidate{{Address: "0xnode", CardName: "RTX 4090", StakingScore: 0.5, QOSScore: 0.8, ProbWeight: 0.31}},
+		1,
+		false,
+	)
 
 	if _, ok := store.Get("0xtask", time.Now().UTC()); ok {
 		t.Fatal("expected disabled tracing to skip volatile record writes")
+	}
+}
+
+func TestTaskTraceStoreRecordsNodeSelectionCandidatePool(t *testing.T) {
+	initTaskTraceStoreTestConfig(t, 1)
+	store := NewTaskTraceStore()
+	candidatePool := []TaskTraceNodeSelectionCandidate{
+		{Address: "0xnode1", CardName: "RTX 4090", StakingScore: 0.5, QOSScore: 0.8, ProbWeight: 0.31},
+		{Address: "0xnode2", CardName: "A100", StakingScore: 1, QOSScore: 0.9, ProbWeight: 0.47},
+	}
+
+	store.RecordNodeSelected("0xtask", "0xnode2", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), candidatePool, len(candidatePool), false)
+
+	record, ok := store.Get("0xtask", time.Now().UTC())
+	if !ok {
+		t.Fatal("expected task trace record")
+	}
+	if record.SelectedNode != "0xnode2" {
+		t.Fatalf("expected selected node 0xnode2, got %s", record.SelectedNode)
+	}
+	if record.NodeSelectionCandidatePoolTotalCount != 2 {
+		t.Fatalf("expected total count 2, got %d", record.NodeSelectionCandidatePoolTotalCount)
+	}
+	if record.NodeSelectionCandidatePoolTruncated {
+		t.Fatal("expected candidate pool not to be truncated")
+	}
+	if len(record.NodeSelectionCandidatePool) != 2 {
+		t.Fatalf("expected two candidate pool records, got %d", len(record.NodeSelectionCandidatePool))
+	}
+	if record.NodeSelectionCandidatePool[1].ProbWeight != 0.47 {
+		t.Fatalf("expected final prob weight 0.47, got %f", record.NodeSelectionCandidatePool[1].ProbWeight)
+	}
+
+	candidatePool[0].Address = "0xmutated"
+	record.NodeSelectionCandidatePool[1].Address = "0xmutated"
+
+	recordAgain, ok := store.Get("0xtask", time.Now().UTC())
+	if !ok {
+		t.Fatal("expected task trace record")
+	}
+	if recordAgain.NodeSelectionCandidatePool[0].Address != "0xnode1" || recordAgain.NodeSelectionCandidatePool[1].Address != "0xnode2" {
+		t.Fatalf("expected candidate pool to be cloned, got %#v", recordAgain.NodeSelectionCandidatePool)
+	}
+}
+
+func TestTaskTraceStoreCapsNodeSelectionCandidatePool(t *testing.T) {
+	initTaskTraceStoreTestConfig(t, 1)
+	store := NewTaskTraceStore()
+	candidatePool := make([]TaskTraceNodeSelectionCandidate, 0, taskTraceCandidatePoolLimit+1)
+	for i := 0; i < taskTraceCandidatePoolLimit+1; i++ {
+		candidatePool = append(candidatePool, TaskTraceNodeSelectionCandidate{Address: "0xnode" + strconv.Itoa(i)})
+	}
+
+	store.RecordNodeSelected("0xtask", "0xnode0", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), candidatePool, len(candidatePool), false)
+
+	record, ok := store.Get("0xtask", time.Now().UTC())
+	if !ok {
+		t.Fatal("expected task trace record")
+	}
+	if len(record.NodeSelectionCandidatePool) != taskTraceCandidatePoolLimit {
+		t.Fatalf("expected capped candidate pool size %d, got %d", taskTraceCandidatePoolLimit, len(record.NodeSelectionCandidatePool))
+	}
+	if record.NodeSelectionCandidatePoolTotalCount != taskTraceCandidatePoolLimit+1 {
+		t.Fatalf("expected total count %d, got %d", taskTraceCandidatePoolLimit+1, record.NodeSelectionCandidatePoolTotalCount)
+	}
+	if !record.NodeSelectionCandidatePoolTruncated {
+		t.Fatal("expected candidate pool to be marked truncated")
 	}
 }
 

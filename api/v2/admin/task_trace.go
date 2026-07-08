@@ -311,9 +311,20 @@ func (b *taskTraceBuilder) addNodeSelected() {
 		timestamp = &value
 		details["selected_node"] = b.memoryTrace.SelectedNode
 		b.markMemory("node_selected.timestamp")
+		if len(b.memoryTrace.NodeSelectionCandidatePool) > 0 || b.memoryTrace.NodeSelectionCandidatePoolTotalCount > 0 {
+			details["candidate_pool"] = b.memoryTrace.NodeSelectionCandidatePool
+			details["candidate_pool_total_count"] = b.memoryTrace.NodeSelectionCandidatePoolTotalCount
+			details["candidate_pool_truncated"] = b.memoryTrace.NodeSelectionCandidatePoolTruncated
+			b.markMemory("node_selected.candidate_pool")
+			b.markMemory("node_selected.candidate_pool_total_count")
+			b.markMemory("node_selected.candidate_pool_truncated")
+		} else {
+			b.addMissingMemory("node_selected", "candidate_pool")
+		}
 	} else {
 		b.addMissingMemory("node_selected", "node_selected_time")
 		b.addMissingMemory("node_selected", "selected_node")
+		b.addMissingMemory("node_selected", "candidate_pool")
 	}
 	b.trace = append(b.trace, TaskTraceStep{
 		Name:      "node_selected",
