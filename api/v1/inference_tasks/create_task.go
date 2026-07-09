@@ -78,6 +78,12 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		return nil, response.NewValidationErrorResponse("task_args", validationErr.Error())
 	}
 
+	normalizedTaskArgs, err := models.NormalizeTaskArgsModelNames(in.TaskArgs, in.TaskType)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
+	in.TaskArgs = normalizedTaskArgs
+
 	taskVersions := strings.Split(in.TaskVersion, ".")
 	if len(taskVersions) != 3 {
 		return nil, response.NewValidationErrorResponse("task_version", "Invalid task version")
