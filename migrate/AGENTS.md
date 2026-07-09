@@ -12,6 +12,10 @@ Migration code in this directory MUST NOT add defensive re-execution guards such
 
 Write migration steps as direct, deterministic schema transitions for the target version.
 
+### No Unrequested Data Backfill
+
+Migrations MUST NOT include data backfill logic unless the task explicitly requires it. When a migration creates a new table or column, leave it empty and let the application populate it, unless an explicit requirement states that historical data must be backfilled.
+
 ### Local Structs Only
 
 Migration code MUST NOT reference structs from the `models` package. Define a local struct inside the migration file, frozen to the schema at the time the migration is written, with a `TableName()` method for the target table.

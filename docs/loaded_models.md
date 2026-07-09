@@ -25,6 +25,8 @@ Each `loaded_models` row MUST contain:
 
 `model_id` MUST be unique. `min_vram` MUST be stored in GB, matching the `nodes.gpu_vram` unit recorded at node join.
 
+The migration that creates `loaded_models` MUST create an empty table. The projection MUST be populated only by successful task executions after the table is created.
+
 Relay SHALL keep an in-memory pending update cache for successful task executions that have not yet been flushed to `loaded_models`.
 
 ## Update Rules
@@ -48,12 +50,6 @@ The flusher MUST periodically take the pending cache and upsert it into `loaded_
 - If the model ID already exists in `loaded_models`, Relay MUST update `min_vram` only when the pending value is lower than the stored value.
 
 If a flush fails, Relay MUST merge the failed pending values back into the in-memory pending update cache.
-
-## Historical Backfill
-
-The migration that creates `loaded_models` MUST backfill existing successful task executions from `inference_tasks`.
-
-The backfill MUST include tasks with status `TaskEndSuccess`, `TaskEndGroupSuccess`, or `TaskEndGroupRefund` and a non-empty `selected_node`. The backfill MUST join `inference_tasks.selected_node` to `nodes.address`, split the stored `model_ids` value, and write the minimum `nodes.gpu_vram` per model ID.
 
 ## API Contract
 
