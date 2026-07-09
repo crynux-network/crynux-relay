@@ -13,6 +13,7 @@
 | [passive_slash_model.md](./passive_slash_model.md) | Passive slash review mode, slash evidence capture, pending slash states, and admin approval flow |
 | [node_event_stream.md](./node_event_stream.md) | Relay `events` table, v1 event APIs, and node watcher polling protocol |
 | [model_predownload.md](./model_predownload.md) | Pre-download scheduling, node notification, and model availability tracking |
+| [loaded_models.md](./loaded_models.md) | Successful model execution projection, minimum VRAM tracking, and public v2 loaded models API |
 | [all_nodes_data.md](./all_nodes_data.md) | Historical joined-node public snapshot, join upsert behavior, quit retention, and SyncNetwork refresh rules |
 | [deposit_withdraw_and_risk_control.md](./deposit_withdraw_and_risk_control.md) | Deposit and withdrawal lifecycle across Relay and Wallet, relay account ledger, and risk control checks |
 | [deposit-withdraw-only-networks.md](./deposit-withdraw-only-networks.md) | Deposit and withdrawal only network configuration, processing, BenefitAddress |
