@@ -4,6 +4,7 @@ import (
 	"crynux_relay/api/v2/admin"
 	"crynux_relay/api/v2/incentive"
 	"crynux_relay/api/v2/middleware"
+	modelapi "crynux_relay/api/v2/models"
 	"crynux_relay/api/v2/network"
 	"crynux_relay/api/v2/nodes"
 	relayaccount "crynux_relay/api/v2/relay_account"
@@ -16,6 +17,12 @@ import (
 func InitRoutes(r *fizz.Fizz) {
 
 	v2g := r.Group("v2", "ApiV2", "API version 2")
+
+	v2g.GET("/loaded-models", []fizz.OperationOption{
+		fizz.ID("loaded_models_v2"),
+		fizz.Summary("Get loaded models proven by successful task execution"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(modelapi.GetLoadedModels, 200))
 
 	incentiveGroup := v2g.Group("incentive", "incentive", "incentive statistics related APIs")
 

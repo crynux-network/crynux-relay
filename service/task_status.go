@@ -421,6 +421,7 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	}); err != nil {
 		return err
 	}
+	updateLoadedModels(&task, node)
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
 	}
@@ -660,6 +661,7 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
+	updateLoadedModels(&task, node)
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
 	}

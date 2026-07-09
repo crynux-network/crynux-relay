@@ -66,6 +66,7 @@ func main() {
 
 	service.StartBlockchainProcessors(context.Background())
 	service.StartDelegatedSlashRecovery(context.Background(), config.GetDB())
+	go service.StartLoadedModelFlush(context.Background(), config.GetDB())
 	go service.StartTaskProcesser(context.Background())
 	go service.StartRelayAccountSync(context.Background(), config.GetDB())
 	go tasks.StartVestingRelease(context.Background())
