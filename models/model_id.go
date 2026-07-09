@@ -17,6 +17,27 @@ func NormalizeModelIDs(modelIDs []string) []string {
 	return normalized
 }
 
+// BaseModelHuggingFaceID extracts the huggingface model name from a base
+// model dispatch ID formatted as "base:<name>" or "base:<name>+<variant>".
+// It returns false for non-base model IDs (lora, controlnet) and for
+// URL-based model names, which are not huggingface models.
+func BaseModelHuggingFaceID(modelID string) (string, bool) {
+	name, ok := strings.CutPrefix(modelID, "base:")
+	if !ok {
+		return "", false
+	}
+	if strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://") {
+		return "", false
+	}
+	if variantSep := strings.IndexByte(name, '+'); variantSep >= 0 {
+		name = name[:variantSep]
+	}
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
 // NormalizeModelName lowercases a huggingface model name so that names
 // differing only in letter case map to the same model. URL-based model names
 // are kept unchanged because URL paths are case sensitive.

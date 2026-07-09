@@ -14,28 +14,35 @@ const loadedModelFlushInterval = time.Hour
 
 var loadedModelCache = newLoadedModelMinVRAMCache()
 
+type pendingLoadedModel struct {
+	ModelType models.LoadedModelType
+	MinVRAM   uint64
+}
+
 type loadedModelMinVRAMCache struct {
 	mu      sync.Mutex
-	pending map[string]uint64
+	pending map[string]pendingLoadedModel
 }
 
 func newLoadedModelMinVRAMCache() *loadedModelMinVRAMCache {
 	return &loadedModelMinVRAMCache{
-		pending: make(map[string]uint64),
+		pending: make(map[string]pendingLoadedModel),
 	}
 }
 
 func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
+	modelType := models.LoadedModelTypeFromTaskType(task.TaskType)
 	seenModelIDs := make(map[string]struct{}, len(task.ModelIDs))
 	for _, modelID := range task.ModelIDs {
-		if modelID == "" {
+		hfModelID, ok := models.BaseModelHuggingFaceID(modelID)
+		if !ok {
 			continue
 		}
-		if _, ok := seenModelIDs[modelID]; ok {
+		if _, ok := seenModelIDs[hfModelID]; ok {
 			continue
 		}
-		seenModelIDs[modelID] = struct{}{}
-		loadedModelCache.record(modelID, node.GPUVram)
+		seenModelIDs[hfModelID] = struct{}{}
+		loadedModelCache.record(hfModelID, modelType, node.GPUVram)
 	}
 }
 
@@ -61,10 +68,11 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	}
 
 	loadedModels := make([]models.LoadedModel, 0, len(pending))
-	for modelID, minVRAM := range pending {
+	for modelID, pendingModel := range pending {
 		loadedModels = append(loadedModels, models.LoadedModel{
-			ModelID: modelID,
-			MinVRAM: minVRAM,
+			ModelID:   modelID,
+			ModelType: pendingModel.ModelType,
+			MinVRAM:   pendingModel.MinVRAM,
 		})
 	}
 	if err := models.UpsertLoadedModelMinVRAMs(ctx, db, loadedModels); err != nil {
@@ -73,31 +81,31 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	}
 }
 
-func (cache *loadedModelMinVRAMCache) record(modelID string, minVRAM uint64) {
+func (cache *loadedModelMinVRAMCache) record(modelID string, modelType models.LoadedModelType, minVRAM uint64) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if currentMin, ok := cache.pending[modelID]; !ok || minVRAM < currentMin {
-		cache.pending[modelID] = minVRAM
+	if current, ok := cache.pending[modelID]; !ok || minVRAM < current.MinVRAM {
+		cache.pending[modelID] = pendingLoadedModel{ModelType: modelType, MinVRAM: minVRAM}
 	}
 }
 
-func (cache *loadedModelMinVRAMCache) take() map[string]uint64 {
+func (cache *loadedModelMinVRAMCache) take() map[string]pendingLoadedModel {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
 	result := cache.pending
-	cache.pending = make(map[string]uint64)
+	cache.pending = make(map[string]pendingLoadedModel)
 	return result
 }
 
-func (cache *loadedModelMinVRAMCache) merge(pending map[string]uint64) {
+func (cache *loadedModelMinVRAMCache) merge(pending map[string]pendingLoadedModel) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	for modelID, minVRAM := range pending {
-		if currentMin, ok := cache.pending[modelID]; !ok || minVRAM < currentMin {
-			cache.pending[modelID] = minVRAM
+	for modelID, pendingModel := range pending {
+		if current, ok := cache.pending[modelID]; !ok || pendingModel.MinVRAM < current.MinVRAM {
+			cache.pending[modelID] = pendingModel
 		}
 	}
 }

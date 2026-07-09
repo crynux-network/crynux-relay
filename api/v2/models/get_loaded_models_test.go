@@ -28,8 +28,8 @@ func TestGetLoadedModels(t *testing.T) {
 		t.Fatalf("failed to migrate loaded models: %v", err)
 	}
 	loadedModels := []dbmodels.LoadedModel{
-		{ModelID: "z/model", MinVRAM: 24},
-		{ModelID: "a/model", MinVRAM: 16},
+		{ModelID: "z/model", ModelType: dbmodels.LoadedModelTypeSD, MinVRAM: 24},
+		{ModelID: "a/model", ModelType: dbmodels.LoadedModelTypeLLM, MinVRAM: 16},
 	}
 	if err := db.Create(&loadedModels).Error; err != nil {
 		t.Fatalf("failed to create loaded models: %v", err)
@@ -46,10 +46,10 @@ func TestGetLoadedModels(t *testing.T) {
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 loaded models, got %d", len(resp.Data))
 	}
-	if resp.Data[0].ModelID != "a/model" || resp.Data[0].MinVRAM != 16 {
+	if resp.Data[0].ModelID != "a/model" || resp.Data[0].ModelType != dbmodels.LoadedModelTypeLLM || resp.Data[0].MinVRAM != 16 {
 		t.Fatalf("unexpected first loaded model: %+v", resp.Data[0])
 	}
-	if resp.Data[1].ModelID != "z/model" || resp.Data[1].MinVRAM != 24 {
+	if resp.Data[1].ModelID != "z/model" || resp.Data[1].ModelType != dbmodels.LoadedModelTypeSD || resp.Data[1].MinVRAM != 24 {
 		t.Fatalf("unexpected second loaded model: %+v", resp.Data[1])
 	}
 }
