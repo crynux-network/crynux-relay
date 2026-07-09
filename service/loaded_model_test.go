@@ -19,12 +19,15 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	if err := db.AutoMigrate(&models.LoadedModel{}); err != nil {
 		t.Fatalf("failed to migrate loaded models: %v", err)
 	}
-	if err := db.Create(&models.LoadedModel{ModelID: "qwen/qwen3.6-7b", MinVRAM: 24}).Error; err != nil {
+	if err := db.Create(&models.LoadedModel{ModelID: "qwen/qwen3.6-7b", ModelType: models.LoadedModelTypeLLM, MinVRAM: 24}).Error; err != nil {
 		t.Fatalf("failed to create loaded model: %v", err)
 	}
 
 	updateLoadedModels(
-		&models.InferenceTask{ModelIDs: models.StringArray{"qwen/qwen3.6-7b", "meta/llama", "meta/llama"}},
+		&models.InferenceTask{
+			TaskType: models.TaskTypeLLM,
+			ModelIDs: models.StringArray{"base:qwen/qwen3.6-7b", "base:meta/llama", "base:meta/llama+fp16", "lora:crynux-network/mylora"},
+		},
 		&models.Node{GPUVram: 16},
 	)
 
@@ -32,11 +35,11 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	if len(pending) != 2 {
 		t.Fatalf("expected 2 pending loaded models, got %d", len(pending))
 	}
-	if pending["meta/llama"] != 16 {
-		t.Fatalf("unexpected pending meta/llama min vram: %d", pending["meta/llama"])
+	if pending["meta/llama"] != (pendingLoadedModel{ModelType: models.LoadedModelTypeLLM, MinVRAM: 16}) {
+		t.Fatalf("unexpected pending meta/llama entry: %+v", pending["meta/llama"])
 	}
-	if pending["qwen/qwen3.6-7b"] != 16 {
-		t.Fatalf("unexpected pending qwen min vram: %d", pending["qwen/qwen3.6-7b"])
+	if pending["qwen/qwen3.6-7b"] != (pendingLoadedModel{ModelType: models.LoadedModelTypeLLM, MinVRAM: 16}) {
+		t.Fatalf("unexpected pending qwen entry: %+v", pending["qwen/qwen3.6-7b"])
 	}
 	loadedModelCache.merge(pending)
 
@@ -57,10 +60,10 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	if len(dbLoadedModels) != 2 {
 		t.Fatalf("expected 2 db loaded models after flush, got %d", len(dbLoadedModels))
 	}
-	if dbLoadedModels[0].ModelID != "meta/llama" || dbLoadedModels[0].MinVRAM != 16 {
+	if dbLoadedModels[0].ModelID != "meta/llama" || dbLoadedModels[0].ModelType != models.LoadedModelTypeLLM || dbLoadedModels[0].MinVRAM != 16 {
 		t.Fatalf("unexpected first db loaded model: %+v", dbLoadedModels[0])
 	}
-	if dbLoadedModels[1].ModelID != "qwen/qwen3.6-7b" || dbLoadedModels[1].MinVRAM != 16 {
+	if dbLoadedModels[1].ModelID != "qwen/qwen3.6-7b" || dbLoadedModels[1].ModelType != models.LoadedModelTypeLLM || dbLoadedModels[1].MinVRAM != 16 {
 		t.Fatalf("unexpected second db loaded model: %+v", dbLoadedModels[1])
 	}
 }

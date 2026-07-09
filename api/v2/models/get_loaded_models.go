@@ -11,8 +11,9 @@ import (
 var getDB = config.GetDB
 
 type LoadedModelData struct {
-	ModelID string `json:"model_id"`
-	MinVRAM uint64 `json:"min_vram"`
+	ModelID   string                   `json:"model_id"`
+	ModelType dbmodels.LoadedModelType `json:"model_type"`
+	MinVRAM   uint64                   `json:"min_vram"`
 }
 
 type GetLoadedModelsResponse struct {
@@ -29,8 +30,9 @@ func GetLoadedModels(c *gin.Context) (*GetLoadedModelsResponse, error) {
 	data := make([]LoadedModelData, 0, len(loadedModels))
 	for _, loadedModel := range loadedModels {
 		data = append(data, LoadedModelData{
-			ModelID: loadedModel.ModelID,
-			MinVRAM: loadedModel.MinVRAM,
+			ModelID:   loadedModel.ModelID,
+			ModelType: loadedModel.ModelType,
+			MinVRAM:   loadedModel.MinVRAM,
 		})
 	}
 	return &GetLoadedModelsResponse{

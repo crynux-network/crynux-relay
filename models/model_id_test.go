@@ -30,6 +30,28 @@ func TestNormalizeModelIDs(t *testing.T) {
 	}
 }
 
+func TestBaseModelHuggingFaceID(t *testing.T) {
+	cases := []struct {
+		modelID string
+		want    string
+		ok      bool
+	}{
+		{"base:qwen/qwen3-8b", "qwen/qwen3-8b", true},
+		{"base:crynux-network/sdxl-turbo+fp16", "crynux-network/sdxl-turbo", true},
+		{"lora:crynux-network/mylora", "", false},
+		{"controlnet:lllyasviel/sd-controlnet-canny+fp16", "", false},
+		{"base:https://example.com/models/mymodel.safetensors", "", false},
+		{"base:", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		got, ok := BaseModelHuggingFaceID(c.modelID)
+		if got != c.want || ok != c.ok {
+			t.Fatalf("BaseModelHuggingFaceID(%q) = (%q, %v), want (%q, %v)", c.modelID, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestNormalizeModelName(t *testing.T) {
 	if got := NormalizeModelName("Qwen/Qwen3.5-9B"); got != "qwen/qwen3.5-9b" {
 		t.Fatalf("unexpected normalized model name: %q", got)
