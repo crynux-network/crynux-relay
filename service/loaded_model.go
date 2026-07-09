@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crynux_relay/models"
-	"sort"
 	"sync"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const loadedModelFlushInterval = 5 * time.Second
+const loadedModelFlushInterval = time.Hour
 
 var loadedModelCache = newLoadedModelMinVRAMCache()
 
@@ -55,38 +54,6 @@ func StartLoadedModelFlush(ctx context.Context, db *gorm.DB) {
 	}
 }
 
-func ListLoadedModels(ctx context.Context, db *gorm.DB) ([]models.LoadedModel, error) {
-	loadedModels, err := models.ListLoadedModels(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
-	minVRAMByModelID := make(map[string]uint64, len(loadedModels))
-	for _, loadedModel := range loadedModels {
-		minVRAMByModelID[loadedModel.ModelID] = loadedModel.MinVRAM
-	}
-	for modelID, minVRAM := range loadedModelCache.snapshot() {
-		if currentMin, ok := minVRAMByModelID[modelID]; !ok || minVRAM < currentMin {
-			minVRAMByModelID[modelID] = minVRAM
-		}
-	}
-
-	modelIDs := make([]string, 0, len(minVRAMByModelID))
-	for modelID := range minVRAMByModelID {
-		modelIDs = append(modelIDs, modelID)
-	}
-	sort.Strings(modelIDs)
-
-	result := make([]models.LoadedModel, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		result = append(result, models.LoadedModel{
-			ModelID: modelID,
-			MinVRAM: minVRAMByModelID[modelID],
-		})
-	}
-	return result, nil
-}
-
 func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	pending := loadedModelCache.take()
 	if len(pending) == 0 {
@@ -113,17 +80,6 @@ func (cache *loadedModelMinVRAMCache) record(modelID string, minVRAM uint64) {
 	if currentMin, ok := cache.pending[modelID]; !ok || minVRAM < currentMin {
 		cache.pending[modelID] = minVRAM
 	}
-}
-
-func (cache *loadedModelMinVRAMCache) snapshot() map[string]uint64 {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	result := make(map[string]uint64, len(cache.pending))
-	for modelID, minVRAM := range cache.pending {
-		result[modelID] = minVRAM
-	}
-	return result
 }
 
 func (cache *loadedModelMinVRAMCache) take() map[string]uint64 {

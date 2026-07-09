@@ -28,19 +28,17 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 		&models.Node{GPUVram: 16},
 	)
 
-	loadedModels, err := ListLoadedModels(context.Background(), db)
-	if err != nil {
-		t.Fatalf("failed to list loaded models: %v", err)
+	pending := loadedModelCache.take()
+	if len(pending) != 2 {
+		t.Fatalf("expected 2 pending loaded models, got %d", len(pending))
 	}
-	if len(loadedModels) != 2 {
-		t.Fatalf("expected 2 loaded models, got %d", len(loadedModels))
+	if pending["meta/llama"] != 16 {
+		t.Fatalf("unexpected pending meta/llama min vram: %d", pending["meta/llama"])
 	}
-	if loadedModels[0].ModelID != "meta/llama" || loadedModels[0].MinVRAM != 16 {
-		t.Fatalf("unexpected first loaded model: %+v", loadedModels[0])
+	if pending["qwen/qwen3.6-7b"] != 16 {
+		t.Fatalf("unexpected pending qwen min vram: %d", pending["qwen/qwen3.6-7b"])
 	}
-	if loadedModels[1].ModelID != "qwen/qwen3.6-7b" || loadedModels[1].MinVRAM != 16 {
-		t.Fatalf("unexpected second loaded model: %+v", loadedModels[1])
-	}
+	loadedModelCache.merge(pending)
 
 	var dbLoadedModels []models.LoadedModel
 	if err := db.Order("model_id ASC").Find(&dbLoadedModels).Error; err != nil {

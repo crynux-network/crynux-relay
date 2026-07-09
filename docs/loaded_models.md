@@ -40,7 +40,7 @@ The `min_vram` value for a model MUST be monotonically non-increasing across suc
 
 ## Background Flush
 
-Relay SHALL run one background loaded model flusher goroutine.
+Relay SHALL run one background loaded model flusher goroutine. The flusher MUST run once per hour.
 
 The flusher MUST periodically take the pending cache and upsert it into `loaded_models`:
 
@@ -79,4 +79,4 @@ The response body MUST use the standard Relay v2 response envelope:
 }
 ```
 
-The endpoint MUST merge persisted `loaded_models` rows with the in-memory pending update cache before building the response. The response `data` array MUST be ordered by `model_id` ascending.
+The endpoint MUST read only persisted `loaded_models` rows. Pending cache entries MUST become visible through the endpoint after the background flusher writes them to the database. The response `data` array MUST be ordered by `model_id` ascending.

@@ -3,7 +3,7 @@ package models
 import (
 	"crynux_relay/api/v2/response"
 	"crynux_relay/config"
-	"crynux_relay/service"
+	dbmodels "crynux_relay/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,7 +21,7 @@ type GetLoadedModelsResponse struct {
 }
 
 func GetLoadedModels(c *gin.Context) (*GetLoadedModelsResponse, error) {
-	loadedModels, err := service.ListLoadedModels(c.Request.Context(), getDB())
+	loadedModels, err := dbmodels.ListLoadedModels(c.Request.Context(), getDB())
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
