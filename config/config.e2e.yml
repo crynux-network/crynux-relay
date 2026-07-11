@@ -23,6 +23,7 @@ log:
 http:
   host: "0.0.0.0"
   port: "8080"
+  max_body_bytes: 33554432
   jwt:
     secret_key_file: "config/secrets/jwt_secret_key.txt"
     expires_in: 3600

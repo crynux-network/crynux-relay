@@ -64,6 +64,9 @@ func InitConfig(configPath string) error {
 	if err := checkFundingNetworks(); err != nil {
 		return err
 	}
+	if err := checkHttpConfig(); err != nil {
+		return err
+	}
 	if err := checkStatsConfig(); err != nil {
 		return err
 	}
@@ -157,6 +160,13 @@ func checkFundingNetworks() error {
 		if fundingNetwork.LogBlockRange == 0 {
 			return fmt.Errorf("deposit withdraw network %s log block range not set", network)
 		}
+	}
+	return nil
+}
+
+func checkHttpConfig() error {
+	if appConfig.Http.MaxBodyBytes <= 0 {
+		return errors.New("http.max_body_bytes is not set")
 	}
 	return nil
 }

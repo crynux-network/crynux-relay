@@ -47,7 +47,7 @@ func GetHttpApplication(appConfig *config.AppConfig) *gin.Engine {
 	// Initialize our own handlers
 	tonic.SetErrorHook(TonicResponseErrorHook)
 	tonic.SetRenderHook(TonicRenderHook, "")
-	tonic.SetBindHook(tonic.DefaultBindingHookMaxBodyBytes(32 << 20))
+	tonic.SetBindHook(tonic.DefaultBindingHookMaxBodyBytes(appConfig.Http.MaxBodyBytes))
 	tonic.RegisterTagNameFunc(func(fld reflect.StructField) string {
 		name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
 		if name == "-" {
