@@ -198,6 +198,15 @@ func AdjustNodeQosForJoin(node *models.Node, isNewNode bool) {
 	}
 
 	node.QOSScore = rejoinQosLongFloor * GetMaxQosScore()
+	// Drop the stale in-memory rolling pool so the next task score re-seeds it
+	// from the floored persisted score instead of the pre-kickout low scores.
+	resetNodeQosScorePool(node.Address)
+}
+
+func resetNodeQosScorePool(address string) {
+	nodeQoSScorePool.mu.Lock()
+	defer nodeQoSScorePool.mu.Unlock()
+	delete(nodeQoSScorePool.pool, address)
 }
 
 // CalculateQosComponents returns long-term QoS, short-term QoS and combined QoS.

@@ -81,6 +81,8 @@ The long-term score (`Q_long`) is calculated using an in-memory rolling pool:
 
 When a node's pool does not yet exist in memory (e.g., after a relay restart), the pool is initialized from persisted `QOSScore` in the database (`models.Node.QOSScore`, which stores `Q_long`) to ensure smooth transition.
 
+When an existing node rejoins and `Q_long` is raised to the configured rejoin floor (`qos.rejoin_qos_long_floor`), the relay MUST discard the node's in-memory rolling pool. The next task score then re-seeds the pool from the floored persisted `QOSScore`, so the pre-kickout scores no longer contribute to `Q_long`.
+
 ### Short-term Reliability Factor (`H`)
 
 The short-term factor (`H`) addresses the need to immediately penalize nodes that start timing out, protecting applications from unreliable nodes.
