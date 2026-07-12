@@ -4,9 +4,11 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +30,9 @@ func GetNodeTask(c *gin.Context, in *GetNodeTaskInput) (*GetNodeTaskResponse, er
 	}
 	if err != nil {
 		return nil, err
+	}
+	if err := service.TouchNodeLastSeen(c.Request.Context(), config.GetDB(), node.Address); err != nil {
+		log.Errorf("GetNodeTask: failed to touch node last seen, node: %s, error: %v", node.Address, err)
 	}
 	resp := &GetNodeTaskResponse{}
 	if node.CurrentTaskIDCommitment.Valid {

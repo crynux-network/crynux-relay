@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/blockchain"
+	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"database/sql"
 	"errors"
@@ -127,6 +128,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, node.Address); err != nil {
 		return err
 	}
+	metrics.NodeEvents.WithLabelValues("join").Inc()
 	LogNodeStatusChange(node, "join")
 	return nil
 }
@@ -197,6 +199,7 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 		return err
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	metrics.NodeEvents.WithLabelValues("quit").Inc()
 	if slashed {
 		if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
 			return err
@@ -349,6 +352,7 @@ func nodeFinishTask(ctx context.Context, db *gorm.DB, node *models.Node) error {
 			return err
 		}
 		applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+		metrics.NodeEvents.WithLabelValues("kickout").Inc()
 		LogNodeStatusChange(node, "kickout")
 		logNodeKickoutHealthEvent(node, task, healthMetrics)
 		return nil
@@ -402,6 +406,7 @@ func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommit
 		return 0, err
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	metrics.NodeEvents.WithLabelValues("slash").Inc()
 	if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
 		return 0, err
 	}
@@ -444,6 +449,7 @@ func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (ui
 		return 0, err
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
+	metrics.NodeEvents.WithLabelValues("slash").Inc()
 	if err := RefreshNodeVestingStake(ctx, db, node.Address); err != nil {
 		return 0, err
 	}

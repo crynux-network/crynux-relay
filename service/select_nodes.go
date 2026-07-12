@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/config"
+	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"strings"
 	"time"
@@ -198,7 +199,12 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 	if err != nil {
 		return nil, err
 	}
+	taskTypeLabel := metrics.TaskTypeLabel(task.TaskType)
+	vramTierLabel := metrics.VramTierLabel(task.MinVRAM)
+	gpuLabel := metrics.GPULabel(task.RequiredGPU)
 	if len(nodes) == 0 {
+		metrics.NodeSelectionCandidates.WithLabelValues(taskTypeLabel, vramTierLabel, gpuLabel).Observe(0)
+		metrics.NodeSelectionEmpty.WithLabelValues(taskTypeLabel, vramTierLabel, gpuLabel).Inc()
 		logTaskAssignmentEvent(ctx, task, nodes)
 		return nil, nil
 	}
@@ -262,6 +268,7 @@ func selectNodeForInferenceTask(ctx context.Context, task *models.InferenceTask)
 		}
 	}
 
+	metrics.NodeSelectionCandidates.WithLabelValues(taskTypeLabel, vramTierLabel, gpuLabel).Observe(float64(len(nodes)))
 	logTaskAssignmentEvent(ctx, task, nodes)
 
 	node := selectNodesByScore(nodes, scores, 1)[0]

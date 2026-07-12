@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api"
 	"crynux_relay/blockchain"
 	"crynux_relay/config"
+	"crynux_relay/metrics"
 	"crynux_relay/migrate"
 	"crynux_relay/service"
 	"crynux_relay/tasks"
@@ -81,6 +82,12 @@ func main() {
 	go tasks.StartStatsNodeDelegatorCount(context.Background())
 	go tasks.StartDelegatedStakingNodeListSnapshotRefresh(context.Background())
 	go tasks.StartCurrentEmissionEstimateSnapshotRefresh(context.Background())
+
+	if conf.Metrics.Enabled {
+		metrics.InitVramTiers(conf.Metrics.VramTiers)
+		go metrics.StartMetricsServer(context.Background(), conf.Metrics.Port)
+		go metrics.StartGaugeCollector(context.Background(), config.GetDB())
+	}
 
 	startServer()
 }

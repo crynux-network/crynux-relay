@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/validate"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 
 	"github.com/gin-gonic/gin"
@@ -52,6 +53,12 @@ func GetTaskById(c *gin.Context, in *GetTaskInputWithSignature) (*TaskResponse, 
 
 	if task.SelectedNode != address && task.Creator != address {
 		return nil, response.NewValidationErrorResponse("signature", "Signer not allowed")
+	}
+
+	if task.SelectedNode == address {
+		if err := service.MarkTaskDelivered(c.Request.Context(), config.GetDB(), task); err != nil {
+			log.Errorf("GetTaskById: failed to mark task delivered, task: %s, node: %s, error: %v", task.TaskIDCommitment, address, err)
+		}
 	}
 
 	qosScore := uint64(0)

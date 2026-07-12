@@ -104,8 +104,9 @@ type AppConfig struct {
 	} `mapstructure:"log"`
 
 	Http struct {
-		Host string `mapstructure:"host"`
-		Port string `mapstructure:"port"`
+		Host         string `mapstructure:"host"`
+		Port         string `mapstructure:"port"`
+		MaxBodyBytes int64  `mapstructure:"max_body_bytes"`
 
 		JWT struct {
 			SecretKey     string `mapstructure:"secret_key"`
@@ -173,6 +174,12 @@ type AppConfig struct {
 		SecretKey     string `mapstructure:"secret_key"`
 		SecretKeyFile string `mapstructure:"secret_key_file"`
 	} `mapstructure:"mac"`
+
+	Metrics struct {
+		Enabled   bool     `mapstructure:"enabled"`
+		Port      string   `mapstructure:"port"`
+		VramTiers []uint64 `mapstructure:"vram_tiers"`
+	} `mapstructure:"metrics"`
 
 	QoS struct {
 		ScorePoolSize               uint64  `mapstructure:"score_pool_size"`
