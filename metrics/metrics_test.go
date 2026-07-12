@@ -51,12 +51,12 @@ func TestGPULabel(t *testing.T) {
 }
 
 func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
-	TasksCreated.WithLabelValues("sd", "0xabc").Inc()
+	TasksCreated.WithLabelValues("sd", "0xabc", "8-16").Inc()
 	TasksDispatched.WithLabelValues("sd").Inc()
 	TasksDelivered.Inc()
 	TasksErrorReported.Inc()
-	TasksTerminal.WithLabelValues("success", "sd").Inc()
-	TasksAborted.WithLabelValues("timeout", "TaskStartedUndelivered").Inc()
+	TasksTerminal.WithLabelValues("success", "sd", "8-16").Inc()
+	TasksAborted.WithLabelValues("timeout", "TaskStartedUndelivered", "sd", "8-16").Inc()
 	TaskQueueWaitSeconds.WithLabelValues("sd", "8-16").Observe(1.5)
 	TaskExecutionSeconds.WithLabelValues("sd", "8-16").Observe(60)
 	NodeSelectionCandidates.WithLabelValues("sd", "8-16", "any").Observe(10)

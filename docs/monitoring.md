@@ -38,12 +38,12 @@ Counters and histograms MUST be incremented at the task and node state transitio
 
 | Metric | Type | Labels | Increment point |
 |--------|------|--------|-----------------|
-| `relay_tasks_created_total` | counter | `task_type`, `creator` | `CreateTask` succeeds. |
+| `relay_tasks_created_total` | counter | `task_type`, `creator`, `vram_tier` | `CreateTask` succeeds. |
 | `relay_tasks_dispatched_total` | counter | `task_type` | `SetTaskStatusStarted` succeeds. |
 | `relay_tasks_delivered_total` | counter | none | The selected node fetches the task for the first time and `delivered_time` is recorded. |
 | `relay_tasks_error_reported_total` | counter | none | `SetTaskStatusErrorReported` succeeds. |
-| `relay_tasks_terminal_total` | counter | `status`, `task_type` | Task reaches `TaskEndSuccess`, `TaskEndGroupSuccess`, `TaskEndGroupRefund`, or `TaskEndInvalidated`. |
-| `relay_tasks_aborted_total` | counter | `reason`, `status` | `SetTaskStatusEndAborted` succeeds. The `status` label carries the task status before the abort. |
+| `relay_tasks_terminal_total` | counter | `status`, `task_type`, `vram_tier` | Task reaches `TaskEndSuccess`, `TaskEndGroupSuccess`, `TaskEndGroupRefund`, or `TaskEndInvalidated`. |
+| `relay_tasks_aborted_total` | counter | `reason`, `status`, `task_type`, `vram_tier` | `SetTaskStatusEndAborted` succeeds. The `status` label carries the task status before the abort. |
 | `relay_task_queue_wait_seconds` | histogram | `task_type`, `vram_tier` | Observes `StartTime - CreateTime` on dispatch. Buckets: 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800. |
 | `relay_task_execution_seconds` | histogram | `task_type`, `vram_tier` | Observes `ScoreReadyTime - StartTime` on score submission. Buckets: 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600. |
 | `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size in `selectNodeForInferenceTask`, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |

@@ -20,8 +20,8 @@ var Registry = prometheus.NewRegistry()
 var (
 	TasksCreated = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "relay_tasks_created_total",
-		Help: "Total number of inference tasks created, by task type and creator address.",
-	}, []string{"task_type", "creator"})
+		Help: "Total number of inference tasks created, by task type, creator address and VRAM tier.",
+	}, []string{"task_type", "creator", "vram_tier"})
 
 	TasksDispatched = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "relay_tasks_dispatched_total",
@@ -40,13 +40,13 @@ var (
 
 	TasksTerminal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "relay_tasks_terminal_total",
-		Help: "Total number of inference tasks reaching a terminal status, by terminal status and task type.",
-	}, []string{"status", "task_type"})
+		Help: "Total number of inference tasks reaching a terminal status, by terminal status, task type and VRAM tier.",
+	}, []string{"status", "task_type", "vram_tier"})
 
 	TasksAborted = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "relay_tasks_aborted_total",
-		Help: "Total number of aborted inference tasks, by abort reason and the task status before the abort.",
-	}, []string{"reason", "status"})
+		Help: "Total number of aborted inference tasks, by abort reason, the task status before the abort, task type and VRAM tier.",
+	}, []string{"reason", "status", "task_type", "vram_tier"})
 
 	TaskQueueWaitSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_task_queue_wait_seconds",
