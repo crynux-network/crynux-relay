@@ -82,68 +82,6 @@ The `nodes` table carries a nullable `last_seen_time` column recording the last 
 
 `GET /v1/nodes/:address/task` MUST refresh `last_seen_time`. Nodes poll every second, so the database write MUST be throttled through an in-memory per-node map to at most one write per node per 60 seconds. A `last_seen_time` write failure MUST be logged and MUST NOT fail the poll request.
 
-## AWS Deployment
-
-Metrics are consumed with fully managed AWS services. No self-hosted Prometheus or Grafana instance runs on Relay hosts.
-
-```mermaid
-flowchart LR
-  relay[crynux_relay container port 9090 /metrics] -->|scraped via ENI in VPC| scraper[AMP managed scraper]
-  scraper -->|remote_write| amp[AMP workspace]
-  amp --> amg[Amazon Managed Grafana]
-  amp --> am[AMP managed Alertmanager] --> sns[SNS notification]
-```
-
-### Setup Runbook
-
-1. Expose the metrics port on the Relay host:
-   - Map port 9090 in the Relay `docker-compose.yml`.
-   - Add an EC2 security group rule that allows inbound TCP 9090 from the scraper's security group only. The port MUST NOT be open to the public internet.
-2. Create the Amazon Managed Service for Prometheus workspace:
-
-```bash
-aws amp create-workspace --alias crynux-relay
-```
-
-3. Create the fully managed agentless scraper with a VPC source configuration pointing at the Relay VPC's subnets and security groups, and a scrape configuration statically targeting the Relay host's private IP or private DNS name on port 9090 with a 15-second scrape interval:
-
-```bash
-aws amp create-scraper \
-  --alias crynux-relay-scraper \
-  --source vpcConfiguration="{subnetIds=[<relay-subnet-ids>],securityGroupIds=[<scraper-sg-id>]}" \
-  --scrape-configuration configurationBlob=$(base64 -w0 scrape-config.yml) \
-  --destination ampConfiguration={workspaceArn=<amp-workspace-arn>}
-```
-
-`scrape-config.yml`:
-
-```yaml
-global:
-  scrape_interval: 30s
-scrape_configs:
-  - job_name: crynux-relay
-    static_configs:
-      - targets: ["172.31.40.117:39900"]
-```
-
-4. Create the Amazon Managed Grafana workspace with IAM Identity Center authentication and add the AMP workspace as a Prometheus data source.
-5. Create alert rules in the AMP managed Alertmanager, routed to an SNS topic with an email subscription:
-
-| Alert | Expression | Meaning |
-|-------|-----------|---------|
-| Systemic node failure | `relay_nodes_failing_30m > 10` | Many distinct nodes are timing out on tasks at once. |
-| Task creation stopped | `rate(relay_tasks_created_total[10m]) == 0` | The task source has stopped creating tasks. |
-| Queue growth | `relay_task_queue_depth` sustained growth over 15 minutes | Dispatch is not keeping up with creation. |
-| No candidate nodes | `rate(relay_node_selection_empty_total[5m]) > 0` | Tasks cannot be matched to any node. |
-
-6. Build the starter Grafana dashboard with these panels:
-   - Task creation rate vs terminal rate by task type.
-   - Abort rate by `reason` and `phase`.
-   - Task queue depth.
-   - Nodes by status and alive node count.
-   - Queue wait and execution latency histogram quantiles.
-   - Node selection candidate pool size and empty-selection rate.
-
 ## Source Files
 
 | File | Responsibility |
