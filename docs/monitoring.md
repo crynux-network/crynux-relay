@@ -27,8 +27,8 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 | `vram_tier` | The task `MinVRAM` mapped to the configured `metrics.vram_tiers` boundaries, producing labels `0-8`, `8-16`, ..., `48+`. Raw VRAM values MUST NOT be used as labels. |
 | `gpu` | The exact `RequiredGPU` name for GPU-pinned tasks, `any` otherwise. |
 | `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, or `task_fee_too_low`. |
-| `phase` | Pipeline phase reached before an abort, derived from lifecycle timestamps: `queued` (no `StartTime`), `undelivered` (started, no `DeliveredTime`), `delivered` (delivered, no `ScoreReadyTime`), `scored` (score submitted). |
-| `status` (task) | Terminal status: `success`, `group_success`, `group_refund`, or `invalidated`. |
+| `status` (aborted task) | The task status enum name at the moment of the abort: `TaskQueued`, `TaskParametersUploaded`, `TaskErrorReported`, `TaskScoreReady`, `TaskValidated`, or `TaskGroupValidated`. `TaskStarted` is split by `delivered_time` into `TaskStartedDelivered` and `TaskStartedUndelivered`. |
+| `status` (terminal task) | Terminal status: `success`, `group_success`, `group_refund`, or `invalidated`. |
 | `status` (node) | Node status: `quit`, `available`, `busy`, `pending_pause`, `pending_quit`, or `paused`. |
 | `event` | Node lifecycle event: `join`, `quit`, `kickout`, or `slash`. |
 
@@ -43,9 +43,9 @@ Counters and histograms MUST be incremented at the task and node state transitio
 | `relay_tasks_delivered_total` | counter | none | The selected node fetches the task for the first time and `delivered_time` is recorded. |
 | `relay_tasks_error_reported_total` | counter | none | `SetTaskStatusErrorReported` succeeds. |
 | `relay_tasks_terminal_total` | counter | `status`, `task_type` | Task reaches `TaskEndSuccess`, `TaskEndGroupSuccess`, `TaskEndGroupRefund`, or `TaskEndInvalidated`. |
-| `relay_tasks_aborted_total` | counter | `reason`, `phase` | `SetTaskStatusEndAborted` succeeds. |
-| `relay_task_queue_wait_seconds` | histogram | `task_type` | Observes `StartTime - CreateTime` on dispatch. Buckets: 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800. |
-| `relay_task_execution_seconds` | histogram | `task_type` | Observes `ScoreReadyTime - StartTime` on score submission. Buckets: 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600. |
+| `relay_tasks_aborted_total` | counter | `reason`, `status` | `SetTaskStatusEndAborted` succeeds. The `status` label carries the task status before the abort. |
+| `relay_task_queue_wait_seconds` | histogram | `task_type`, `vram_tier` | Observes `StartTime - CreateTime` on dispatch. Buckets: 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800. |
+| `relay_task_execution_seconds` | histogram | `task_type`, `vram_tier` | Observes `ScoreReadyTime - StartTime` on score submission. Buckets: 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600. |
 | `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size in `selectNodeForInferenceTask`, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |
 | `relay_node_selection_empty_total` | counter | `task_type`, `vram_tier`, `gpu` | Node selection finds no candidate node. |
 | `relay_node_health_penalties_total` | counter | none | `ApplyHealthPenalty` succeeds. |
@@ -74,7 +74,7 @@ The `inference_tasks` table carries a nullable `delivered_time` column recording
 
 When `GET /v1/inference_tasks/:task_id_commitment` is called by a signer equal to the task's `selected_node` and `delivered_time` is null, Relay MUST set `delivered_time` with a single conditional UPDATE (`WHERE delivered_time IS NULL`) so concurrent fetches record the delivery exactly once, and MUST increment `relay_tasks_delivered_total` only when the UPDATE changes a row. A `delivered_time` write failure MUST be logged and MUST NOT fail the task fetch request.
 
-`delivered_time` distinguishes tasks the node never fetched (`undelivered` abort phase) from tasks the node fetched but never finished (`delivered` abort phase).
+`delivered_time` distinguishes tasks the node never fetched from tasks the node fetched but never finished.
 
 ### Node `last_seen_time`
 
@@ -119,11 +119,11 @@ aws amp create-scraper \
 
 ```yaml
 global:
-  scrape_interval: 15s
+  scrape_interval: 30s
 scrape_configs:
   - job_name: crynux-relay
     static_configs:
-      - targets: ["<relay-private-ip>:9090"]
+      - targets: ["172.31.40.117:39900"]
 ```
 
 4. Create the Amazon Managed Grafana workspace with IAM Identity Center authentication and add the AMP workspace as a Prometheus data source.

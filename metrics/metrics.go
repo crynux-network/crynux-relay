@@ -45,20 +45,20 @@ var (
 
 	TasksAborted = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "relay_tasks_aborted_total",
-		Help: "Total number of aborted inference tasks, by abort reason and pipeline phase reached before the abort.",
-	}, []string{"reason", "phase"})
+		Help: "Total number of aborted inference tasks, by abort reason and the task status before the abort.",
+	}, []string{"reason", "status"})
 
 	TaskQueueWaitSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_task_queue_wait_seconds",
 		Help:    "Time spent by tasks in the queue between creation and dispatch.",
 		Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300, 600, 1800},
-	}, []string{"task_type"})
+	}, []string{"task_type", "vram_tier"})
 
 	TaskExecutionSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_task_execution_seconds",
 		Help:    "Time spent by tasks between dispatch and score ready.",
 		Buckets: []float64{5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600},
-	}, []string{"task_type"})
+	}, []string{"task_type", "vram_tier"})
 
 	NodeSelectionCandidates = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_node_selection_candidates",
@@ -188,19 +188,50 @@ func AbortReasonLabel(reason models.TaskAbortReason) string {
 	}
 }
 
-// AbortPhaseLabel derives the pipeline phase a task reached before being
-// aborted, based on its lifecycle timestamps.
-func AbortPhaseLabel(task *models.InferenceTask) string {
-	if !task.StartTime.Valid {
-		return "queued"
+// AbortStatusLabel maps the task status before an abort to a metric label.
+// TaskStarted is split by whether the selected node had fetched the task:
+// TaskStartedDelivered when delivered_time is set, TaskStartedUndelivered
+// otherwise. All other statuses use their enum name.
+func AbortStatusLabel(statusBeforeAbort models.TaskStatus, task *models.InferenceTask) string {
+	if statusBeforeAbort == models.TaskStarted {
+		if task.DeliveredTime.Valid {
+			return "TaskStartedDelivered"
+		}
+		return "TaskStartedUndelivered"
 	}
-	if !task.DeliveredTime.Valid {
-		return "undelivered"
+	return TaskStatusLabel(statusBeforeAbort)
+}
+
+// TaskStatusLabel maps a task status to its enum name used as a metric label.
+func TaskStatusLabel(status models.TaskStatus) string {
+	switch status {
+	case models.TaskQueued:
+		return "TaskQueued"
+	case models.TaskStarted:
+		return "TaskStarted"
+	case models.TaskParametersUploaded:
+		return "TaskParametersUploaded"
+	case models.TaskErrorReported:
+		return "TaskErrorReported"
+	case models.TaskScoreReady:
+		return "TaskScoreReady"
+	case models.TaskValidated:
+		return "TaskValidated"
+	case models.TaskGroupValidated:
+		return "TaskGroupValidated"
+	case models.TaskEndInvalidated:
+		return "TaskEndInvalidated"
+	case models.TaskEndSuccess:
+		return "TaskEndSuccess"
+	case models.TaskEndAborted:
+		return "TaskEndAborted"
+	case models.TaskEndGroupRefund:
+		return "TaskEndGroupRefund"
+	case models.TaskEndGroupSuccess:
+		return "TaskEndGroupSuccess"
+	default:
+		return "unknown"
 	}
-	if !task.ScoreReadyTime.Valid {
-		return "delivered"
-	}
-	return "scored"
 }
 
 // NodeStatusLabel maps a node status to a stable metric label.

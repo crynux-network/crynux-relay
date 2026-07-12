@@ -117,7 +117,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	}
 	metrics.TasksDispatched.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Inc()
 	if task.CreateTime.Valid {
-		metrics.TaskQueueWaitSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Observe(startTime.Sub(task.CreateTime.Time).Seconds())
+		metrics.TaskQueueWaitSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Observe(startTime.Sub(task.CreateTime.Time).Seconds())
 	}
 	if err := captureRunningTaskSnapshot(ctx, db, &task, &node); err != nil {
 		log.Errorf("SetTaskStatusStarted: failed to capture running task snapshot, task: %s, node: %s, error: %v", task.TaskIDCommitment, node.Address, err)
@@ -211,7 +211,7 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 		return err
 	}
 	if task.StartTime.Valid {
-		metrics.TaskExecutionSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Observe(scoreReadyTime.Sub(task.StartTime.Time).Seconds())
+		metrics.TaskExecutionSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Observe(scoreReadyTime.Sub(task.StartTime.Time).Seconds())
 	}
 	*originTask = task
 	return nil
@@ -569,7 +569,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
-	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortPhaseLabel(&task)).Inc()
+	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortStatusLabel(lastStatus, &task)).Inc()
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
 	}
