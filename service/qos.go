@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/config"
+	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"database/sql"
 	"math"
@@ -146,6 +147,7 @@ func ApplyHealthPenalty(ctx context.Context, db *gorm.DB, node *models.Node) err
 	}
 	node.HealthBase = hNew
 	node.HealthUpdatedAt = updatedAt
+	metrics.NodeHealthPenalties.Inc()
 	return nil
 }
 

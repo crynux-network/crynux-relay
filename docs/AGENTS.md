@@ -26,6 +26,7 @@
 | [portal_netstats_chart.md](./portal_netstats_chart.md) | Portal netstats chart inventory, data sources, and aggregation logic |
 | [emission.md](./emission.md) | Emission week boundaries, task fee allocation, vesting creation and release, and chart aggregation |
 | [emission_estimation.md](./emission_estimation.md) | Current-week estimated upcoming emission calculation, snapshot refresh, and API exposure |
+| [monitoring.md](./monitoring.md) | Prometheus metric definitions, task delivery and node last-seen tracking, and the AWS AMP/AMG deployment runbook |
 
 ## Doc Update Requirements
 

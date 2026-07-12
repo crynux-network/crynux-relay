@@ -175,6 +175,12 @@ type AppConfig struct {
 		SecretKeyFile string `mapstructure:"secret_key_file"`
 	} `mapstructure:"mac"`
 
+	Metrics struct {
+		Enabled   bool     `mapstructure:"enabled"`
+		Port      string   `mapstructure:"port"`
+		VramTiers []uint64 `mapstructure:"vram_tiers"`
+	} `mapstructure:"metrics"`
+
 	QoS struct {
 		ScorePoolSize               uint64  `mapstructure:"score_pool_size"`
 		TracingMaxTaskEvents        uint64  `mapstructure:"tracing_max_task_events"`

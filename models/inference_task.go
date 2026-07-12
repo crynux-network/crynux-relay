@@ -120,6 +120,8 @@ type InferenceTask struct {
 	CreateTime sql.NullTime `json:"create_time" gorm:"index;null;default:null"`
 	// time when task is started (get from blockchain)
 	StartTime sql.NullTime `json:"start_time" gorm:"index;null;default:null"`
+	// time when the selected node fetched the task for the first time
+	DeliveredTime sql.NullTime `json:"delivered_time" gorm:"null;default:null"`
 	// time when task score is ready (get from blockchain)
 	ScoreReadyTime sql.NullTime `json:"score_ready_time" gorm:"index;null;default:null"`
 	// time when relay find that task score is validated
@@ -254,6 +256,22 @@ func GetQueuedTaskCount(ctx context.Context, db *gorm.DB) (int64, error) {
 
 	var res int64
 	if err := db.WithContext(dbCtx).Model(&InferenceTask{}).Where("status = ?", TaskQueued).Count(&res).Error; err != nil {
+		return 0, err
+	}
+	return res, nil
+}
+
+func GetTimeoutAbortedNodeCount(ctx context.Context, db *gorm.DB, since time.Time) (int64, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var res int64
+	if err := db.WithContext(dbCtx).Model(&InferenceTask{}).
+		Select("count(distinct selected_node)").
+		Where("status = ?", TaskEndAborted).
+		Where("abort_reason = ?", TaskAbortTimeout).
+		Where("updated_at >= ?", since).
+		Find(&res).Error; err != nil {
 		return 0, err
 	}
 	return res, nil

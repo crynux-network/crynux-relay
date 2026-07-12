@@ -39,6 +39,7 @@ type Node struct {
 	HealthUpdatedAt         sql.NullTime   `json:"health_updated_at" gorm:"null;default:null"`
 	DelegatorShare          uint8          `json:"delegator_share"`
 	CurrentTaskIDCommitment sql.NullString `json:"current_task_id_commitment" gorm:"null;default:null"`
+	LastSeenTime            sql.NullTime   `json:"last_seen_time" gorm:"null;default:null"`
 	CurrentTask             InferenceTask  `json:"-" gorm:"foreignKey:TaskIDCommitment;references:CurrentTaskIDCommitment"`
 	Models                  []NodeModel    `json:"-" gorm:"foreignKey:NodeAddress;references:Address"`
 	TaskFee                 TaskFee        `json:"-" gorm:"foreignKey:Address;references:Address"`
@@ -200,6 +201,41 @@ func GetAllNodeCount(ctx context.Context, db *gorm.DB) (int64, error) {
 
 	var res int64
 	if err := db.WithContext(dbCtx).Model(&NetworkNodeData{}).Count(&res).Error; err != nil {
+		return 0, err
+	}
+	return res, nil
+}
+
+func GetNodeCountsByStatus(ctx context.Context, db *gorm.DB) (map[NodeStatus]int64, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	type row struct {
+		Status NodeStatus
+		Count  int64
+	}
+	var rows []row
+	if err := db.WithContext(dbCtx).Model(&Node{}).
+		Select("status, count(*) as count").
+		Group("status").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	res := make(map[NodeStatus]int64, len(rows))
+	for _, r := range rows {
+		res[r.Status] = r.Count
+	}
+	return res, nil
+}
+
+func GetAliveNodeCount(ctx context.Context, db *gorm.DB, since time.Time) (int64, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var res int64
+	if err := db.WithContext(dbCtx).Model(&Node{}).
+		Where("last_seen_time >= ?", since).
+		Count(&res).Error; err != nil {
 		return 0, err
 	}
 	return res, nil

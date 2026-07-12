@@ -107,6 +107,10 @@ relay_account:
   deposit_address: ""
 mac:
   secret_key_file: "config/secrets/mac_secret_key.txt"
+metrics:
+  enabled: true
+  port: "9090"
+  vram_tiers: [8, 16, 24, 32, 48]
 qos:
   score_pool_size: 50
   tracing_max_task_events: 50

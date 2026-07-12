@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/config"
+	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"database/sql"
 	"errors"
@@ -19,7 +20,7 @@ var (
 )
 
 func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) error {
-	return db.Transaction(func(tx *gorm.DB) error {
+	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := task.Create(ctx, tx); err != nil {
 			return err
 		}
@@ -34,7 +35,35 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 			return err
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	metrics.TasksCreated.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), task.Creator).Inc()
+	return nil
+}
+
+// MarkTaskDelivered records the first time the selected node fetches the task.
+// The write is a single conditional UPDATE so concurrent fetches record the
+// delivery exactly once.
+func MarkTaskDelivered(ctx context.Context, db *gorm.DB, task *models.InferenceTask) error {
+	if task.DeliveredTime.Valid {
+		return nil
+	}
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	deliveredTime := sql.NullTime{Time: time.Now(), Valid: true}
+	result := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
+		Where("id = ?", task.ID).
+		Where("delivered_time IS NULL").
+		Update("delivered_time", deliveredTime)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		task.DeliveredTime = deliveredTime
+		metrics.TasksDelivered.Inc()
+	}
+	return nil
 }
 
 func isNodeVersionValidForTask(node *models.Node, task *models.InferenceTask) bool {
@@ -64,10 +93,11 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	}
 
 	// start inference task
+	startTime := time.Now()
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := task.Update(ctx, tx, map[string]interface{}{
 			"selected_node":  node.Address,
-			"start_time":     sql.NullTime{Time: time.Now(), Valid: true},
+			"start_time":     sql.NullTime{Time: startTime, Valid: true},
 			"status":         models.TaskStarted,
 			"model_swtiched": !isSameModels(inUseModelIDs, task.ModelIDs),
 		}); err != nil {
@@ -84,6 +114,10 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	})
 	if err != nil {
 		return err
+	}
+	metrics.TasksDispatched.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Inc()
+	if task.CreateTime.Valid {
+		metrics.TaskQueueWaitSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Observe(startTime.Sub(task.CreateTime.Time).Seconds())
 	}
 	if err := captureRunningTaskSnapshot(ctx, db, &task, &node); err != nil {
 		log.Errorf("SetTaskStatusStarted: failed to capture running task snapshot, task: %s, node: %s, error: %v", task.TaskIDCommitment, node.Address, err)
@@ -158,11 +192,12 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 		return err
 	}
 
+	scoreReadyTime := time.Now()
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":           models.TaskScoreReady,
 			"score":            task.Score,
-			"score_ready_time": sql.NullTime{Time: time.Now(), Valid: true},
+			"score_ready_time": sql.NullTime{Time: scoreReadyTime, Valid: true},
 		})
 		if err != nil {
 			return err
@@ -174,6 +209,9 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 		})
 	}); err != nil {
 		return err
+	}
+	if task.StartTime.Valid {
+		metrics.TaskExecutionSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Observe(scoreReadyTime.Sub(task.StartTime.Time).Seconds())
 	}
 	*originTask = task
 	return nil
@@ -205,6 +243,7 @@ func SetTaskStatusErrorReported(ctx context.Context, db *gorm.DB, originTask *mo
 	}); err != nil {
 		return err
 	}
+	metrics.TasksErrorReported.Inc()
 	*originTask = task
 	return nil
 }
@@ -342,6 +381,7 @@ func setTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, o
 	}); err != nil {
 		return err
 	}
+	metrics.TasksTerminal.WithLabelValues("invalidated", metrics.TaskTypeLabel(task.TaskType)).Inc()
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
@@ -421,6 +461,7 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	}); err != nil {
 		return err
 	}
+	metrics.TasksTerminal.WithLabelValues("group_refund", metrics.TaskTypeLabel(task.TaskType)).Inc()
 	updateLoadedModels(&task, node)
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
@@ -528,6 +569,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
+	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortPhaseLabel(&task)).Inc()
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
 	}
@@ -661,6 +703,11 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
+	terminalStatusLabel := "success"
+	if status == models.TaskEndGroupSuccess {
+		terminalStatusLabel = "group_success"
+	}
+	metrics.TasksTerminal.WithLabelValues(terminalStatusLabel, metrics.TaskTypeLabel(task.TaskType)).Inc()
 	updateLoadedModels(&task, node)
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)

@@ -79,6 +79,9 @@ func InitConfig(configPath string) error {
 	if err := checkDaoConfig(); err != nil {
 		return err
 	}
+	if err := checkMetricsConfig(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -206,6 +209,19 @@ func checkDaoConfig() error {
 		return fmt.Errorf("dao.apr_start_time must be RFC3339: %w", err)
 	}
 	appConfig.Dao.AprStartTime = rawAPRStartTime
+	return nil
+}
+
+func checkMetricsConfig() error {
+	if !appConfig.Metrics.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(appConfig.Metrics.Port) == "" {
+		return errors.New("metrics.port is not set")
+	}
+	if len(appConfig.Metrics.VramTiers) == 0 {
+		return errors.New("metrics.vram_tiers is not set")
+	}
 	return nil
 }
 
