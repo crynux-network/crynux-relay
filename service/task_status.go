@@ -38,7 +38,7 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 	}); err != nil {
 		return err
 	}
-	metrics.TasksCreated.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), task.Creator).Inc()
+	metrics.TasksCreated.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), task.Creator, metrics.VramTierLabel(task.MinVRAM)).Inc()
 	return nil
 }
 
@@ -381,7 +381,7 @@ func setTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, o
 	}); err != nil {
 		return err
 	}
-	metrics.TasksTerminal.WithLabelValues("invalidated", metrics.TaskTypeLabel(task.TaskType)).Inc()
+	metrics.TasksTerminal.WithLabelValues("invalidated", metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
@@ -461,7 +461,7 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	}); err != nil {
 		return err
 	}
-	metrics.TasksTerminal.WithLabelValues("group_refund", metrics.TaskTypeLabel(task.TaskType)).Inc()
+	metrics.TasksTerminal.WithLabelValues("group_refund", metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	updateLoadedModels(&task, node)
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
@@ -569,7 +569,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
-	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortStatusLabel(lastStatus, &task)).Inc()
+	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortStatusLabel(lastStatus, &task), metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
 	}
@@ -707,7 +707,7 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 	if status == models.TaskEndGroupSuccess {
 		terminalStatusLabel = "group_success"
 	}
-	metrics.TasksTerminal.WithLabelValues(terminalStatusLabel, metrics.TaskTypeLabel(task.TaskType)).Inc()
+	metrics.TasksTerminal.WithLabelValues(terminalStatusLabel, metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	updateLoadedModels(&task, node)
 	if logHealthBoost {
 		logHealthBoostNodeHealthEvent(node, &task, healthBoostMetrics)
