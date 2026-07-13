@@ -42,6 +42,8 @@ CreateTime + 3 minutes + Timeout <= current time
 
 The 3-minute grace period is part of the queue timeout clock. It gives Relay time to select an eligible node after task creation.
 
+Queued task dispatch order is specified in [task-pricing.md](./task-pricing.md). Queue timeout uses the task's create time and timeout value only. Relay MUST NOT extend or shorten the queue timeout deadline based on task priority.
+
 ### Running Timeout
 
 A running task has been assigned to a node or is in a post-execution non-terminal state. Relay MUST treat a running task as timed out when:

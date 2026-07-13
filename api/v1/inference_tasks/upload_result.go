@@ -204,7 +204,9 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	}
 	if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
 		for range 3 {
-			err = service.SetTaskStatusEndSuccess(c.Request.Context(), config.GetDB(), task)
+			err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{task.SelectedNode}, func() error {
+				return service.SetTaskStatusEndSuccess(c.Request.Context(), config.GetDB(), task)
+			})
 			if err == nil {
 				break
 			} else if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {

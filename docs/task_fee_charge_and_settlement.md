@@ -12,6 +12,8 @@ This specification covers:
 - rounding and remainder allocation
 - ledger event requirements
 
+Task fee also participates in queue priority calculation. Queue ordering and task priority rules are specified in [task-pricing.md](./task-pricing.md). This document specifies only relay account ledger effects.
+
 ## Definitions
 
 - Task fee: the `task_fee` value on `InferenceTask`.

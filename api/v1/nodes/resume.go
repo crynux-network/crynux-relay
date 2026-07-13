@@ -49,31 +49,35 @@ func NodeResume(c *gin.Context, in *ResumeInputWithSignature) (*response.Respons
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	for range 3 {
-		if node.Status != models.NodeStatusPaused {
-			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
-		}
+	err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{in.Address}, func() error {
+		var err error
+		for range 3 {
+			if node.Status != models.NodeStatusPaused {
+				return response.NewValidationErrorResponse("address", "Illegal node status")
+			}
 
-		err = config.GetDB().Transaction(func(tx *gorm.DB) error {
-			if err := node.Update(c.Request.Context(), tx, map[string]interface{}{"status": models.NodeStatusAvailable}); err != nil {
-				return err
+			err = config.GetDB().Transaction(func(tx *gorm.DB) error {
+				if err := node.Update(c.Request.Context(), tx, map[string]interface{}{"status": models.NodeStatusAvailable}); err != nil {
+					return err
+				}
+				return service.IncrementNodeNameCountTx(c.Request.Context(), tx, node)
+			})
+			if err == nil {
+				service.ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, service.BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
+				service.LogNodeStatusChange(node, "resume")
+				return nil
+			} else if errors.Is(err, models.ErrNodeStatusChanged) {
+				if err := node.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
+					return response.NewExceptionResponse(err)
+				}
+			} else {
+				return response.NewExceptionResponse(err)
 			}
-			return service.IncrementNodeNameCountTx(c.Request.Context(), tx, node)
-		})
-		if err == nil {
-			service.ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, service.BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), 1)
-			service.LogNodeStatusChange(node, "resume")
-			break
-		} else if errors.Is(err, models.ErrNodeStatusChanged) {
-			if err := node.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
-				return nil, response.NewExceptionResponse(err)
-			}
-		} else {
-			return nil, response.NewExceptionResponse(err)
 		}
-	}
+		return response.NewExceptionResponse(err)
+	})
 	if err != nil {
-		return nil, response.NewExceptionResponse(err)
+		return nil, err
 	}
 	return &response.Response{}, nil
 }

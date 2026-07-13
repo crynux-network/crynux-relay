@@ -100,6 +100,22 @@ var (
 		Name: "relay_nodes_alive",
 		Help: "Number of nodes whose last task poll was within the last 2 minutes.",
 	})
+
+	TaskPricingSecondsPerSDUnit = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_seconds_per_sd_unit",
+		Help: "Calibrated execution seconds per stable diffusion pricing unit.",
+	})
+
+	TaskPricingSecondsPerLLMToken = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_seconds_per_llm_token",
+		Help: "Calibrated execution seconds per LLM output token.",
+	})
+
+	TaskPriority = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "relay_task_priority",
+		Help:    "Distribution of computed task queue priority values at task creation, by task type.",
+		Buckets: prometheus.ExponentialBuckets(1e9, 10, 12),
+	}, []string{"task_type"})
 )
 
 func init() {
@@ -120,6 +136,9 @@ func init() {
 		Nodes,
 		NodesFailing30m,
 		NodesAlive,
+		TaskPricingSecondsPerSDUnit,
+		TaskPricingSecondsPerLLMToken,
+		TaskPriority,
 	)
 }
 

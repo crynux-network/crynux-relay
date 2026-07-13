@@ -138,6 +138,20 @@ type AppConfig struct {
 		TaskTracingDurationDays  uint64 `mapstructure:"task_tracing_duration_days"`
 	} `mapstructure:"task"`
 
+	TaskPricing struct {
+		OverheadSeconds           float64 `mapstructure:"overhead_seconds"`
+		InitialSecondsPerSDUnit   float64 `mapstructure:"initial_seconds_per_sd_unit"`
+		InitialSecondsPerLLMToken float64 `mapstructure:"initial_seconds_per_llm_token"`
+		CalibrationAlpha          float64 `mapstructure:"calibration_alpha"`
+		DefaultLLMMaxNewTokens    uint64  `mapstructure:"default_llm_max_new_tokens"`
+		BaseVRAM                  uint64  `mapstructure:"base_vram"`
+	} `mapstructure:"task_pricing"`
+
+	TaskMatching struct {
+		BatchSize           int     `mapstructure:"batch_size"`
+		TickIntervalSeconds float64 `mapstructure:"tick_interval_seconds"`
+	} `mapstructure:"task_matching"`
+
 	TaskSchema struct {
 		StableDiffusionInference    string `mapstructure:"stable_diffusion_inference"`
 		GPTInference                string `mapstructure:"gpt_inference"`

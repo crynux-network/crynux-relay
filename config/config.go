@@ -73,6 +73,12 @@ func InitConfig(configPath string) error {
 	if err := checkTaskConfig(); err != nil {
 		return err
 	}
+	if err := checkTaskPricingConfig(); err != nil {
+		return err
+	}
+	if err := checkTaskMatchingConfig(); err != nil {
+		return err
+	}
 	if err := checkQosConfig(); err != nil {
 		return err
 	}
@@ -189,6 +195,40 @@ func checkStatsConfig() error {
 func checkTaskConfig() error {
 	if appConfig.Task.PassiveSlashMode == nil {
 		return errors.New("task.passive_slash_mode is not set")
+	}
+	return nil
+}
+
+func checkTaskPricingConfig() error {
+	pricing := appConfig.TaskPricing
+	if pricing.OverheadSeconds <= 0 {
+		return errors.New("task_pricing.overhead_seconds is not set")
+	}
+	if pricing.InitialSecondsPerSDUnit <= 0 {
+		return errors.New("task_pricing.initial_seconds_per_sd_unit is not set")
+	}
+	if pricing.InitialSecondsPerLLMToken <= 0 {
+		return errors.New("task_pricing.initial_seconds_per_llm_token is not set")
+	}
+	if pricing.CalibrationAlpha <= 0 || pricing.CalibrationAlpha > 1 {
+		return errors.New("task_pricing.calibration_alpha must be in (0, 1]")
+	}
+	if pricing.DefaultLLMMaxNewTokens == 0 {
+		return errors.New("task_pricing.default_llm_max_new_tokens is not set")
+	}
+	if pricing.BaseVRAM == 0 {
+		return errors.New("task_pricing.base_vram is not set")
+	}
+	return nil
+}
+
+func checkTaskMatchingConfig() error {
+	matching := appConfig.TaskMatching
+	if matching.BatchSize <= 0 {
+		return errors.New("task_matching.batch_size is not set")
+	}
+	if matching.TickIntervalSeconds <= 0 {
+		return errors.New("task_matching.tick_interval_seconds is not set")
 	}
 	return nil
 }

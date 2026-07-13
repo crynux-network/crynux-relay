@@ -103,7 +103,9 @@ func ValidateSingleTask(ctx context.Context, originTask *models.InferenceTask, t
 	} else {
 		task.AbortReason = models.TaskAbortIncorrectResult
 		task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
-		err = SetTaskStatusEndAborted(ctx, config.GetDB(), &task, task.Creator)
+		err = ExecuteNodeStateUpdate(ctx, config.GetDB(), []string{task.SelectedNode}, func() error {
+			return SetTaskStatusEndAborted(ctx, config.GetDB(), &task, task.Creator)
+		})
 	}
 	if err != nil {
 		return err
@@ -346,43 +348,49 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 		return err
 	}
 
-	if err := config.GetDB().Transaction(func(tx *gorm.DB) error {
-		for _, task := range tasks {
-			nextStatus := nextStatusMap[task.TaskIDCommitment]
+	groupNodeAddresses := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		groupNodeAddresses = append(groupNodeAddresses, task.SelectedNode)
+	}
+	if err := ExecuteNodeStateUpdate(ctx, config.GetDB(), groupNodeAddresses, func() error {
+		return config.GetDB().Transaction(func(tx *gorm.DB) error {
+			for _, task := range tasks {
+				nextStatus := nextStatusMap[task.TaskIDCommitment]
 
-			switch nextStatus {
-			case models.TaskEndInvalidated:
-				slashEvidence, ok := slashEvidenceByTaskIDCommitment[task.TaskIDCommitment]
-				if !ok {
-					return errors.New("missing prebuilt slash evidence")
-				}
-				if err := SetTaskStatusEndInvalidatedWithEvidence(ctx, tx, task, slashEvidence.evidence, slashEvidence.evidenceComplete); err != nil {
-					return err
-				}
-			case models.TaskGroupValidated:
-				if err := SetTaskStatusGroupValidated(ctx, tx, task); err != nil {
-					return err
-				}
-			case models.TaskEndGroupRefund:
-				if err := SetTaskStatusEndGroupRefund(ctx, tx, task); err != nil {
-					return err
-				}
-			default:
-				if task.Status != models.TaskEndAborted {
-					task.AbortReason = models.TaskAbortIncorrectResult
-
-					task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
-					if err := SetTaskStatusEndAborted(ctx, tx, task, task.Creator); err != nil {
+				switch nextStatus {
+				case models.TaskEndInvalidated:
+					slashEvidence, ok := slashEvidenceByTaskIDCommitment[task.TaskIDCommitment]
+					if !ok {
+						return errors.New("missing prebuilt slash evidence")
+					}
+					if err := SetTaskStatusEndInvalidatedWithEvidence(ctx, tx, task, slashEvidence.evidence, slashEvidence.evidenceComplete); err != nil {
 						return err
 					}
-				} else {
-					if err := persistValidationGroupAbortedTaskQos(ctx, tx, task); err != nil {
+				case models.TaskGroupValidated:
+					if err := SetTaskStatusGroupValidated(ctx, tx, task); err != nil {
 						return err
+					}
+				case models.TaskEndGroupRefund:
+					if err := SetTaskStatusEndGroupRefund(ctx, tx, task); err != nil {
+						return err
+					}
+				default:
+					if task.Status != models.TaskEndAborted {
+						task.AbortReason = models.TaskAbortIncorrectResult
+
+						task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
+						if err := SetTaskStatusEndAborted(ctx, tx, task, task.Creator); err != nil {
+							return err
+						}
+					} else {
+						if err := persistValidationGroupAbortedTaskQos(ctx, tx, task); err != nil {
+							return err
+						}
 					}
 				}
 			}
-		}
-		return nil
+			return nil
+		})
 	}); err != nil {
 		return err
 	}

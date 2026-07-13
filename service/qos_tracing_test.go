@@ -17,12 +17,14 @@ func initQosTracingTestConfig(t *testing.T, maxEvents uint64) {
 	content := "environment: test\n" +
 		"blockchains: {}\n" +
 		"http:\n" +
+		"  max_body_bytes: 33554432\n" +
 		"  jwt:\n" +
 		"    expires_in: 3600\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
 		"  tracing_max_task_events: " + uint64ToString(maxEvents) + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {

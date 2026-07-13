@@ -49,43 +49,47 @@ func NodePause(c *gin.Context, in *PauseInputWithSignature) (*response.Response,
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	for range 3 {
-		var status models.NodeStatus
-		switch node.Status {
-		case models.NodeStatusAvailable:
-			status = models.NodeStatusPaused
-		case models.NodeStatusBusy:
-			status = models.NodeStatusPendingPause
-		default:
-			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
-		}
+	err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{in.Address}, func() error {
+		var err error
+		for range 3 {
+			var status models.NodeStatus
+			switch node.Status {
+			case models.NodeStatusAvailable:
+				status = models.NodeStatusPaused
+			case models.NodeStatusBusy:
+				status = models.NodeStatusPendingPause
+			default:
+				return response.NewValidationErrorResponse("address", "Illegal node status")
+			}
 
-		if status == models.NodeStatusPaused {
-			err = config.GetDB().Transaction(func(tx *gorm.DB) error {
-				if err := node.Update(c.Request.Context(), tx, map[string]interface{}{"status": status}); err != nil {
-					return err
-				}
-				return service.DecrementNodeNameCountTx(c.Request.Context(), tx, node)
-			})
-		} else {
-			err = node.Update(c.Request.Context(), config.GetDB(), map[string]interface{}{"status": status})
-		}
-		if err == nil {
 			if status == models.NodeStatusPaused {
-				service.ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, service.BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), -1)
-				service.LogNodeStatusChange(node, "pause")
+				err = config.GetDB().Transaction(func(tx *gorm.DB) error {
+					if err := node.Update(c.Request.Context(), tx, map[string]interface{}{"status": status}); err != nil {
+						return err
+					}
+					return service.DecrementNodeNameCountTx(c.Request.Context(), tx, node)
+				})
+			} else {
+				err = node.Update(c.Request.Context(), config.GetDB(), map[string]interface{}{"status": status})
 			}
-			break
-		} else if errors.Is(err, models.ErrNodeStatusChanged) {
-			if err := node.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
-				return nil, response.NewExceptionResponse(err)
+			if err == nil {
+				if status == models.NodeStatusPaused {
+					service.ApplyNodeNameCountDeltaToCache(node.GPUName, node.GPUVram, service.BuildNodeVersion(node.MajorVersion, node.MinorVersion, node.PatchVersion), -1)
+					service.LogNodeStatusChange(node, "pause")
+				}
+				return nil
+			} else if errors.Is(err, models.ErrNodeStatusChanged) {
+				if err := node.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
+					return response.NewExceptionResponse(err)
+				}
+			} else {
+				return response.NewExceptionResponse(err)
 			}
-		} else {
-			return nil, response.NewExceptionResponse(err)
 		}
-	}
+		return response.NewExceptionResponse(err)
+	})
 	if err != nil {
-		return nil, response.NewExceptionResponse(err)
+		return nil, err
 	}
 	return &response.Response{}, nil
 }

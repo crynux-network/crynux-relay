@@ -25,12 +25,15 @@ func initSelectionPolicyTestConfig(t *testing.T, minCount uint64, whitelistEnabl
 		"    level: info\n" +
 		"    output: stdout\n" +
 		"blockchains: {}\n" +
+		"http:\n" +
+		"  max_body_bytes: 33554432\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  minimum_node_name_number: " + strconv.FormatUint(minCount, 10) + "\n" +
 		"  node_name_whitelist_enabled: " + whitelistFlag + "\n" +
 		"  passive_slash_mode: true\n" +
+		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
 		"  tracing_max_task_events: 50\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
@@ -102,8 +105,8 @@ func TestFilterNodesByNodeNamePolicy(t *testing.T) {
 	}
 }
 
-func TestBuildTaskTraceNodeSelectionCandidatePoolUsesFinalWeights(t *testing.T) {
-	nodes := []models.Node{
+func TestBuildEntryTraceCandidatePoolUsesFinalWeights(t *testing.T) {
+	entries := []*NodeIndexEntry{
 		{Address: "0xnode1", GPUName: "RTX 4090"},
 		{Address: "0xnode2", GPUName: "A100"},
 	}
@@ -113,7 +116,7 @@ func TestBuildTaskTraceNodeSelectionCandidatePoolUsesFinalWeights(t *testing.T) 
 	}
 	finalWeights := []float64{0.62, 0.47}
 
-	candidatePool, totalCount, truncated := buildTaskTraceNodeSelectionCandidatePool(nodes, probs, finalWeights)
+	candidatePool, totalCount, truncated := buildEntryTraceCandidatePool(entries, probs, finalWeights)
 
 	if totalCount != 2 {
 		t.Fatalf("expected total count 2, got %d", totalCount)
