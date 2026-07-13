@@ -190,13 +190,18 @@ The relay tracks which models each node has locally using the `NodeModel` databa
 
 ```go
 type NodeModel struct {
-    gorm.Model
-    NodeAddress string `json:"node_address" gorm:"index"`
-    ModelID     string `json:"model_id" gorm:"index"`
-    InUse       bool   `json:"in_use"`
-    Node        Node   `gorm:"foreignKey:Address;references:NodeAddress"`
+    ID          uint      `json:"id" gorm:"primaryKey"`
+    CreatedAt   time.Time `json:"created_at"`
+    UpdatedAt   time.Time `json:"updated_at"`
+    NodeAddress string    `json:"node_address" gorm:"index;index:idx_node_models_hf_model_id_node_address,priority:2"`
+    ModelID     string    `json:"model_id" gorm:"index"`
+    HFModelID   string    `json:"hf_model_id" gorm:"column:hf_model_id;not null;default:'';size:191;index:idx_node_models_hf_model_id_node_address,priority:1"`
+    InUse       bool      `json:"in_use"`
+    Node        Node      `gorm:"foreignKey:Address;references:NodeAddress"`
 }
 ```
+
+`node_models` rows MUST NOT use soft delete. When a node quits, its rows are removed permanently. All rows MUST be created through the `NewNodeModel` constructor, which normalizes `model_id` to lowercase and derives the lowercase `hf_model_id` from it.
 
 Key behaviors:
 

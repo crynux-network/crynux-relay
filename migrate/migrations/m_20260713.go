@@ -46,24 +46,39 @@ func M20260713(db *gorm.DB) *gormigrate.Gormigrate {
 					return err
 				}
 
-				var modelIDs []string
-				if err := tx.Table("node_models").
-					Distinct("model_id").
-					Pluck("model_id", &modelIDs).Error; err != nil {
-					return err
-				}
-				for _, modelID := range modelIDs {
-					hfModelID := hfModelIDForMigration(modelID)
-					if hfModelID == "" {
-						continue
-					}
+				// The backfill derives hf_model_id from each row's own
+				// model_id and updates by primary key. Matching rows by
+				// model_id value would be wrong here: under MySQL
+				// case-insensitive collations a value from one row could
+				// overwrite case-variant rows of the same model.
+				batchSize := 1000
+				lastID := uint(0)
+				for {
+					var rows []nodeModelHFModelIDMigration
 					if err := tx.Table("node_models").
-						Where("model_id = ?", modelID).
-						Update("hf_model_id", hfModelID).Error; err != nil {
+						Select("id", "model_id").
+						Where("id > ?", lastID).
+						Order("id").
+						Limit(batchSize).
+						Find(&rows).Error; err != nil {
 						return err
 					}
+					if len(rows) == 0 {
+						return nil
+					}
+					for _, row := range rows {
+						lastID = row.ID
+						hfModelID := hfModelIDForMigration(row.ModelID)
+						if hfModelID == "" {
+							continue
+						}
+						if err := tx.Table("node_models").
+							Where("id = ?", row.ID).
+							Update("hf_model_id", hfModelID).Error; err != nil {
+							return err
+						}
+					}
 				}
-				return nil
 			},
 			Rollback: func(tx *gorm.DB) error {
 				if err := tx.Migrator().DropIndex(&nodeModelHFModelIDMigration{}, "idx_node_models_hf_model_id_node_address"); err != nil {
