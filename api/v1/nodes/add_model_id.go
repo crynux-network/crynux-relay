@@ -57,11 +57,7 @@ func AddModelID(c *gin.Context, in *AddModelIDInputWithSignature) (*response.Res
 
 	_, err = models.GetNodeModel(c.Request.Context(), config.GetDB(), in.Address, in.ModelID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		nodeModel := &models.NodeModel{
-			NodeAddress: in.Address,
-			ModelID:     in.ModelID,
-			InUse:       false,
-		}
+		nodeModel := models.NewNodeModel(in.Address, in.ModelID, false)
 		if err := nodeModel.Save(c.Request.Context(), config.GetDB()); err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}

@@ -58,7 +58,7 @@ If a flush fails, Relay MUST merge the failed pending values back into the in-me
 
 ## Node Count Aggregation
 
-Each `node_models` row MUST carry an `hf_model_id` column holding the huggingface base model name derived from the row's dispatch `model_id` with `BaseModelHuggingFaceID`. Rows whose dispatch ID is not a huggingface base model (`lora:` and `controlnet:` entries, and URL-based names) MUST store an empty `hf_model_id`. All `node_models` write paths MUST populate the column at row creation through the `NewNodeModel` constructor.
+Each `node_models` row MUST carry an `hf_model_id` column holding the huggingface base model name derived from the row's dispatch `model_id` with `BaseModelHuggingFaceID`. Rows whose dispatch ID is not a huggingface base model (`lora:` and `controlnet:` entries, and URL-based names) MUST store an empty `hf_model_id`. All `node_models` write paths MUST populate the column at row creation through the `NewNodeModel` constructor. The `NodeModel` `BeforeSave` GORM hook additionally normalizes `model_id` to lowercase and rederives `hf_model_id` on every create and save, so both columns are always lowercase and `hf_model_id` matches `loaded_models.model_id` under case-sensitive comparison. The `node_models` table MUST NOT use soft delete; quitting a node removes its rows permanently.
 
 The `node_models` table MUST have a composite index on `(hf_model_id, node_address)`.
 

@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -12,13 +13,14 @@ type nodeModelForHFModelIDMigrationTest struct {
 	NodeAddress string
 	ModelID     string
 	InUse       bool
+	DeletedAt   gorm.DeletedAt
 }
 
 func (nodeModelForHFModelIDMigrationTest) TableName() string {
 	return "node_models"
 }
 
-func TestM20260713BackfillsHFModelID(t *testing.T) {
+func TestM20260713BackfillsHFModelIDPerRow(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open sqlite db: %v", err)
@@ -31,6 +33,8 @@ func TestM20260713BackfillsHFModelID(t *testing.T) {
 		{NodeAddress: "0x1", ModelID: "base:meta/llama+fp16", InUse: false},
 		{NodeAddress: "0x2", ModelID: "lora:crynux-network/mylora", InUse: false},
 		{NodeAddress: "0x2", ModelID: "base:https://example.com/model.safetensors", InUse: false},
+		// Soft-deleted historical row keeping the pre-normalization casing.
+		{NodeAddress: "0x3", ModelID: "base:Qwen/Qwen3-8B", InUse: false, DeletedAt: gorm.DeletedAt{Time: time.Now(), Valid: true}},
 	}
 	if err := db.Create(&rows).Error; err != nil {
 		t.Fatalf("failed to create node models: %v", err)
@@ -47,21 +51,24 @@ func TestM20260713BackfillsHFModelID(t *testing.T) {
 		t.Fatalf("expected composite index to exist")
 	}
 
-	expected := map[string]string{
-		"base:qwen/qwen3-8b":                         "qwen/qwen3-8b",
-		"base:meta/llama+fp16":                       "meta/llama",
-		"lora:crynux-network/mylora":                 "",
-		"base:https://example.com/model.safetensors": "",
+	expected := map[uint]string{
+		rows[0].ID: "qwen/qwen3-8b",
+		rows[1].ID: "meta/llama",
+		rows[2].ID: "",
+		rows[3].ID: "",
+		// Each row derives hf_model_id from its own model_id, so the
+		// soft-deleted casing never leaks onto other rows.
+		rows[4].ID: "Qwen/Qwen3-8B",
 	}
-	for modelID, expectedHFModelID := range expected {
+	for id, expectedHFModelID := range expected {
 		var hfModelID string
 		if err := db.Table("node_models").
-			Where("model_id = ?", modelID).
+			Where("id = ?", id).
 			Pluck("hf_model_id", &hfModelID).Error; err != nil {
-			t.Fatalf("failed to query hf_model_id for %q: %v", modelID, err)
+			t.Fatalf("failed to query hf_model_id for row %d: %v", id, err)
 		}
 		if hfModelID != expectedHFModelID {
-			t.Fatalf("unexpected hf_model_id for %q: got %q, want %q", modelID, hfModelID, expectedHFModelID)
+			t.Fatalf("unexpected hf_model_id for row %d: got %q, want %q", id, hfModelID, expectedHFModelID)
 		}
 	}
 

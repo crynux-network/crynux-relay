@@ -127,42 +127,44 @@ func GetDelegatedNodes(ctx context.Context, db *gorm.DB) ([]*Node, error) {
 }
 
 type NodeModel struct {
-	gorm.Model
-	NodeAddress string `json:"node_address" gorm:"index;index:idx_node_models_hf_model_id_node_address,priority:2"`
-	ModelID     string `json:"model_id" gorm:"index"`
-	HFModelID   string `json:"hf_model_id" gorm:"column:hf_model_id;not null;default:'';size:191;index:idx_node_models_hf_model_id_node_address,priority:1"`
-	InUse       bool   `json:"in_use"`
-	Node        Node   `gorm:"foreignKey:Address;references:NodeAddress"`
+	ID          uint      `json:"id" gorm:"primaryKey"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	NodeAddress string    `json:"node_address" gorm:"index;index:idx_node_models_hf_model_id_node_address,priority:2"`
+	ModelID     string    `json:"model_id" gorm:"index"`
+	HFModelID   string    `json:"hf_model_id" gorm:"column:hf_model_id;not null;default:'';size:191;index:idx_node_models_hf_model_id_node_address,priority:1"`
+	InUse       bool      `json:"in_use"`
+	Node        Node      `gorm:"foreignKey:Address;references:NodeAddress"`
 }
 
-// NewNodeModel builds a NodeModel with HFModelID derived from the dispatch
-// model ID, so hf_model_id stays consistent across all write paths.
+// NewNodeModel builds a NodeModel from a dispatch model ID with normalized
+// ModelID and HFModelID values.
 func NewNodeModel(nodeAddress, modelID string, inUse bool) NodeModel {
-	hfModelID, _ := BaseModelHuggingFaceID(modelID)
-	return NodeModel{
+	nodeModel := NodeModel{
 		NodeAddress: nodeAddress,
-		ModelID:     modelID,
-		HFModelID:   hfModelID,
 		InUse:       inUse,
 	}
+	nodeModel.setModelID(modelID)
+	return nodeModel
+}
+
+func (nodeModel *NodeModel) setModelID(modelID string) {
+	nodeModel.ModelID = NormalizeModelID(modelID)
+	nodeModel.HFModelID, _ = BaseModelHuggingFaceID(nodeModel.ModelID)
+}
+
+// BeforeSave normalizes ModelID to lowercase and rederives HFModelID on every
+// create and save, so node_models rows stay lowercase no matter how the
+// struct was constructed.
+func (nodeModel *NodeModel) BeforeSave(tx *gorm.DB) error {
+	nodeModel.setModelID(nodeModel.ModelID)
+	return nil
 }
 
 func (nodeModel *NodeModel) Save(ctx context.Context, db *gorm.DB) error {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := db.WithContext(dbCtx).Save(nodeModel).Error; err != nil {
-		return err
-	}
-	return nil
-}
-
-func (nodeModel *NodeModel) Update(ctx context.Context, db *gorm.DB, values map[string]interface{}) error {
-	if nodeModel.ID == 0 {
-		return errors.New("Node.ID cannot be 0 when update")
-	}
-	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := db.WithContext(dbCtx).Model(nodeModel).Updates(values).Error; err != nil {
 		return err
 	}
 	return nil

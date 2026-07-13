@@ -104,7 +104,7 @@ func TestLoadedModelNodeCountCache(t *testing.T) {
 		t.Fatalf("unexpected llama node counts: %+v", counts["meta/llama"])
 	}
 
-	if err := db.Unscoped().Where("node_address = ?", "0x2").Delete(&models.NodeModel{}).Error; err != nil {
+	if err := db.Where("node_address = ?", "0x2").Delete(&models.NodeModel{}).Error; err != nil {
 		t.Fatalf("failed to delete node models: %v", err)
 	}
 
