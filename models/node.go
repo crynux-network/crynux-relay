@@ -106,6 +106,16 @@ func GetNodeByAddress(ctx context.Context, db *gorm.DB, address string) (*Node, 
 	return node, nil
 }
 
+func GetNodeWithModelsByAddress(ctx context.Context, db *gorm.DB, address string) (*Node, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	node := &Node{}
+	if err := db.WithContext(dbCtx).Model(&Node{}).Preload("Models").Where("address = ?", address).First(node).Error; err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
 func GetNodesByAddresses(ctx context.Context, db *gorm.DB, addresses []string) ([]*Node, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

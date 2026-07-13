@@ -413,36 +413,47 @@ func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommit
 }
 
 func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (uint, error) {
+	var pendingSlashForAddress models.PendingSlash
+	{
+		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := db.WithContext(dbCtx).First(&pendingSlashForAddress, pendingSlashID).Error; err != nil {
+			return 0, err
+		}
+	}
+
 	var blockchainTransactionID uint
 	var wasActiveBeforeQuit bool
 	var node *models.Node
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		var pendingSlash models.PendingSlash
-		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := tx.WithContext(dbCtx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&pendingSlash, pendingSlashID).Error; err != nil {
-			return err
-		}
-		if pendingSlash.Status != models.PendingSlashStatusPending {
-			return ErrPendingSlashAlreadyProcessed
-		}
-		evidence, err := ParsePendingSlashEvidence(&pendingSlash)
-		if err != nil {
-			return err
-		}
-		node, err = models.GetNodeByAddress(ctx, tx, pendingSlash.NodeAddress)
-		if err != nil {
-			return err
-		}
-		if node.Status == models.NodeStatusQuit {
-			return errors.New("node has already quit")
-		}
-		wasActiveBeforeQuit, blockchainTransactionID, err = slashNodeTx(ctx, tx, node, pendingSlash.TaskIDCommitment, evidence)
-		if err != nil {
-			return err
-		}
-		pendingSlash.Status = models.PendingSlashStatusSlashed
-		return pendingSlash.Save(ctx, tx)
+	if err := ExecuteNodeStateUpdate(ctx, db, []string{pendingSlashForAddress.NodeAddress}, func() error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			var pendingSlash models.PendingSlash
+			dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if err := tx.WithContext(dbCtx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&pendingSlash, pendingSlashID).Error; err != nil {
+				return err
+			}
+			if pendingSlash.Status != models.PendingSlashStatusPending {
+				return ErrPendingSlashAlreadyProcessed
+			}
+			evidence, err := ParsePendingSlashEvidence(&pendingSlash)
+			if err != nil {
+				return err
+			}
+			node, err = models.GetNodeByAddress(ctx, tx, pendingSlash.NodeAddress)
+			if err != nil {
+				return err
+			}
+			if node.Status == models.NodeStatusQuit {
+				return errors.New("node has already quit")
+			}
+			wasActiveBeforeQuit, blockchainTransactionID, err = slashNodeTx(ctx, tx, node, pendingSlash.TaskIDCommitment, evidence)
+			if err != nil {
+				return err
+			}
+			pendingSlash.Status = models.PendingSlashStatusSlashed
+			return pendingSlash.Save(ctx, tx)
+		})
 	}); err != nil {
 		return 0, err
 	}

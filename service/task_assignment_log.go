@@ -9,7 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func logTaskAssignmentEvent(ctx context.Context, task *models.InferenceTask, nodes []models.Node) {
+func logTaskAssignmentEvent(ctx context.Context, task *models.InferenceTask, candidateCount int) {
 	logger := config.GetTaskAssignmentLogger()
 	if logger == nil {
 		return
@@ -27,7 +27,7 @@ func logTaskAssignmentEvent(ctx context.Context, task *models.InferenceTask, nod
 		"[TaskAssignment] [%s] [%s] [candidate_count=%d] [queue_size=%s] task_id=%s",
 		taskTypeTag(task.TaskType),
 		taskVramRequirementLabel(task),
-		len(nodes),
+		candidateCount,
 		queueSizeLabel,
 		task.TaskIDCommitment,
 	)

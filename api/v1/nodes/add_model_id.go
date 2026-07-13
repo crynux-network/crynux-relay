@@ -5,6 +5,7 @@ import (
 	"crynux_relay/api/v1/validate"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"errors"
 
 	"github.com/gin-gonic/gin"
@@ -55,13 +56,15 @@ func AddModelID(c *gin.Context, in *AddModelIDInputWithSignature) (*response.Res
 
 	in.ModelID = models.NormalizeModelID(in.ModelID)
 
-	_, err = models.GetNodeModel(c.Request.Context(), config.GetDB(), in.Address, in.ModelID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		nodeModel := models.NewNodeModel(in.Address, in.ModelID, false)
-		if err := nodeModel.Save(c.Request.Context(), config.GetDB()); err != nil {
-			return nil, response.NewExceptionResponse(err)
+	err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{in.Address}, func() error {
+		_, err := models.GetNodeModel(c.Request.Context(), config.GetDB(), in.Address, in.ModelID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			nodeModel := models.NewNodeModel(in.Address, in.ModelID, false)
+			return nodeModel.Save(c.Request.Context(), config.GetDB())
 		}
-	} else if err != nil {
+		return err
+	})
+	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 	return &response.Response{}, nil

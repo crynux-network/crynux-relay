@@ -34,4 +34,6 @@ Do not use comments to delete code; directly remove the code without adding expl
 
 ## E2E Test
 
+Do not run E2E tests on your own unless explicitly requested.
+
 For E2E test execution instructions, use `tests/e2e/AGENTS.md` as the source of truth.

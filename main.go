@@ -58,6 +58,10 @@ func main() {
 	if err := service.InitSelectingProb(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
+	service.InitTaskPricing()
+	if err := service.InitNodeIndex(context.Background(), config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
 	if err := service.InitCurrentEmissionEstimateSnapshot(context.Background(), config.GetDB(), conf.Dao.MainnetStartTime); err != nil {
 		log.Fatalln(err)
 	}

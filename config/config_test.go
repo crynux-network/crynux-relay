@@ -69,6 +69,7 @@ blockchains:
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
 http:
+  max_body_bytes: 33554432
   jwt:
     secret_key_file: %q
 mac:
@@ -77,6 +78,16 @@ stats:
   init_start_time: "2026-01-01T00:00:00Z"
 task:
   passive_slash_mode: true
+task_pricing:
+  overhead_seconds: 30
+  initial_seconds_per_sd_unit: 10
+  initial_seconds_per_llm_token: 0.1
+  calibration_alpha: 0.1
+  default_llm_max_new_tokens: 256
+  base_vram: 8
+task_matching:
+  batch_size: 100
+  tick_interval_seconds: 2
 qos:
   tracing_max_task_events: 50
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
@@ -151,6 +162,7 @@ blockchains:
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
 http:
+  max_body_bytes: 33554432
   jwt:
     secret_key_file: %q
 mac:
@@ -159,6 +171,16 @@ stats:
   init_start_time: "2026-01-01T00:00:00Z"
 task:
   passive_slash_mode: true
+task_pricing:
+  overhead_seconds: 30
+  initial_seconds_per_sd_unit: 10
+  initial_seconds_per_llm_token: 0.1
+  calibration_alpha: 0.1
+  default_llm_max_new_tokens: 256
+  base_vram: 8
+task_matching:
+  batch_size: 100
+  tick_interval_seconds: 2
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 
@@ -196,12 +218,23 @@ blockchains:
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
 http:
+  max_body_bytes: 33554432
   jwt:
     secret_key_file: %q
 mac:
   secret_key_file: %q
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+task_pricing:
+  overhead_seconds: 30
+  initial_seconds_per_sd_unit: 10
+  initial_seconds_per_llm_token: 0.1
+  calibration_alpha: 0.1
+  default_llm_max_new_tokens: 256
+  base_vram: 8
+task_matching:
+  batch_size: 100
+  tick_interval_seconds: 2
 qos:
   tracing_max_task_events: 50
 %s`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile), taskConfig)

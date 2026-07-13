@@ -107,7 +107,13 @@ type InferenceTask struct {
 	RequiredGPU      string          `json:"required_gpu"`
 	RequiredGPUVRAM  uint64          `json:"required_gpu_vram"`
 	TaskFee          BigInt          `json:"task_fee"`
-	TaskSize         uint64          `json:"task_size"`
+	// Priority orders queued tasks for dispatch: task_fee divided by the
+	// VRAM-weighted estimated node seconds, floored to an integer.
+	Priority             BigInt  `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`
+	EstimatedNodeSeconds float64 `json:"estimated_node_seconds" gorm:"not null;default:0"`
+	VRAMWeight           float64 `json:"vram_weight" gorm:"column:vram_weight;not null;default:0"`
+	PricingUnits         float64 `json:"pricing_units" gorm:"not null;default:0"`
+	TaskSize             uint64  `json:"task_size"`
 	ModelIDs         StringArray     `json:"model_ids" gorm:"type:text"`
 	AbortReason      TaskAbortReason `json:"abort_reason"`
 	TaskError        TaskError       `json:"task_error"`

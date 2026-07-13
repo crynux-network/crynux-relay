@@ -102,6 +102,16 @@ task:
   node_name_whitelist_enabled: false
   passive_slash_mode: true
   task_tracing_duration_days: 0
+task_pricing:
+  overhead_seconds: 30
+  initial_seconds_per_sd_unit: 10
+  initial_seconds_per_llm_token: 0.1
+  calibration_alpha: 0.1
+  default_llm_max_new_tokens: 256
+  base_vram: 8
+task_matching:
+  batch_size: 100
+  tick_interval_seconds: 2
 task_schema:
   stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-inference-task.json"
   gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/refs/tags/v3.1.0/schema/gpt-inference-task.json"

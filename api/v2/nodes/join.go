@@ -53,7 +53,7 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 
 	in.ModelIDs = models.NormalizeModelIDs(in.ModelIDs)
 
-	unlockJoin := service.LockNodeJoinByAddress(in.Address)
+	unlockJoin := service.LockNodeIndexByAddress(in.Address)
 	defer unlockJoin()
 
 	versions := strings.Split(in.Version, ".")
@@ -108,7 +108,11 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 	}
 	node.StakeAmount = models.BigInt{Int: *stakeAmount}
 
-	if err := service.SetNodeStatusJoin(c.Request.Context(), config.GetDB(), node, in.ModelIDs); err != nil {
+	err = service.SetNodeStatusJoin(c.Request.Context(), config.GetDB(), node, in.ModelIDs)
+	if refreshErr := service.RefreshNodeIndexLocked(c.Request.Context(), config.GetDB(), in.Address); refreshErr != nil {
+		log.Errorf("NodeJoin: refresh node index for %s error: %v", in.Address, refreshErr)
+	}
+	if err != nil {
 		if errors.Is(err, service.ErrDelegatedSlashJobInProgress) {
 			return nil, response.NewValidationErrorResponse("address", "Delegated slash job in progress")
 		}

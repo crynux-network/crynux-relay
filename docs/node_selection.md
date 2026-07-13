@@ -4,6 +4,10 @@ This document describes how node selection works in Crynux Relay.
 
 ## Overview
 
+Relay selects tasks from the queue according to [task-pricing.md](./task-pricing.md). This document starts after queue selection and specifies how Relay selects an execution node for the selected task.
+
+Node selection runs inside the matching scheduler specified in [task_matching.md](./task_matching.md). Candidate node data and weight inputs are served from the node scheduling index defined there; the filtering, weighting, and sampling semantics in this document are unchanged by that data source.
+
 Node selection is a pipeline:
 
 1. **Hard Filters** build the candidate set.

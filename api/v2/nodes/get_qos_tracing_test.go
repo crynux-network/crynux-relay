@@ -25,12 +25,23 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 	content := "environment: test\n" +
 		"blockchains: {}\n" +
 		"http:\n" +
+		"  max_body_bytes: 33554432\n" +
 		"  jwt:\n" +
 		"    expires_in: 3600\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		"task_pricing:\n" +
+		"  overhead_seconds: 30\n" +
+		"  initial_seconds_per_sd_unit: 10\n" +
+		"  initial_seconds_per_llm_token: 0.1\n" +
+		"  calibration_alpha: 0.1\n" +
+		"  default_llm_max_new_tokens: 256\n" +
+		"  base_vram: 8\n" +
+		"task_matching:\n" +
+		"  batch_size: 100\n" +
+		"  tick_interval_seconds: 2\n" +
 		"qos:\n" +
 		"  tracing_max_task_events: 3\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {

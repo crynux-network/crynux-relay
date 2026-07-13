@@ -14,11 +14,14 @@ func initTaskTraceStoreTestConfig(t *testing.T, retentionDays uint64) {
 	dir := t.TempDir()
 	content := "environment: test\n" +
 		"blockchains: {}\n" +
+		"http:\n" +
+		"  max_body_bytes: 33554432\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
 		"  task_tracing_duration_days: " + strconv.FormatUint(retentionDays, 10) + "\n" +
+		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
 		"  tracing_max_task_events: 50\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {

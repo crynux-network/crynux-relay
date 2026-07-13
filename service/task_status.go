@@ -20,6 +20,9 @@ var (
 )
 
 func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) error {
+	if err := ApplyTaskPricing(task); err != nil {
+		return err
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := task.Create(ctx, tx); err != nil {
 			return err
@@ -39,6 +42,8 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 		return err
 	}
 	metrics.TasksCreated.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), task.Creator, metrics.VramTierLabel(task.MinVRAM)).Inc()
+	priorityValue, _ := new(big.Float).SetInt(&task.Priority.Int).Float64()
+	metrics.TaskPriority.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Observe(priorityValue)
 	return nil
 }
 
@@ -213,6 +218,7 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 	if task.StartTime.Valid {
 		metrics.TaskExecutionSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Observe(scoreReadyTime.Sub(task.StartTime.Time).Seconds())
 	}
+	UpdateTaskPricingCalibration(&task)
 	*originTask = task
 	return nil
 }
@@ -340,9 +346,14 @@ func SetTaskStatusEndInvalidated(ctx context.Context, db *gorm.DB, originTask *m
 		return err
 	}
 	passiveSlashMode := config.GetConfig().Task.PassiveSlashMode != nil && *config.GetConfig().Task.PassiveSlashMode
-	return setTaskStatusEndInvalidatedWithEvidence(ctx, db, originTask, node, evidence, evidenceComplete, passiveSlashMode)
+	return ExecuteNodeStateUpdate(ctx, db, []string{originTask.SelectedNode}, func() error {
+		return setTaskStatusEndInvalidatedWithEvidence(ctx, db, originTask, node, evidence, evidenceComplete, passiveSlashMode)
+	})
 }
 
+// SetTaskStatusEndInvalidatedWithEvidence is called inside an outer
+// transaction whose caller already holds the node index locks, so it must not
+// acquire them itself.
 func SetTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, originTask *models.InferenceTask, evidence *models.SlashEvidence, evidenceComplete bool) error {
 	task := *originTask
 	if task.Status != models.TaskScoreReady && task.Status != models.TaskEndAborted && task.Status != models.TaskErrorReported {

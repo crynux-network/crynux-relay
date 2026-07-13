@@ -6,6 +6,7 @@ import (
 	"crynux_relay/api/v1/validate"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"crynux_relay/service"
 	"strconv"
 	"strings"
 	"time"
@@ -55,15 +56,22 @@ func UpdateNodeVersion(c *gin.Context, in *UpdateVersionInputWithSignature) (*re
 		}
 	}
 
-	dbCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer cancel()
-	res := config.GetDB().WithContext(dbCtx).Model(&models.Node{}).Where("address = ?", in.Address).Updates(map[string]interface{}{"major_version": nodeVersions[0], "minor_version": nodeVersions[1], "patch_version": nodeVersions[2]})
-	if res.Error != nil {
-		return nil, response.NewExceptionResponse(res.Error)
+	var rowsAffected int64
+	if err := service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{in.Address}, func() error {
+		dbCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+		res := config.GetDB().WithContext(dbCtx).Model(&models.Node{}).Where("address = ?", in.Address).Updates(map[string]interface{}{"major_version": nodeVersions[0], "minor_version": nodeVersions[1], "patch_version": nodeVersions[2]})
+		if res.Error != nil {
+			return res.Error
+		}
+		rowsAffected = res.RowsAffected
+		return nil
+	}); err != nil {
+		return nil, response.NewExceptionResponse(err)
 	}
-	if res.RowsAffected == 0 {
+	if rowsAffected == 0 {
 		return nil, response.NewValidationErrorResponse("address", "Node not found")
 	}
-	
+
 	return &response.Response{}, nil
 }

@@ -124,7 +124,11 @@ func TriggerNodeSlash(c *gin.Context, in *TriggerNodeSlashInput) (*TriggerNodeSl
 			}
 			return nil, response.NewExceptionResponse(err)
 		}
-		blockchainTransactionID, err = service.SlashNode(c.Request.Context(), config.GetDB(), node, "", nil)
+		err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{node.Address}, func() error {
+			var slashErr error
+			blockchainTransactionID, slashErr = service.SlashNode(c.Request.Context(), config.GetDB(), node, "", nil)
+			return slashErr
+		})
 		if err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}

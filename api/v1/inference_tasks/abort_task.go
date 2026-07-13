@@ -62,7 +62,9 @@ func AbortTask(c *gin.Context, in *AbortTaskInputWithSignature) (*response.Respo
 		task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
 	}
 	for range 3 {
-		err = service.SetTaskStatusEndAborted(c.Request.Context(), config.GetDB(), task, address)
+		err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{task.SelectedNode}, func() error {
+			return service.SetTaskStatusEndAborted(c.Request.Context(), config.GetDB(), task, address)
+		})
 		if err == nil {
 			break
 		} else if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {

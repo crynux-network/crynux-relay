@@ -18,11 +18,11 @@ Target trace data:
 
 - Task creation:
   - Timestamp: task create time.
-  - Details: task input parameters, including `task_args`, task type, task version, timeout, VRAM/GPU requirements, task fee, task size, model IDs, creator, nonce, and sampling seed when available.
+  - Details: task input parameters, including `task_args`, task type, task version, timeout, VRAM/GPU requirements, task fee, task size, model IDs, creator, nonce, sampling seed when available, and task pricing fields specified in [task-pricing.md](./task-pricing.md).
   - Duration: none for the first trace step.
 - Queue entry and waiting:
   - Timestamp: time when the task enters the queue.
-  - Details: queued status and queue deadline inputs.
+  - Details: queued status, queue deadline inputs, and stored queue priority.
 - Node selected:
   - Timestamp: time when Relay selects a node for the task before task start.
   - Details: selected node address.
@@ -33,7 +33,6 @@ Target trace data:
   - Timestamp: task aborted time when the task is aborted before node selection.
   - Details: abort reason and abort issuer when available.
   - Duration: queue lifetime, calculated as queue abort time minus queue entry time.
-  - Scope: detailed node selection attempt tracing is deferred until the task fee scheduling behavior is fixed.
 - Task execution start:
   - Timestamp: task start time.
   - Details: selected node information, including address, card/GPU name, VRAM, version, operator staking, delegated staking summary, QoS score, health score inputs when available, status, delegator share/count, and all other persisted node base information useful for diagnosis.
