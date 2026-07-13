@@ -24,7 +24,7 @@ func TestGetLoadedModels(t *testing.T) {
 		getDB = originalGetDB
 	}()
 
-	if err := db.AutoMigrate(&dbmodels.LoadedModel{}); err != nil {
+	if err := db.AutoMigrate(&dbmodels.LoadedModel{}, &dbmodels.NodeModel{}); err != nil {
 		t.Fatalf("failed to migrate loaded models: %v", err)
 	}
 	loadedModels := []dbmodels.LoadedModel{
@@ -33,6 +33,13 @@ func TestGetLoadedModels(t *testing.T) {
 	}
 	if err := db.Create(&loadedModels).Error; err != nil {
 		t.Fatalf("failed to create loaded models: %v", err)
+	}
+	nodeModels := []dbmodels.NodeModel{
+		dbmodels.NewNodeModel("0x1", "base:a/model", true),
+		dbmodels.NewNodeModel("0x2", "base:a/model", false),
+	}
+	if err := db.Create(&nodeModels).Error; err != nil {
+		t.Fatalf("failed to create node models: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/loaded-models", nil)
@@ -49,7 +56,13 @@ func TestGetLoadedModels(t *testing.T) {
 	if resp.Data[0].ModelID != "a/model" || resp.Data[0].ModelType != dbmodels.LoadedModelTypeLLM || resp.Data[0].MinVRAM != 16 {
 		t.Fatalf("unexpected first loaded model: %+v", resp.Data[0])
 	}
+	if resp.Data[0].OnDiskNodeCount != 2 || resp.Data[0].InMemoryNodeCount != 1 {
+		t.Fatalf("unexpected first loaded model node counts: %+v", resp.Data[0])
+	}
 	if resp.Data[1].ModelID != "z/model" || resp.Data[1].ModelType != dbmodels.LoadedModelTypeSD || resp.Data[1].MinVRAM != 24 {
 		t.Fatalf("unexpected second loaded model: %+v", resp.Data[1])
+	}
+	if resp.Data[1].OnDiskNodeCount != 0 || resp.Data[1].InMemoryNodeCount != 0 {
+		t.Fatalf("unexpected second loaded model node counts: %+v", resp.Data[1])
 	}
 }

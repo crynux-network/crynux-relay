@@ -11,8 +11,39 @@ import (
 )
 
 const loadedModelFlushInterval = time.Hour
+const loadedModelNodeCountTTL = time.Minute
 
 var loadedModelCache = newLoadedModelMinVRAMCache()
+var loadedModelNodeCountCache = &hfModelNodeCountCache{}
+
+type hfModelNodeCountCache struct {
+	mu        sync.Mutex
+	counts    map[string]models.HFModelNodeCount
+	expiresAt time.Time
+}
+
+// GetLoadedModelNodeCounts returns per-model node counts aggregated from the
+// node_models table, cached in memory so that public API traffic does not
+// translate into database load.
+func GetLoadedModelNodeCounts(ctx context.Context, db *gorm.DB) (map[string]models.HFModelNodeCount, error) {
+	return loadedModelNodeCountCache.get(ctx, db, time.Now())
+}
+
+func (cache *hfModelNodeCountCache) get(ctx context.Context, db *gorm.DB, now time.Time) (map[string]models.HFModelNodeCount, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	if cache.counts != nil && now.Before(cache.expiresAt) {
+		return cache.counts, nil
+	}
+	counts, err := models.CountNodesByHFModelID(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	cache.counts = counts
+	cache.expiresAt = now.Add(loadedModelNodeCountTTL)
+	return counts, nil
+}
 
 type pendingLoadedModel struct {
 	ModelType models.LoadedModelType
