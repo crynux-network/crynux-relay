@@ -128,10 +128,23 @@ func GetDelegatedNodes(ctx context.Context, db *gorm.DB) ([]*Node, error) {
 
 type NodeModel struct {
 	gorm.Model
-	NodeAddress string `json:"node_address" gorm:"index"`
+	NodeAddress string `json:"node_address" gorm:"index;index:idx_node_models_hf_model_id_node_address,priority:2"`
 	ModelID     string `json:"model_id" gorm:"index"`
+	HFModelID   string `json:"hf_model_id" gorm:"column:hf_model_id;not null;default:'';size:191;index:idx_node_models_hf_model_id_node_address,priority:1"`
 	InUse       bool   `json:"in_use"`
 	Node        Node   `gorm:"foreignKey:Address;references:NodeAddress"`
+}
+
+// NewNodeModel builds a NodeModel with HFModelID derived from the dispatch
+// model ID, so hf_model_id stays consistent across all write paths.
+func NewNodeModel(nodeAddress, modelID string, inUse bool) NodeModel {
+	hfModelID, _ := BaseModelHuggingFaceID(modelID)
+	return NodeModel{
+		NodeAddress: nodeAddress,
+		ModelID:     modelID,
+		HFModelID:   hfModelID,
+		InUse:       inUse,
+	}
 }
 
 func (nodeModel *NodeModel) Save(ctx context.Context, db *gorm.DB) error {
@@ -182,6 +195,40 @@ func GetNodeModel(ctx context.Context, db *gorm.DB, nodeAddress, modelID string)
 		return nil, err
 	}
 	return nodeModel, nil
+}
+
+type HFModelNodeCount struct {
+	OnDisk   int64
+	InMemory int64
+}
+
+// CountNodesByHFModelID returns, per huggingface base model, the number of
+// distinct nodes that have the model on disk and the number of distinct nodes
+// that currently have it loaded in GPU memory. Node addresses are counted
+// distinctly because one node may hold several variants of the same model.
+func CountNodesByHFModelID(ctx context.Context, db *gorm.DB) (map[string]HFModelNodeCount, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	type row struct {
+		HFModelID string
+		OnDisk    int64
+		InMemory  int64
+	}
+	var rows []row
+	if err := db.WithContext(dbCtx).Model(&NodeModel{}).
+		Select("hf_model_id, COUNT(DISTINCT node_address) AS on_disk, COUNT(DISTINCT CASE WHEN in_use THEN node_address END) AS in_memory").
+		Where("hf_model_id <> ''").
+		Group("hf_model_id").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]HFModelNodeCount, len(rows))
+	for _, r := range rows {
+		counts[r.HFModelID] = HFModelNodeCount{OnDisk: r.OnDisk, InMemory: r.InMemory}
+	}
+	return counts, nil
 }
 
 func GetBusyNodeCount(ctx context.Context, db *gorm.DB) (int64, error) {

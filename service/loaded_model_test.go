@@ -4,6 +4,7 @@ import (
 	"context"
 	"crynux_relay/models"
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -65,5 +66,64 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	}
 	if dbLoadedModels[1].ModelID != "qwen/qwen3.6-7b" || dbLoadedModels[1].ModelType != models.LoadedModelTypeLLM || dbLoadedModels[1].MinVRAM != 16 {
 		t.Fatalf("unexpected second db loaded model: %+v", dbLoadedModels[1])
+	}
+}
+
+func TestLoadedModelNodeCountCache(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.NodeModel{}); err != nil {
+		t.Fatalf("failed to migrate node models: %v", err)
+	}
+	nodeModels := []models.NodeModel{
+		models.NewNodeModel("0x1", "base:qwen/qwen3.6-7b", true),
+		models.NewNodeModel("0x1", "base:qwen/qwen3.6-7b+fp16", false),
+		models.NewNodeModel("0x2", "base:qwen/qwen3.6-7b", false),
+		models.NewNodeModel("0x2", "base:meta/llama", true),
+		models.NewNodeModel("0x2", "lora:crynux-network/mylora", false),
+	}
+	if err := db.Create(&nodeModels).Error; err != nil {
+		t.Fatalf("failed to create node models: %v", err)
+	}
+
+	cache := &hfModelNodeCountCache{}
+	now := time.Now()
+	counts, err := cache.get(context.Background(), db, now)
+	if err != nil {
+		t.Fatalf("failed to get node counts: %v", err)
+	}
+	if len(counts) != 2 {
+		t.Fatalf("expected node counts for 2 models, got %d", len(counts))
+	}
+	if counts["qwen/qwen3.6-7b"] != (models.HFModelNodeCount{OnDisk: 2, InMemory: 1}) {
+		t.Fatalf("unexpected qwen node counts: %+v", counts["qwen/qwen3.6-7b"])
+	}
+	if counts["meta/llama"] != (models.HFModelNodeCount{OnDisk: 1, InMemory: 1}) {
+		t.Fatalf("unexpected llama node counts: %+v", counts["meta/llama"])
+	}
+
+	if err := db.Unscoped().Where("node_address = ?", "0x2").Delete(&models.NodeModel{}).Error; err != nil {
+		t.Fatalf("failed to delete node models: %v", err)
+	}
+
+	cachedCounts, err := cache.get(context.Background(), db, now.Add(loadedModelNodeCountTTL/2))
+	if err != nil {
+		t.Fatalf("failed to get cached node counts: %v", err)
+	}
+	if cachedCounts["qwen/qwen3.6-7b"] != (models.HFModelNodeCount{OnDisk: 2, InMemory: 1}) {
+		t.Fatalf("expected cached counts within TTL, got %+v", cachedCounts["qwen/qwen3.6-7b"])
+	}
+
+	refreshedCounts, err := cache.get(context.Background(), db, now.Add(loadedModelNodeCountTTL))
+	if err != nil {
+		t.Fatalf("failed to get refreshed node counts: %v", err)
+	}
+	if len(refreshedCounts) != 1 {
+		t.Fatalf("expected node counts for 1 model after refresh, got %d", len(refreshedCounts))
+	}
+	if refreshedCounts["qwen/qwen3.6-7b"] != (models.HFModelNodeCount{OnDisk: 1, InMemory: 1}) {
+		t.Fatalf("unexpected refreshed qwen node counts: %+v", refreshedCounts["qwen/qwen3.6-7b"])
 	}
 }

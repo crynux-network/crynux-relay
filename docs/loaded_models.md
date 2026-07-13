@@ -56,6 +56,21 @@ The flusher MUST periodically take the pending cache and upsert it into `loaded_
 
 If a flush fails, Relay MUST merge the failed pending values back into the in-memory pending update cache.
 
+## Node Count Aggregation
+
+Each `node_models` row MUST carry an `hf_model_id` column holding the huggingface base model name derived from the row's dispatch `model_id` with `BaseModelHuggingFaceID`. Rows whose dispatch ID is not a huggingface base model (`lora:` and `controlnet:` entries, and URL-based names) MUST store an empty `hf_model_id`. All `node_models` write paths MUST populate the column at row creation through the `NewNodeModel` constructor.
+
+The `node_models` table MUST have a composite index on `(hf_model_id, node_address)`.
+
+For each huggingface base model, Relay SHALL derive two node counts from `node_models`:
+
+- On-disk node count: the number of distinct node addresses that have at least one `node_models` row with the model's `hf_model_id`.
+- In-memory node count: the number of distinct node addresses that have at least one such row with `in_use` set.
+
+Node addresses MUST be counted distinctly because one node may hold several variants of the same base model. The counts MUST be computed by a single grouped aggregation query on `hf_model_id`, and MUST NOT use per-model queries or SQL pattern matching. Because `node_models` rows are deleted when a node quits, the counts cover only currently joined nodes, regardless of node status.
+
+Relay SHALL cache the aggregated counts in memory with a 1 minute TTL. The cache MUST be refreshed lazily on the first request after expiry, so API traffic produces at most one aggregation query per TTL window.
+
 ## API Contract
 
 Relay MUST expose loaded models through:
@@ -75,10 +90,14 @@ The response body MUST use the standard Relay v2 response envelope:
     {
       "model_id": "qwen/qwen3.6-7b",
       "model_type": "llm",
-      "min_vram": 24
+      "min_vram": 24,
+      "in_memory_node_count": 1,
+      "on_disk_node_count": 3
     }
   ]
 }
 ```
 
 The endpoint MUST read only persisted `loaded_models` rows. Pending cache entries MUST become visible through the endpoint after the background flusher writes them to the database. The response `data` array MUST be ordered by `model_id` ascending.
+
+`in_memory_node_count` and `on_disk_node_count` MUST be filled from the cached node count aggregation, matched by `model_id`. A loaded model with no matching aggregation entry MUST report both counts as `0`.

@@ -80,8 +80,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		}
 		var nodeModels []models.NodeModel
 		for _, modelID := range modelIDs {
-			model := models.NodeModel{NodeAddress: node.Address, ModelID: modelID, InUse: false}
-			nodeModels = append(nodeModels, model)
+			nodeModels = append(nodeModels, models.NewNodeModel(node.Address, modelID, false))
 		}
 		if err := models.CreateNodeModels(ctx, tx, nodeModels); err != nil {
 			return err
@@ -283,8 +282,7 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 	}
 	for _, modelID := range taskModelIDs {
 		if model, ok := localModelSet[modelID]; !ok {
-			newModel := models.NodeModel{NodeAddress: node.Address, ModelID: modelID, InUse: true}
-			newModels = append(newModels, newModel)
+			newModels = append(newModels, models.NewNodeModel(node.Address, modelID, true))
 		} else if !model.InUse {
 			model.InUse = true
 			newModels = append(newModels, model)

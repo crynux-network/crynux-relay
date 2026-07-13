@@ -14,6 +14,10 @@ Because the Relay Wallet handles funds, the correctness of financial data must b
 
 Processing of logs and withdrawals may be delayed, but any data that has been processed must remain correct and consistent. In particular, during unexpected exceptions and shutdown, ensure that in-flight operations do not stop at a point that leaves data in an inconsistent state.
 
+### Database Queries
+
+Do not use SQL `LIKE` in queries. Query by exact column values instead. If pattern-based filtering is needed, fetch rows by indexed exact conditions and filter in application code, or store a dedicated column that supports exact matching.
+
 ### Proper Error Handling
 
 All function errors must be propagated up the call stack until handled. Any unhandled error reaching the `main` function must be logged and trigger an alert to operators.
