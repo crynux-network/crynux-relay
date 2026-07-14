@@ -66,9 +66,9 @@ var (
 		Buckets: []float64{0, 1, 2, 5, 10, 20, 50, 100, 200},
 	}, []string{"task_type", "vram_tier", "gpu"})
 
-	NodeSelectionEmpty = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "relay_node_selection_empty_total",
-		Help: "Total number of node selection attempts that found no candidate node.",
+	NodeSelectionEmptyPoolTasks = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_node_selection_empty_pool_tasks",
+		Help: "Number of queued tasks whose candidate node pool was empty in the latest matching round.",
 	}, []string{"task_type", "vram_tier", "gpu"})
 
 	NodeHealthPenalties = prometheus.NewCounter(prometheus.CounterOpts{
@@ -129,7 +129,7 @@ func init() {
 		TaskQueueWaitSeconds,
 		TaskExecutionSeconds,
 		NodeSelectionCandidates,
-		NodeSelectionEmpty,
+		NodeSelectionEmptyPoolTasks,
 		NodeHealthPenalties,
 		NodeEvents,
 		TaskQueueDepth,
@@ -140,6 +140,24 @@ func init() {
 		TaskPricingSecondsPerLLMToken,
 		TaskPriority,
 	)
+}
+
+// SelectionLabels is the label tuple used by node selection metrics.
+type SelectionLabels struct {
+	TaskType string
+	VramTier string
+	GPU      string
+}
+
+// SetNodeSelectionEmptyPoolTasks replaces the empty-pool gauge series with
+// the counts observed in the latest matching round. Series from previous
+// rounds that are absent from counts are removed so each task class reports
+// its current number of unmatchable queued tasks.
+func SetNodeSelectionEmptyPoolTasks(counts map[SelectionLabels]int) {
+	NodeSelectionEmptyPoolTasks.Reset()
+	for labels, count := range counts {
+		NodeSelectionEmptyPoolTasks.WithLabelValues(labels.TaskType, labels.VramTier, labels.GPU).Set(float64(count))
+	}
 }
 
 var vramTiers []uint64

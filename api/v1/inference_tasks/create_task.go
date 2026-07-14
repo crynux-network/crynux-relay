@@ -56,6 +56,10 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 
 	in.TaskModelIDs = models.NormalizeModelIDs(in.TaskModelIDs)
+	if in.RequiredGPU != nil {
+		normalizedRequiredGPU := models.NormalizeGPUName(*in.RequiredGPU)
+		in.RequiredGPU = &normalizedRequiredGPU
+	}
 
 	if config.GetConfig().Task.TaskWhitelistEnabled {
 		allowed, err := service.IsTaskCreatorWhitelisted(c.Request.Context(), config.GetDB(), address)

@@ -73,7 +73,7 @@ func ParseNodeVersion(version string) (uint64, uint64, uint64, error) {
 }
 
 func NormalizeNodeNameEntry(gpuName string, gpuVram uint64, nodeVersion string) (NodeNameWhitelistEntry, error) {
-	normalizedGPUName := strings.TrimSpace(gpuName)
+	normalizedGPUName := models.NormalizeGPUName(gpuName)
 	if normalizedGPUName == "" {
 		return NodeNameWhitelistEntry{}, ErrInvalidNodeNameGPUName
 	}

@@ -219,8 +219,9 @@ func buildEntryTraceCandidatePool(entries []*NodeIndexEntry, probs []NodeSelecti
 
 // matchTaskFromCandidateSet selects one node for the task by weighted random
 // sampling over the shared candidate set minus nodes already reserved in this
-// round. It returns nil when the task's candidate set is empty.
-func matchTaskFromCandidateSet(task *models.InferenceTask, set *matchingCandidateSet, reserved map[string]struct{}, traceSelection bool) *matchedPair {
+// round. It returns nil when the task's candidate set is empty, recording the
+// task in emptyPoolCounts under its selection label tuple.
+func matchTaskFromCandidateSet(task *models.InferenceTask, set *matchingCandidateSet, reserved map[string]struct{}, traceSelection bool, emptyPoolCounts map[metrics.SelectionLabels]int) *matchedPair {
 	availableEntries := make([]*NodeIndexEntry, 0, len(set.entries))
 	availableScores := make([]float64, 0, len(set.entries))
 	availableProbs := make([]NodeSelectingProb, 0, len(set.entries))
@@ -238,7 +239,9 @@ func matchTaskFromCandidateSet(task *models.InferenceTask, set *matchingCandidat
 	gpuLabel := metrics.GPULabel(task.RequiredGPU)
 	metrics.NodeSelectionCandidates.WithLabelValues(taskTypeLabel, vramTierLabel, gpuLabel).Observe(float64(len(availableEntries)))
 	if len(availableEntries) == 0 {
-		metrics.NodeSelectionEmpty.WithLabelValues(taskTypeLabel, vramTierLabel, gpuLabel).Inc()
+		if emptyPoolCounts != nil {
+			emptyPoolCounts[metrics.SelectionLabels{TaskType: taskTypeLabel, VramTier: vramTierLabel, GPU: gpuLabel}]++
+		}
 		return nil
 	}
 
@@ -302,6 +305,7 @@ func runMatchingRound(ctx context.Context) (int, error) {
 	reserved := make(map[string]struct{})
 	candidateSets := make(map[string]*matchingCandidateSet)
 	pairs := make([]*matchedPair, 0)
+	emptyPoolCounts := make(map[metrics.SelectionLabels]int)
 	traceSelection := GetTaskTraceStore().Enabled()
 
 	var lastPriority *big.Int
@@ -329,7 +333,7 @@ func runMatchingRound(ctx context.Context) (int, error) {
 				}
 				candidateSets[signature] = set
 			}
-			pair := matchTaskFromCandidateSet(task, set, reserved, traceSelection)
+			pair := matchTaskFromCandidateSet(task, set, reserved, traceSelection, emptyPoolCounts)
 			logTaskAssignmentEvent(ctx, task, len(set.entries))
 			if pair == nil {
 				continue
@@ -349,6 +353,7 @@ func runMatchingRound(ctx context.Context) (int, error) {
 		lastID = lastTask.ID
 	}
 
+	metrics.SetNodeSelectionEmptyPoolTasks(emptyPoolCounts)
 	startMatchedPairs(ctx, pairs)
 	return len(pairs), nil
 }

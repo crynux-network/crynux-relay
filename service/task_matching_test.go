@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/config"
+	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"database/sql"
 	"math/big"
@@ -190,17 +191,29 @@ func TestMatchTaskFromCandidateSetRespectsReservations(t *testing.T) {
 	}
 
 	reserved := map[string]struct{}{"0xnode1": {}}
-	pair := matchTaskFromCandidateSet(task, set, reserved, false)
+	emptyPoolCounts := make(map[metrics.SelectionLabels]int)
+	pair := matchTaskFromCandidateSet(task, set, reserved, false, emptyPoolCounts)
 	if pair == nil {
 		t.Fatal("expected a match with one unreserved node")
 	}
 	if pair.nodeAddress != "0xnode2" {
 		t.Fatalf("expected the unreserved node to be selected, got %s", pair.nodeAddress)
 	}
+	if len(emptyPoolCounts) != 0 {
+		t.Fatalf("expected no empty pool counts after a successful match, got %v", emptyPoolCounts)
+	}
 
 	reserved["0xnode2"] = struct{}{}
-	if pair := matchTaskFromCandidateSet(task, set, reserved, false); pair != nil {
+	if pair := matchTaskFromCandidateSet(task, set, reserved, false, emptyPoolCounts); pair != nil {
 		t.Fatal("expected no match when all candidates are reserved")
+	}
+	if total := len(emptyPoolCounts); total != 1 {
+		t.Fatalf("expected one empty pool label tuple, got %d", total)
+	}
+	for _, count := range emptyPoolCounts {
+		if count != 1 {
+			t.Fatalf("expected empty pool count 1, got %d", count)
+		}
 	}
 }
 
