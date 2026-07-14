@@ -46,8 +46,7 @@ Counters and histograms MUST be incremented at the task and node state transitio
 | `relay_tasks_aborted_total` | counter | `reason`, `status`, `task_type`, `vram_tier` | `SetTaskStatusEndAborted` succeeds. The `status` label carries the task status before the abort. |
 | `relay_task_queue_wait_seconds` | histogram | `task_type`, `vram_tier` | Observes `StartTime - CreateTime` on dispatch. Buckets: 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800. |
 | `relay_task_execution_seconds` | histogram | `task_type`, `vram_tier` | Observes `ScoreReadyTime - StartTime` on score submission. Buckets: 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600. |
-| `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size in `selectNodeForInferenceTask`, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |
-| `relay_node_selection_empty_total` | counter | `task_type`, `vram_tier`, `gpu` | Node selection finds no candidate node. |
+| `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size on every node selection attempt in the matching round, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |
 | `relay_node_health_penalties_total` | counter | none | `ApplyHealthPenalty` succeeds. |
 | `relay_node_events_total` | counter | `event` | Node join, quit, kickout, or slash completes. |
 
@@ -65,6 +64,8 @@ When metrics are enabled, Relay MUST run a gauge collector goroutine on a 30-sec
 | `relay_nodes_alive` | none | Count of nodes with `last_seen_time` within the last 2 minutes. |
 
 A query failure for one gauge MUST be logged and MUST NOT prevent the other gauges from refreshing.
+
+The `relay_node_selection_empty_pool_tasks` gauge (labels `task_type`, `vram_tier`, `gpu`) is owned by the matching scheduler instead of the gauge collector. At the end of every matching round, Relay MUST replace all series of this gauge with the number of queued tasks per label tuple whose candidate pool was empty in that round, so each queued task counts exactly once per round regardless of how many rounds it stays queued. Label tuples with no empty-pool task in the round MUST be removed.
 
 ## Delivery and Last-Seen Tracking
 

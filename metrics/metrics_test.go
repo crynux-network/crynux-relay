@@ -60,7 +60,9 @@ func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
 	TaskQueueWaitSeconds.WithLabelValues("sd", "8-16").Observe(1.5)
 	TaskExecutionSeconds.WithLabelValues("sd", "8-16").Observe(60)
 	NodeSelectionCandidates.WithLabelValues("sd", "8-16", "any").Observe(10)
-	NodeSelectionEmpty.WithLabelValues("sd", "8-16", "any").Inc()
+	SetNodeSelectionEmptyPoolTasks(map[SelectionLabels]int{
+		{TaskType: "sd", VramTier: "8-16", GPU: "any"}: 1,
+	})
 	NodeHealthPenalties.Inc()
 	NodeEvents.WithLabelValues("join").Inc()
 	TaskQueueDepth.Set(3)
@@ -92,7 +94,7 @@ func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
 		"relay_task_queue_wait_seconds",
 		"relay_task_execution_seconds",
 		"relay_node_selection_candidates",
-		"relay_node_selection_empty_total",
+		"relay_node_selection_empty_pool_tasks",
 		"relay_node_health_penalties_total",
 		"relay_node_events_total",
 		"relay_task_queue_depth",
