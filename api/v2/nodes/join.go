@@ -51,6 +51,7 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 		return nil, validationErr
 	}
 
+	in.GPUName = models.NormalizeGPUName(in.GPUName)
 	in.ModelIDs = models.NormalizeModelIDs(in.ModelIDs)
 
 	unlockJoin := service.LockNodeIndexByAddress(in.Address)

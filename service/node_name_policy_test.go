@@ -75,6 +75,58 @@ func TestNodeNameWhitelistCRUDAndCache(t *testing.T) {
 	}
 }
 
+func TestNodeNamePolicyNormalizesRawGPUNames(t *testing.T) {
+	resetNodeNamePolicyCacheForTest()
+
+	ctx := context.Background()
+	db := newNodeNamePolicyTestDB(t)
+	rawDarwinName := " Apple M4\n      Type+Darwin"
+	cleanDarwinName := "Apple M4 Type+Darwin"
+	gpuVram := uint64(16)
+	nodeVersion := "2.6.0"
+
+	if err := AddNodeNameWhitelist(ctx, db, rawDarwinName, gpuVram, nodeVersion); err != nil {
+		t.Fatalf("add whitelist with raw name should succeed: %v", err)
+	}
+	entries, err := ListNodeNameWhitelist(ctx, db)
+	if err != nil {
+		t.Fatalf("list whitelist should succeed: %v", err)
+	}
+	if len(entries) != 1 || entries[0].GPUName != cleanDarwinName {
+		t.Fatalf("whitelist entry should store normalized name: %#v", entries)
+	}
+	allowed, err := IsNodeNameWhitelisted(ctx, db, rawDarwinName, gpuVram, nodeVersion)
+	if err != nil {
+		t.Fatalf("whitelist check with raw name should succeed: %v", err)
+	}
+	if !allowed {
+		t.Fatal("raw name should be whitelisted after normalization")
+	}
+
+	node := &models.Node{
+		GPUName:      cleanDarwinName,
+		GPUVram:      gpuVram,
+		MajorVersion: 2,
+		MinorVersion: 6,
+		PatchVersion: 0,
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return IncrementNodeNameCountTx(ctx, tx, node)
+	}); err != nil {
+		t.Fatalf("increment tx should succeed: %v", err)
+	}
+	if err := RefreshNodeNameCountCache(ctx, db); err != nil {
+		t.Fatalf("refresh count cache should succeed: %v", err)
+	}
+	count, err := GetNodeNameActiveCount(ctx, db, rawDarwinName, gpuVram, nodeVersion)
+	if err != nil {
+		t.Fatalf("get active count with raw name should succeed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("raw name lookup should hit normalized count entry, got %d", count)
+	}
+}
+
 func TestNodeNameCountTxAndCache(t *testing.T) {
 	resetNodeNamePolicyCacheForTest()
 
