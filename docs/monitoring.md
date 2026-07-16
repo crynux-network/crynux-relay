@@ -24,7 +24,9 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 |-------|-----------|
 | `task_type` | `sd`, `llm`, or `sd_ft_lora` from the task type enum. |
 | `creator` | The task creator address. Creators are whitelist-controlled, so cardinality is bounded. |
-| `vram_tier` | The task `MinVRAM` mapped to the configured `metrics.vram_tiers` boundaries, producing labels `0-8`, `8-16`, ..., `48+`. Raw VRAM values MUST NOT be used as labels. |
+| `vram_tier` | The task `MinVRAM` mapped to the configured `metrics.vram_tiers` boundaries, producing labels `0-8`, `8-16`, ..., `48+`. Raw VRAM values MUST NOT be used as labels. For model download metrics, the mapped value is the demand group VRAM requirement stored on the download selection record. |
+| `hf_model_id` | The huggingface base model ID of a `node_models` row. Cardinality is bounded because the `relay_model_nodes` gauge exports only the top 50 models by on-disk node count. |
+| `state` | Model holding state on a node: `on_disk` or `in_memory`. |
 | `gpu` | The exact `RequiredGPU` name for GPU-pinned tasks, `any` otherwise. |
 | `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, or `task_fee_too_low`. |
 | `status` (aborted task) | The task status enum name at the moment of the abort: `TaskQueued`, `TaskParametersUploaded`, `TaskErrorReported`, `TaskScoreReady`, `TaskValidated`, or `TaskGroupValidated`. `TaskStarted` is split by `delivered_time` into `TaskStartedDelivered` and `TaskStartedUndelivered`. |
@@ -49,6 +51,9 @@ Counters and histograms MUST be incremented at the task and node state transitio
 | `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size on every node selection attempt in the matching round, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |
 | `relay_node_health_penalties_total` | counter | none | `ApplyHealthPenalty` succeeds. |
 | `relay_node_events_total` | counter | `event` | Node join, quit, kickout, or slash completes. |
+| `relay_model_downloads_dispatched_total` | counter | `task_type`, `vram_tier` | The model distribution controller commits a download selection record together with its `DownloadModel` event. The `task_type` label carries the latest demanding task type of the demand group. |
+| `relay_model_downloads_completed_total` | counter | `vram_tier` | A pending download selection transitions to `completed` because the node's on-disk model set contains the model. The transition is detected on the controller round following the node's model report, so completion observations lag the report by at most one controller interval. |
+| `relay_model_downloads_expired_total` | counter | `vram_tier` | A pending download selection transitions to `expired` at the download deadline without completion. |
 
 The average candidate pool size for a task class is the PromQL expression `rate(relay_node_selection_candidates_sum[5m]) / rate(relay_node_selection_candidates_count[5m])` grouped by labels; Relay MUST NOT compute averages itself.
 
@@ -62,6 +67,7 @@ When metrics are enabled, Relay MUST run a gauge collector goroutine on a 30-sec
 | `relay_nodes` | `status` | Count of nodes per node status. Every status label MUST be set on every tick, including zero values. |
 | `relay_nodes_failing_30m` | none | Count of distinct `selected_node` values on tasks with `TaskEndAborted` status, `TaskAbortTimeout` reason, and an update time within the last 30 minutes. This gauge discriminates systemic node failure from individual node failure. |
 | `relay_nodes_alive` | none | Count of nodes with `last_seen_time` within the last 2 minutes. |
+| `relay_model_nodes` | `hf_model_id`, `state` | Distinct node counts per huggingface base model from `node_models`: `on_disk` counts nodes with any row of the model, `in_memory` counts nodes with an `in_use` row of the model. On every tick, all series of this gauge MUST be replaced with the top 50 models ranked by on-disk node count descending, breaking ties by in-memory node count descending and then by model ID ascending; models outside the top 50 MUST be removed. |
 
 A query failure for one gauge MUST be logged and MUST NOT prevent the other gauges from refreshing.
 
@@ -93,7 +99,9 @@ The `nodes` table carries a nullable `last_seen_time` column recording the last 
 | `service/select_nodes.go` | Node selection candidate pool metrics |
 | `service/qos.go` | Health penalty counter |
 | `service/node.go` | Node lifecycle event counters |
+| `service/model_distribution.go` | Model download dispatch, completion, and expiration counters |
 | `service/node_last_seen.go` | Throttled node `last_seen_time` refresh |
 | `api/v1/inference_tasks/get_task_by_id.go` | Task delivery recording on node fetch |
 | `api/v1/nodes/get_node_task.go` | Node last-seen refresh on task poll |
 | `migrate/migrations/m_20260712.go` | `delivered_time` and `last_seen_time` columns |
+| `migrate/migrations/m_20260717.go` | `min_vram` column on `node_model_download_selections` |

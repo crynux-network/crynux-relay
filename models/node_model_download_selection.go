@@ -26,6 +26,7 @@ type NodeModelDownloadSelection struct {
 	UpdatedAt   time.Time                        `json:"updated_at"`
 	ModelID     string                           `json:"model_id" gorm:"size:255;uniqueIndex:idx_node_model_download_selection_active,priority:1"`
 	NodeAddress string                           `json:"node_address" gorm:"size:42;index;uniqueIndex:idx_node_model_download_selection_active,priority:2"`
+	MinVRAM     uint64                           `json:"min_vram" gorm:"column:min_vram;not null;default:0"`
 	SentAt      time.Time                        `json:"sent_at"`
 	Deadline    time.Time                        `json:"deadline"`
 	Status      NodeModelDownloadSelectionStatus `json:"status" gorm:"size:16;index"`
@@ -37,11 +38,12 @@ func (selection *NodeModelDownloadSelection) BeforeSave(tx *gorm.DB) error {
 	return nil
 }
 
-func NewNodeModelDownloadSelection(modelID, nodeAddress string, sentAt, deadline time.Time) *NodeModelDownloadSelection {
+func NewNodeModelDownloadSelection(modelID, nodeAddress string, minVRAM uint64, sentAt, deadline time.Time) *NodeModelDownloadSelection {
 	active := true
 	return &NodeModelDownloadSelection{
 		ModelID:     NormalizeModelID(modelID),
 		NodeAddress: nodeAddress,
+		MinVRAM:     minVRAM,
 		SentAt:      sentAt,
 		Deadline:    deadline,
 		Status:      NodeModelDownloadSelectionPending,
