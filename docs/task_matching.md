@@ -11,7 +11,9 @@ Task matching covers the dispatch path between the task queue and the task start
 - Node scheduling index: the in-memory view of node state used by the matching scheduler.
 - Matching round: one scheduler iteration that pairs a batch of queued tasks with nodes.
 - Reservation: the in-round exclusive hold of a node for one matched task before the task start transaction commits.
-- Requirement signature: the tuple (`TaskType`, `MinVRAM`, `RequiredGPU`, `RequiredGPUVRAM`, `TaskVersion`, `ModelIDs`) that determines a task's candidate set.
+- Requirement signature: the tuple (`TaskType`, `MinVRAM`, `RequiredGPU`, `RequiredGPUVRAM`, `TaskVersion`, normalized `ModelIDs`) that determines a task's candidate set.
+- Qualified node: a node that passes availability, hardware, version, task-specific, and node-name policy filters.
+- Base-ready node: a qualified node whose on-disk model set contains the task's base model ID. Every inference task requires exactly one base model, the single `base:` entry of `ModelIDs`; all other entries are auxiliary `lora:` and `controlnet:` models.
 
 ## Node Scheduling Index
 
@@ -60,12 +62,14 @@ Relay MUST run one matching scheduler. Each matching round executes these steps 
 1. Fetch queued tasks from the database ordered by `priority DESC, id ASC`, limited to `task_matching.batch_size` tasks. Expired queued tasks MUST be skipped and left to the timeout processor as specified in [task_timeout.md](./task_timeout.md).
 2. Take the current node scheduling index state as the round's node view.
 3. Iterate the fetched tasks in queue order. For each task:
-   1. Compute the candidate set from the index by applying the hard filters and the model locality restriction defined in [node_selection.md](./node_selection.md), excluding nodes already reserved in this round.
-   2. If the candidate set is empty, leave the task queued and continue with the next task.
-   3. Compute candidate weights and select one node by weighted random sampling as defined in [node_selection.md](./node_selection.md).
-   4. Reserve the selected node for this task for the remainder of the round.
+   1. Compute the qualified node set from the index by applying the hard filters defined in [node_selection.md](./node_selection.md), excluding nodes already reserved in this round.
+   2. Extract the task's single lowercase `base:` model ID. Auxiliary IDs MUST NOT participate in Relay matching.
+   3. Retain only qualified nodes that have the task's base model on disk.
+   4. If no base-ready node remains, leave the task queued and continue with the next task. Relay MUST NOT fall back to the qualified node set. The matching round MUST NOT emit `DownloadModel` events; model distribution is owned by the model distribution controller specified in [model_distribution.md](./model_distribution.md).
+   5. Compute base-ready candidate weights and select one node by weighted random sampling as defined in [node_selection.md](./node_selection.md).
+   6. Reserve the selected node for this task for the remainder of the round.
 4. If every fetched task is either matched or blocked and unreserved eligible nodes remain, fetch the next page of queued tasks and continue matching within the same round.
-5. Execute `SetTaskStatusStarted` for all matched pairs. Executions MAY run concurrently across pairs. The task start transaction, its optimistic status guards, trace snapshot capture, metrics, and model pre-download triggering are unchanged.
+5. Execute `SetTaskStatusStarted` for all matched pairs. Executions MAY run concurrently across pairs. The task start transaction MUST retain its optimistic status guards, trace snapshot capture, and metrics. Task start MUST NOT emit model download events or create `NodeModel` rows; it MUST only update the in-use state of existing node-reported base-model rows.
 6. Release the reservation of every pair whose task start failed. The task remains queued and re-enters matching in a later round. The node's index entry MUST be resynced from the database before reuse.
 
 Relay MUST start the next round immediately when the current round matched at least one task, and MUST otherwise wait `task_matching.tick_interval_seconds` before the next round.
@@ -74,7 +78,11 @@ Relay MUST start the next round immediately when the current round matched at le
 
 Within a round, tasks select nodes in queue-priority order. A node reserved by a higher-priority task MUST NOT appear in the candidate set of any lower-priority task in the same round. Node contention between tasks is resolved only by this in-round reservation order; Relay MUST NOT hold a matched pair in a pending window and MUST NOT replace a matched pair with another task before the task start transaction runs.
 
-Blocked tasks MUST NOT block the round: a task whose candidate set is empty is skipped for the round and lower-priority tasks continue matching, so eligible idle nodes are never left unused behind blocked higher-priority tasks.
+Blocked tasks MUST NOT block the round: a task with no base-ready candidate is skipped for the round and lower-priority tasks continue matching, so eligible idle nodes are never left unused behind blocked higher-priority tasks.
+
+### Blocked-Task Handling
+
+A task with qualified nodes but zero base-ready nodes stays queued and re-enters matching in later rounds. Its demand is visible to the model distribution controller through the task records defined in [model_distribution.md](./model_distribution.md); the matching scheduler itself MUST NOT select download target nodes, persist download selection state, or emit `DownloadModel` events.
 
 ### Sampling Semantics
 
@@ -103,14 +111,14 @@ Relay MUST define these settings in every runtime configuration template:
 
 ## Trace and Metrics Visibility
 
-Successful matches MUST record the node selection trace data specified in [task_tracing.md](./task_tracing.md), including the final candidate pool used by weighted sampling. Node selection metrics (candidate pool size, empty-selection counter) and dispatch metrics (dispatched counter, queue wait histogram) MUST continue to be reported from the matching path.
+Successful matches MUST record the node selection trace data specified in [task_tracing.md](./task_tracing.md), including the final base-ready candidate pool used by weighted sampling. Node selection metrics (candidate pool size, empty-selection counter) and dispatch metrics (dispatched counter, queue wait histogram) MUST continue to be reported from the matching path.
 
 ## Relevant Source Files
 
 | File | Responsibility |
 |------|----------------|
 | `service/start_task.go` | Dispatch scheduler entry point and timeout processor startup |
-| `service/select_nodes.go` | Hard filters, model locality, weight calculation, and weighted sampling |
+| `service/task_matching.go` | Qualification filters, base-model gate, weight calculation, and weighted sampling |
 | `service/selecting_prob.go` | Staking score, QoS combination, and max staking cache |
 | `service/task_status.go` | Task start transaction and its optimistic guards |
 | `service/node.go` | Node status transitions (`nodeStartTask`, `nodeFinishTask`, join, quit, kickout, slash) |

@@ -17,6 +17,27 @@ func NormalizeModelIDs(modelIDs []string) []string {
 	return normalized
 }
 
+func IsBaseModelID(modelID string) bool {
+	return strings.HasPrefix(NormalizeModelID(modelID), "base:")
+}
+
+func BaseModelIDs(modelIDs []string) []string {
+	baseModelIDs := make([]string, 0, len(modelIDs))
+	seen := make(map[string]struct{})
+	for _, modelID := range modelIDs {
+		normalized := NormalizeModelID(modelID)
+		if !IsBaseModelID(normalized) {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		baseModelIDs = append(baseModelIDs, normalized)
+	}
+	return baseModelIDs
+}
+
 // BaseModelHuggingFaceID extracts the huggingface model name from a base
 // model dispatch ID formatted as "base:<name>" or "base:<name>+<variant>".
 // It returns false for non-base model IDs (lora, controlnet) and for

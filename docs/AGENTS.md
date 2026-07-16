@@ -4,18 +4,18 @@
 |----------|-------------|
 | [architecture.md](./architecture.md) | Single Relay service boundary, configured blockchain networks, node current blockchain network, and terminology rules |
 | [task-pricing.md](./task-pricing.md) | Task priority calculation, VRAM weighting, execution-time estimation, calibration, and queue dispatch ordering |
-| [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, in-round node reservation, and dispatch consistency rules |
-| [node_selection.md](./node_selection.md) | Hard filters, base weight, model locality boost, and weighted sampling for task-to-node assignment |
+| [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, base-model readiness handling, in-round reservation, and dispatch consistency |
+| [node_selection.md](./node_selection.md) | Qualification filters, base-model gate, staking and QoS weight, in-memory locality, and weighted sampling |
 | [qos.md](./qos.md) | Long-term performance score (`Q_long`) and short-term reliability factor (`H`) that compose the runtime QoS |
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | [task_timeout.md](./task_timeout.md) | Queue timeout, running timeout, abort completion, node health penalty, and timeout race handling |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
-| [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, derived durations, node selection attempts, validation, upload, and missing-data reporting |
+| [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, base-ready candidate snapshots, validation, upload, and missing-data reporting |
 | [passive_slash_model.md](./passive_slash_model.md) | Passive slash review mode, slash evidence capture, pending slash states, and admin approval flow |
-| [node_event_stream.md](./node_event_stream.md) | Relay `events` table, v1 event APIs, and node watcher polling protocol |
-| [model_predownload.md](./model_predownload.md) | Pre-download scheduling, node notification, and model availability tracking |
-| [loaded_models.md](./loaded_models.md) | Successful model execution projection, minimum VRAM tracking, and public v2 loaded models API |
+| [relay_event_stream.md](./relay_event_stream.md) | Relay `events` table, v1 event APIs, node watcher polling, and single-shot base-model download events |
+| [model_distribution.md](./model_distribution.md) | Demand-driven model distribution controller, persisted download selections, timeout and replacement, and on-disk authority |
+| [loaded_models.md](./loaded_models.md) | Successful model execution projection, authoritative node model reports, node counts, and public v2 loaded models API |
 | [all_nodes_data.md](./all_nodes_data.md) | Historical joined-node public snapshot, join upsert behavior, quit retention, and SyncNetwork refresh rules |
 | [deposit_withdraw_and_risk_control.md](./deposit_withdraw_and_risk_control.md) | Deposit and withdrawal lifecycle across Relay and Wallet, relay account ledger, and risk control checks |
 | [deposit-withdraw-only-networks.md](./deposit-withdraw-only-networks.md) | Deposit and withdrawal only network configuration, processing, BenefitAddress |

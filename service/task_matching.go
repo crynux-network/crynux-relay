@@ -17,8 +17,7 @@ import (
 )
 
 // matchingCandidateSet is the computed candidate set for one requirement
-// signature: the index entries passing the hard filters and the model
-// locality restriction, with their sampling weights.
+// signature: base-ready entries with their sampling weights.
 type matchingCandidateSet struct {
 	entries []*NodeIndexEntry
 	scores  []float64
@@ -132,8 +131,8 @@ func matchEntryModels(modelIDSet map[string]struct{}, taskModelIDs []string) int
 }
 
 // buildMatchingCandidateSet computes the candidate set for one requirement
-// signature: hard filters, node name policy, sampling weights and the model
-// locality restriction with its weight boost.
+// signature: hard filters, node name policy, the base-model availability gate,
+// sampling weights and the in-memory model locality boost.
 func buildMatchingCandidateSet(ctx context.Context, task *models.InferenceTask, entries []*NodeIndexEntry) (*matchingCandidateSet, error) {
 	filtered := filterIndexEntriesForTask(task, entries)
 	filtered, err := filterIndexEntriesByNodeNamePolicy(ctx, filtered)
@@ -150,35 +149,28 @@ func buildMatchingCandidateSet(ctx context.Context, task *models.InferenceTask, 
 		probs[i] = prob
 	}
 
-	// Boost nodes that have task models locally. Two cache layers are weighted
-	// independently: disk presence (0.7) avoids expensive network downloads,
-	// memory presence (0.3) avoids disk-to-GPU loading. Since in-use models
-	// are a subset of local models, in-memory always gets a strictly higher
-	// boost than on-disk-only. When any node has a task model on disk, the
-	// candidate set is restricted to those nodes.
-	changedEntries := make([]*NodeIndexEntry, 0)
-	changedScores := make([]float64, 0)
-	changedProbs := make([]NodeSelectingProb, 0)
+	baseModelIDs := models.BaseModelIDs(task.ModelIDs)
+	readyEntries := make([]*NodeIndexEntry, 0, len(filtered))
+	readyScores := make([]float64, 0, len(filtered))
+	readyProbs := make([]NodeSelectingProb, 0, len(filtered))
 	for i, entry := range filtered {
-		cnt := matchEntryModels(entry.OnDiskModelIDs, task.ModelIDs)
-		if cnt > 0 {
-			inUseCnt := matchEntryModels(entry.InUseModelIDs, task.ModelIDs)
-			total := float64(len(task.ModelIDs))
-			changedEntries = append(changedEntries, entry)
-			changedScores = append(changedScores, scores[i]*(1+0.7*float64(cnt)/total+0.3*float64(inUseCnt)/total))
-			changedProbs = append(changedProbs, probs[i])
+		if matchEntryModels(entry.OnDiskModelIDs, baseModelIDs) != len(baseModelIDs) {
+			continue
 		}
-	}
-	if len(changedEntries) > 0 {
-		filtered = changedEntries
-		scores = changedScores
-		probs = changedProbs
+		score := scores[i]
+		if len(baseModelIDs) > 0 {
+			inUseCnt := matchEntryModels(entry.InUseModelIDs, baseModelIDs)
+			score *= 1 + 0.3*float64(inUseCnt)/float64(len(baseModelIDs))
+		}
+		readyEntries = append(readyEntries, entry)
+		readyScores = append(readyScores, score)
+		readyProbs = append(readyProbs, probs[i])
 	}
 
 	return &matchingCandidateSet{
-		entries: filtered,
-		scores:  scores,
-		probs:   probs,
+		entries: readyEntries,
+		scores:  readyScores,
+		probs:   readyProbs,
 	}, nil
 }
 

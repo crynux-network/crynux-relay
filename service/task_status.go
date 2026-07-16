@@ -92,7 +92,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 
 	var inUseModelIDs []string
 	for _, model := range node.Models {
-		if model.InUse {
+		if model.InUse && models.IsBaseModelID(model.ModelID) {
 			inUseModelIDs = append(inUseModelIDs, model.ModelID)
 		}
 	}
@@ -104,7 +104,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 			"selected_node":  node.Address,
 			"start_time":     sql.NullTime{Time: startTime, Valid: true},
 			"status":         models.TaskStarted,
-			"model_swtiched": !isSameModels(inUseModelIDs, task.ModelIDs),
+			"model_swtiched": !isSameModels(inUseModelIDs, models.BaseModelIDs(task.ModelIDs)),
 		}); err != nil {
 			return err
 		}
@@ -133,46 +133,6 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 
 	*originTask = task
 	*originNode = node
-
-	// start download tasks
-	localModelSet := make(map[string]models.NodeModel)
-	for _, model := range node.Models {
-		localModelSet[model.ModelID] = model
-	}
-
-	for _, modelID := range task.ModelIDs {
-		download := false
-		if _, ok := localModelSet[modelID]; !ok {
-			emitEvent(ctx, db, &models.DownloadModelEvent{
-				NodeAddress: node.Address,
-				ModelID:     modelID,
-				TaskType:    task.TaskType,
-			})
-			download = true
-		}
-
-		count, err := countAvailableNodesWithModelID(ctx, db, modelID)
-		if err != nil {
-			return err
-		}
-		if count < 3 {
-			downloadNodes, err := selectNodesForDownloadTask(ctx, &task, modelID, 10-int(count))
-			if err != nil {
-				return err
-			}
-			if len(downloadNodes) > 0 {
-				for _, downloadNode := range downloadNodes {
-					if !download || node.Address != downloadNode.Address {
-						emitEvent(ctx, db, &models.DownloadModelEvent{
-							NodeAddress: downloadNode.Address,
-							ModelID:     modelID,
-							TaskType:    task.TaskType,
-						})
-					}
-				}
-			}
-		}
-	}
 	return nil
 }
 

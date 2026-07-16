@@ -57,12 +57,14 @@ func AddModelID(c *gin.Context, in *AddModelIDInputWithSignature) (*response.Res
 	in.ModelID = models.NormalizeModelID(in.ModelID)
 
 	err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{in.Address}, func() error {
-		_, err := models.GetNodeModel(c.Request.Context(), config.GetDB(), in.Address, in.ModelID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			nodeModel := models.NewNodeModel(in.Address, in.ModelID, false)
-			return nodeModel.Save(c.Request.Context(), config.GetDB())
-		}
-		return err
+		return config.GetDB().Transaction(func(tx *gorm.DB) error {
+			_, err := models.GetNodeModel(c.Request.Context(), tx, in.Address, in.ModelID)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				nodeModel := models.NewNodeModel(in.Address, in.ModelID, false)
+				return nodeModel.Save(c.Request.Context(), tx)
+			}
+			return err
+		})
 	})
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
