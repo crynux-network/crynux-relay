@@ -116,6 +116,26 @@ var (
 		Help:    "Distribution of computed task queue priority values at task creation, by task type.",
 		Buckets: prometheus.ExponentialBuckets(1e9, 10, 12),
 	}, []string{"task_type"})
+
+	ModelDownloadsDispatched = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_model_downloads_dispatched_total",
+		Help: "Total number of DownloadModel events dispatched to nodes by the model distribution controller, by task type and demand VRAM tier.",
+	}, []string{"task_type", "vram_tier"})
+
+	ModelDownloadsCompleted = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_model_downloads_completed_total",
+		Help: "Total number of model download selections completed by the node reporting the model on disk, by demand VRAM tier.",
+	}, []string{"vram_tier"})
+
+	ModelDownloadsExpired = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_model_downloads_expired_total",
+		Help: "Total number of model download selections expired at the download deadline without completion, by demand VRAM tier.",
+	}, []string{"vram_tier"})
+
+	ModelNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_model_nodes",
+		Help: "Number of distinct nodes holding a huggingface base model, by model and holding state (on_disk or in_memory). Limited to the top models by on-disk node count.",
+	}, []string{"hf_model_id", "state"})
 )
 
 func init() {
@@ -139,7 +159,30 @@ func init() {
 		TaskPricingSecondsPerSDUnit,
 		TaskPricingSecondsPerLLMToken,
 		TaskPriority,
+		ModelDownloadsDispatched,
+		ModelDownloadsCompleted,
+		ModelDownloadsExpired,
+		ModelNodes,
 	)
+}
+
+// ModelNodeCount is one relay_model_nodes entry: the distinct node counts of
+// one huggingface base model.
+type ModelNodeCount struct {
+	HFModelID string
+	OnDisk    int64
+	InMemory  int64
+}
+
+// SetModelNodes replaces the relay_model_nodes gauge series with the given
+// entries. Models absent from entries are removed so the gauge always
+// reflects the latest top-model snapshot.
+func SetModelNodes(entries []ModelNodeCount) {
+	ModelNodes.Reset()
+	for _, entry := range entries {
+		ModelNodes.WithLabelValues(entry.HFModelID, "on_disk").Set(float64(entry.OnDisk))
+		ModelNodes.WithLabelValues(entry.HFModelID, "in_memory").Set(float64(entry.InMemory))
+	}
 }
 
 // SelectionLabels is the label tuple used by node selection metrics.

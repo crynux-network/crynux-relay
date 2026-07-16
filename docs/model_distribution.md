@@ -85,6 +85,7 @@ Relay SHALL persist one selection record per selection attempt in `node_model_do
 
 - the base model ID
 - the selected node address
+- `min_vram`, the VRAM requirement of the demand group that triggered the selection, used to derive the `vram_tier` label of the model download metrics
 - `sent_at`, the selection time
 - `deadline`, equal to `sent_at` plus `model_distribution.download_timeout_seconds`
 - `status`, one of `pending`, `completed`, `expired`

@@ -158,9 +158,9 @@ func TestApplySelectionStatusTransitions(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	completing := models.NewNodeModelDownloadSelection("base:model-a", "0xdone", now.Add(-time.Minute), now.Add(time.Hour))
-	expiring := models.NewNodeModelDownloadSelection("base:model-a", "0xlate", now.Add(-2*time.Hour), now.Add(-time.Hour))
-	waiting := models.NewNodeModelDownloadSelection("base:model-a", "0xwaiting", now.Add(-time.Minute), now.Add(time.Hour))
+	completing := models.NewNodeModelDownloadSelection("base:model-a", "0xdone", 0, now.Add(-time.Minute), now.Add(time.Hour))
+	expiring := models.NewNodeModelDownloadSelection("base:model-a", "0xlate", 0, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	waiting := models.NewNodeModelDownloadSelection("base:model-a", "0xwaiting", 0, now.Add(-time.Minute), now.Add(time.Hour))
 	for _, selection := range []*models.NodeModelDownloadSelection{completing, expiring, waiting} {
 		if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 			t.Fatalf("create selection: %v", err)
@@ -200,11 +200,11 @@ func TestApplySelectionStatusTransitions(t *testing.T) {
 
 	// A new attempt is allowed after expiry but duplicate non-expired records
 	// are rejected by the uniqueness constraint.
-	retry := models.NewNodeModelDownloadSelection("base:model-a", "0xlate", now, now.Add(time.Hour))
+	retry := models.NewNodeModelDownloadSelection("base:model-a", "0xlate", 0, now, now.Add(time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, retry); err != nil {
 		t.Fatalf("create retry selection after expiry: %v", err)
 	}
-	duplicate := models.NewNodeModelDownloadSelection("base:model-a", "0xwaiting", now, now.Add(time.Hour))
+	duplicate := models.NewNodeModelDownloadSelection("base:model-a", "0xwaiting", 0, now, now.Add(time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, duplicate); err == nil {
 		t.Fatal("expected duplicate non-expired selection to violate the unique index")
 	}
@@ -391,7 +391,7 @@ func TestRunModelDistributionRoundReplacesExpiredSelection(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 
-	expired := models.NewNodeModelDownloadSelection("base:model-a", first.Address, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	expired := models.NewNodeModelDownloadSelection("base:model-a", first.Address, 0, now.Add(-2*time.Hour), now.Add(-time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, expired); err != nil {
 		t.Fatalf("create expired selection: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestRunModelDistributionRoundCleansUpWithoutDemand(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	selection := models.NewNodeModelDownloadSelection("base:model-a", "0xnode", now, now.Add(time.Hour))
+	selection := models.NewNodeModelDownloadSelection("base:model-a", "0xnode", 0, now, now.Add(time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 		t.Fatalf("create selection: %v", err)
 	}
@@ -451,8 +451,8 @@ func TestDeleteNodeModelDownloadSelectionsByNodeAddress(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	mine := models.NewNodeModelDownloadSelection("base:model-a", "0xquitting", now, now.Add(time.Hour))
-	other := models.NewNodeModelDownloadSelection("base:model-a", "0xstaying", now, now.Add(time.Hour))
+	mine := models.NewNodeModelDownloadSelection("base:model-a", "0xquitting", 0, now, now.Add(time.Hour))
+	other := models.NewNodeModelDownloadSelection("base:model-a", "0xstaying", 0, now, now.Add(time.Hour))
 	for _, selection := range []*models.NodeModelDownloadSelection{mine, other} {
 		if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 			t.Fatalf("create selection: %v", err)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/config"
+	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"math"
 	"sort"
@@ -180,7 +181,7 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 
 		selected := selectDownloadTargetNodes(qualifiedCandidates, holding, state, now, deficit)
 		for _, node := range selected {
-			if err := emitModelDownloadSelection(ctx, db, modelID, node.Address, demand.latestTaskType, now, cfg.DownloadTimeoutSeconds); err != nil {
+			if err := emitModelDownloadSelection(ctx, db, modelID, node.Address, demand.key.minVRAM, demand.latestTaskType, now, cfg.DownloadTimeoutSeconds); err != nil {
 				log.Errorf("ModelDistribution: emit download selection for model %s on node %s error: %v", modelID, node.Address, err)
 				continue
 			}
@@ -231,6 +232,7 @@ func applySelectionStatusTransitions(ctx context.Context, db *gorm.DB, now time.
 			pendingModelIDs[selection.ModelID] = struct{}{}
 		}
 	}
+	completedIDSet := make(map[uint]struct{})
 	if len(pendingModelIDs) > 0 {
 		modelIDs := make([]string, 0, len(pendingModelIDs))
 		for modelID := range pendingModelIDs {
@@ -252,9 +254,31 @@ func applySelectionStatusTransitions(ctx context.Context, db *gorm.DB, now time.
 		if err := models.CompleteNodeModelDownloadSelections(ctx, db, completedIDs); err != nil {
 			return err
 		}
+		for _, id := range completedIDs {
+			completedIDSet[id] = struct{}{}
+		}
+		for _, selection := range selections {
+			if _, ok := completedIDSet[selection.ID]; ok {
+				metrics.ModelDownloadsCompleted.WithLabelValues(metrics.VramTierLabel(selection.MinVRAM)).Inc()
+			}
+		}
 	}
 
-	return models.ExpireNodeModelDownloadSelections(ctx, db, now)
+	if err := models.ExpireNodeModelDownloadSelections(ctx, db, now); err != nil {
+		return err
+	}
+	for _, selection := range selections {
+		if selection.Status != models.NodeModelDownloadSelectionPending {
+			continue
+		}
+		if _, ok := completedIDSet[selection.ID]; ok {
+			continue
+		}
+		if selection.Deadline.Before(now) {
+			metrics.ModelDownloadsExpired.WithLabelValues(metrics.VramTierLabel(selection.MinVRAM)).Inc()
+		}
+	}
+	return nil
 }
 
 type nodeModelPair struct {
@@ -577,10 +601,10 @@ func sampleDownloadTargets(nodes []models.Node, now time.Time, limit int) []mode
 
 // emitModelDownloadSelection inserts the selection record and the DownloadModel
 // event in one database transaction.
-func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, modelID, nodeAddress string, taskType models.TaskType, sentAt time.Time, downloadTimeoutSeconds float64) error {
+func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, modelID, nodeAddress string, minVRAM uint64, taskType models.TaskType, sentAt time.Time, downloadTimeoutSeconds float64) error {
 	deadline := sentAt.Add(time.Duration(downloadTimeoutSeconds * float64(time.Second)))
-	selection := models.NewNodeModelDownloadSelection(modelID, nodeAddress, sentAt, deadline)
-	return db.Transaction(func(tx *gorm.DB) error {
+	selection := models.NewNodeModelDownloadSelection(modelID, nodeAddress, minVRAM, sentAt, deadline)
+	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := models.CreateNodeModelDownloadSelection(ctx, tx, selection); err != nil {
 			return err
 		}
@@ -589,5 +613,9 @@ func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, modelID, nodeA
 			ModelID:     selection.ModelID,
 			TaskType:    taskType,
 		})
-	})
+	}); err != nil {
+		return err
+	}
+	metrics.ModelDownloadsDispatched.WithLabelValues(metrics.TaskTypeLabel(taskType), metrics.VramTierLabel(minVRAM)).Inc()
+	return nil
 }
