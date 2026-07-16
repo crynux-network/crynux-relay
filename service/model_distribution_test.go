@@ -279,6 +279,93 @@ func TestRunModelDistributionRoundEmitsAndConverges(t *testing.T) {
 	}
 }
 
+func TestRunModelDistributionRoundRespectsTaskHardwareRequirement(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	small := newDistributionTestNode("0xsmall")
+	big := newDistributionTestNode("0xbig")
+	big.GPUName = "4x NVIDIA GeForce RTX 5090+docker"
+	big.GPUVram = 128
+	for _, node := range []*models.Node{&small, &big} {
+		if err := db.Create(node).Error; err != nil {
+			t.Fatalf("create node: %v", err)
+		}
+	}
+
+	// The small node already holds the model, but it cannot execute the
+	// demanding task, so it must not count toward the group's coverage.
+	smallHolding := models.NewNodeModel(small.Address, "base:model-a", false)
+	if err := smallHolding.Save(ctx, db); err != nil {
+		t.Fatalf("create node model: %v", err)
+	}
+
+	task := models.InferenceTask{
+		TaskIDCommitment:     "0xtask",
+		Status:               models.TaskQueued,
+		TaskType:             models.TaskTypeLLM,
+		MinVRAM:              100,
+		ModelIDs:             models.StringArray{"base:model-a"},
+		CreateTime:           sql.NullTime{Time: now, Valid: true},
+		EstimatedNodeSeconds: 60,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if err := runModelDistributionRound(ctx, db); err != nil {
+		t.Fatalf("round: %v", err)
+	}
+
+	selections, err := models.GetAllNodeModelDownloadSelections(ctx, db)
+	if err != nil {
+		t.Fatalf("load selections: %v", err)
+	}
+	if len(selections) != 1 {
+		t.Fatalf("expected one selection for the qualified node, got %d", len(selections))
+	}
+	if selections[0].NodeAddress != big.Address {
+		t.Fatalf("expected the qualified node to be selected, got %s", selections[0].NodeAddress)
+	}
+
+	// The qualified pending selection covers the group: no further emission.
+	if err := runModelDistributionRound(ctx, db); err != nil {
+		t.Fatalf("second round: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 1 {
+		t.Fatalf("expected exactly one DownloadModel event, got %d", count)
+	}
+}
+
+func TestNodeSatisfiesDemand(t *testing.T) {
+	llmDemand := modelDemandKey{modelID: "base:model-a", minVRAM: 100, excludeDarwin: true}
+	if nodeSatisfiesDemand("NVIDIA RTX PRO 6000 Blackwell Server Edition+docker", 96, llmDemand) {
+		t.Fatal("expected a node below min VRAM to be disqualified")
+	}
+	if !nodeSatisfiesDemand("4x NVIDIA GeForce RTX 5090+docker", 128, llmDemand) {
+		t.Fatal("expected a node meeting min VRAM to qualify")
+	}
+	if nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, llmDemand) {
+		t.Fatal("expected a Darwin node to be disqualified for LLM demand")
+	}
+	if !nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, modelDemandKey{modelID: "base:model-a", minVRAM: 100}) {
+		t.Fatal("expected a Darwin node to qualify without the LLM exclusion")
+	}
+}
+
+func TestTaskVRAMDemand(t *testing.T) {
+	task := &models.InferenceTask{MinVRAM: 100}
+	if taskVRAMDemand(task) != 100 {
+		t.Fatalf("expected min VRAM demand 100, got %d", taskVRAMDemand(task))
+	}
+	pinned := &models.InferenceTask{MinVRAM: 8, RequiredGPU: "NVIDIA A100", RequiredGPUVRAM: 40}
+	if taskVRAMDemand(pinned) != 40 {
+		t.Fatalf("expected pinned GPU VRAM demand 40, got %d", taskVRAMDemand(pinned))
+	}
+}
+
 func TestRunModelDistributionRoundReplacesExpiredSelection(t *testing.T) {
 	initModelDistributionTest(t)
 	db := config.GetDB()
