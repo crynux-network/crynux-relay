@@ -130,21 +130,24 @@ func TestBuildMatchingCandidateSetLocalityRestriction(t *testing.T) {
 	initMatchingTestConfig(t)
 
 	task := newMatchingTestTask()
-	withModel := newMatchingTestEntry("0xwithmodel")
-	withModel.StakeAmount = big.NewInt(100)
-	withModel.OnDiskModelIDs["base:model-a"] = struct{}{}
-	withoutModel := newMatchingTestEntry("0xwithoutmodel")
-	withoutModel.StakeAmount = big.NewInt(100)
+	task.ModelIDs = models.StringArray{"base:model-a", "lora:adapter", "base:model-b"}
+	withAllBaseModels := newMatchingTestEntry("0xwithall")
+	withAllBaseModels.StakeAmount = big.NewInt(100)
+	withAllBaseModels.OnDiskModelIDs["base:model-a"] = struct{}{}
+	withAllBaseModels.OnDiskModelIDs["base:model-b"] = struct{}{}
+	withOneBaseModel := newMatchingTestEntry("0xwithone")
+	withOneBaseModel.StakeAmount = big.NewInt(100)
+	withOneBaseModel.OnDiskModelIDs["base:model-a"] = struct{}{}
 
-	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{withModel, withoutModel})
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{withAllBaseModels, withOneBaseModel})
 	if err != nil {
 		t.Fatalf("build candidate set: %v", err)
 	}
-	if len(set.entries) != 1 || set.entries[0].Address != "0xwithmodel" {
-		t.Fatalf("expected candidate set restricted to nodes with the model on disk, got %d entries", len(set.entries))
+	if len(set.entries) != 1 || set.entries[0].Address != "0xwithall" {
+		t.Fatalf("expected only the node with every base model, got %d entries", len(set.entries))
 	}
-	if set.scores[0] <= set.probs[0].ProbWeight {
-		t.Fatalf("expected locality boost above base weight %f, got %f", set.probs[0].ProbWeight, set.scores[0])
+	if set.scores[0] != set.probs[0].ProbWeight {
+		t.Fatalf("expected no on-disk weight boost, base %f, got %f", set.probs[0].ProbWeight, set.scores[0])
 	}
 }
 
@@ -176,7 +179,41 @@ func TestBuildMatchingCandidateSetInMemoryBoostExceedsOnDisk(t *testing.T) {
 		}
 	}
 	if inMemoryScore <= onDiskScore {
-		t.Fatalf("expected in-memory boost %f to exceed on-disk boost %f", inMemoryScore, onDiskScore)
+		t.Fatalf("expected in-memory boost %f to exceed base score %f", inMemoryScore, onDiskScore)
+	}
+}
+
+func TestBuildMatchingCandidateSetIgnoresAuxiliaryModels(t *testing.T) {
+	initMatchingTestConfig(t)
+
+	task := newMatchingTestTask()
+	task.ModelIDs = models.StringArray{"base:model-a", "lora:adapter"}
+	entry := newMatchingTestEntry("0xnode")
+	entry.OnDiskModelIDs["base:model-a"] = struct{}{}
+
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{entry})
+	if err != nil {
+		t.Fatalf("build candidate set: %v", err)
+	}
+	if len(set.entries) != 1 {
+		t.Fatalf("expected auxiliary model to be ignored by the hard gate, got %d candidates", len(set.entries))
+	}
+}
+
+func TestBuildMatchingCandidateSetHasNoFallbackWithoutAllBaseModels(t *testing.T) {
+	initMatchingTestConfig(t)
+
+	task := newMatchingTestTask()
+	task.ModelIDs = models.StringArray{"base:model-a", "base:model-b"}
+	entry := newMatchingTestEntry("0xnode")
+	entry.OnDiskModelIDs["base:model-a"] = struct{}{}
+
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{entry})
+	if err != nil {
+		t.Fatalf("build candidate set: %v", err)
+	}
+	if len(set.entries) != 0 {
+		t.Fatalf("expected no base-ready candidates, got %d", len(set.entries))
 	}
 }
 

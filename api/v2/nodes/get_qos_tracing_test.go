@@ -42,6 +42,13 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"task_matching:\n" +
 		"  batch_size: 100\n" +
 		"  tick_interval_seconds: 2\n" +
+		"model_distribution:\n" +
+		"  controller_interval_seconds: 60\n" +
+		"  demand_window_seconds: 1800\n" +
+		"  safety_factor: 2.0\n" +
+		"  min_nodes: 1\n" +
+		"  max_nodes: 10\n" +
+		"  download_timeout_seconds: 1800\n" +
 		"qos:\n" +
 		"  tracing_max_task_events: 3\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {

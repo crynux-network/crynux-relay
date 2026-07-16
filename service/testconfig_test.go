@@ -40,8 +40,9 @@ func initServiceTestConfig(t *testing.T) {
 	}
 }
 
-// taskPricingMatchingTestConfigYAML holds the required task_pricing and
-// task_matching config sections shared by inline test configurations.
+// taskPricingMatchingTestConfigYAML holds the required task_pricing,
+// task_matching and model_distribution config sections shared by inline test
+// configurations.
 const taskPricingMatchingTestConfigYAML = "task_pricing:\n" +
 	"  overhead_seconds: 30\n" +
 	"  initial_seconds_per_sd_unit: 10\n" +
@@ -51,4 +52,11 @@ const taskPricingMatchingTestConfigYAML = "task_pricing:\n" +
 	"  base_vram: 8\n" +
 	"task_matching:\n" +
 	"  batch_size: 100\n" +
-	"  tick_interval_seconds: 2\n"
+	"  tick_interval_seconds: 2\n" +
+	"model_distribution:\n" +
+	"  controller_interval_seconds: 60\n" +
+	"  demand_window_seconds: 1800\n" +
+	"  safety_factor: 2.0\n" +
+	"  min_nodes: 1\n" +
+	"  max_nodes: 10\n" +
+	"  download_timeout_seconds: 1800\n"

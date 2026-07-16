@@ -80,6 +80,13 @@ task_pricing:
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2
+model_distribution:
+  controller_interval_seconds: 60
+  demand_window_seconds: 1800
+  safety_factor: 2.0
+  min_nodes: 1
+  max_nodes: 10
+  download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
 `, vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(macKeyFile))

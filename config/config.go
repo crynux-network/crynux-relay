@@ -79,6 +79,9 @@ func InitConfig(configPath string) error {
 	if err := checkTaskMatchingConfig(); err != nil {
 		return err
 	}
+	if err := checkModelDistributionConfig(); err != nil {
+		return err
+	}
 	if err := checkQosConfig(); err != nil {
 		return err
 	}
@@ -229,6 +232,29 @@ func checkTaskMatchingConfig() error {
 	}
 	if matching.TickIntervalSeconds <= 0 {
 		return errors.New("task_matching.tick_interval_seconds is not set")
+	}
+	return nil
+}
+
+func checkModelDistributionConfig() error {
+	distribution := appConfig.ModelDistribution
+	if distribution.ControllerIntervalSeconds <= 0 {
+		return errors.New("model_distribution.controller_interval_seconds is not set")
+	}
+	if distribution.DemandWindowSeconds <= 0 {
+		return errors.New("model_distribution.demand_window_seconds is not set")
+	}
+	if distribution.SafetyFactor <= 0 {
+		return errors.New("model_distribution.safety_factor is not set")
+	}
+	if distribution.MinNodes <= 0 {
+		return errors.New("model_distribution.min_nodes is not set")
+	}
+	if distribution.MaxNodes < distribution.MinNodes {
+		return errors.New("model_distribution.max_nodes must be at least model_distribution.min_nodes")
+	}
+	if distribution.DownloadTimeoutSeconds <= 0 {
+		return errors.New("model_distribution.download_timeout_seconds is not set")
 	}
 	return nil
 }

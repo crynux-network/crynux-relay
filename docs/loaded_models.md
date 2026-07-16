@@ -60,6 +60,10 @@ If a flush fails, Relay MUST merge the failed pending values back into the in-me
 
 Each `node_models` row MUST carry an `hf_model_id` column holding the huggingface base model name derived from the row's dispatch `model_id` with `BaseModelHuggingFaceID`. Rows whose dispatch ID is not a huggingface base model (`lora:` and `controlnet:` entries, and URL-based names) MUST store an empty `hf_model_id`. All `node_models` write paths MUST populate the column at row creation through the `NewNodeModel` constructor. The `NodeModel` `BeforeSave` GORM hook additionally normalizes `model_id` to lowercase and rederives `hf_model_id` on every create and save, so both columns are always lowercase and `hf_model_id` matches `loaded_models.model_id` under case-sensitive comparison. The `node_models` table MUST NOT use soft delete; quitting a node removes its rows permanently.
 
+The signed AddModelID node API MUST be the authoritative source for on-disk `node_models` rows. A node report MUST create the normalized row when absent and MUST remain authoritative regardless of whether Relay previously requested the download. Download selection completion is derived from the on-disk inventory as specified in [model_distribution.md](./model_distribution.md).
+
+Task start MUST NOT create `node_models` rows. It MUST consider only the task's single base model ID and MUST only toggle `in_use` on base-model rows already reported by the node: the required base row becomes in use, and previously in-use base rows not required by the task cease to be in use. Auxiliary task model IDs, non-base rows, and missing rows MUST NOT be modified.
+
 The `node_models` table MUST have a composite index on `(hf_model_id, node_address)`.
 
 For each huggingface base model, Relay SHALL derive two node counts from `node_models`:

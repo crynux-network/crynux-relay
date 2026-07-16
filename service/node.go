@@ -217,6 +217,9 @@ func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, sl
 	if err != nil {
 		return false, 0, err
 	}
+	if err := models.DeleteNodeModelDownloadSelectionsByNodeAddress(ctx, tx, node.Address); err != nil {
+		return false, 0, err
+	}
 
 	if err := node.Update(ctx, tx, map[string]interface{}{
 		"status":                     models.NodeStatusQuit,
@@ -273,30 +276,31 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 		return errors.New("node is not available")
 	}
 
-	newModels := make([]models.NodeModel, 0)
-	unusedModels := make([]models.NodeModel, 0)
+	changedModels := make([]models.NodeModel, 0)
+	baseModelIDs := models.BaseModelIDs(taskModelIDs)
 
 	localModelSet := make(map[string]models.NodeModel)
 	for _, model := range node.Models {
 		localModelSet[model.ModelID] = model
 	}
-	for _, modelID := range taskModelIDs {
-		if model, ok := localModelSet[modelID]; !ok {
-			newModels = append(newModels, models.NewNodeModel(node.Address, modelID, true))
-		} else if !model.InUse {
+	for _, modelID := range baseModelIDs {
+		if model, ok := localModelSet[modelID]; ok && !model.InUse {
 			model.InUse = true
-			newModels = append(newModels, model)
+			changedModels = append(changedModels, model)
 		}
 	}
 	taskModelIDSet := make(map[string]struct{})
-	for _, modelID := range taskModelIDs {
+	for _, modelID := range baseModelIDs {
 		taskModelIDSet[modelID] = struct{}{}
 	}
 	for _, model := range node.Models {
+		if !models.IsBaseModelID(model.ModelID) {
+			continue
+		}
 		_, ok := taskModelIDSet[model.ModelID]
 		if model.InUse && !ok {
 			model.InUse = false
-			unusedModels = append(unusedModels, model)
+			changedModels = append(changedModels, model)
 		}
 	}
 
@@ -308,12 +312,7 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 			return err
 		}
 
-		for _, model := range newModels {
-			if err := model.Save(ctx, tx); err != nil {
-				return err
-			}
-		}
-		for _, model := range unusedModels {
+		for _, model := range changedModels {
 			if err := model.Save(ctx, tx); err != nil {
 				return err
 			}

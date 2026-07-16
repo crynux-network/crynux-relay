@@ -152,6 +152,15 @@ type AppConfig struct {
 		TickIntervalSeconds float64 `mapstructure:"tick_interval_seconds"`
 	} `mapstructure:"task_matching"`
 
+	ModelDistribution struct {
+		ControllerIntervalSeconds float64 `mapstructure:"controller_interval_seconds"`
+		DemandWindowSeconds       float64 `mapstructure:"demand_window_seconds"`
+		SafetyFactor              float64 `mapstructure:"safety_factor"`
+		MinNodes                  int     `mapstructure:"min_nodes"`
+		MaxNodes                  int     `mapstructure:"max_nodes"`
+		DownloadTimeoutSeconds    float64 `mapstructure:"download_timeout_seconds"`
+	} `mapstructure:"model_distribution"`
+
 	TaskSchema struct {
 		StableDiffusionInference    string `mapstructure:"stable_diffusion_inference"`
 		GPTInference                string `mapstructure:"gpt_inference"`

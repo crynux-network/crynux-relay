@@ -30,6 +30,23 @@ func TestNormalizeModelIDs(t *testing.T) {
 	}
 }
 
+func TestBaseModelIDsNormalizesDeduplicatesAndIgnoresAuxiliaryModels(t *testing.T) {
+	got := BaseModelIDs([]string{
+		"BaSe:Qwen/Qwen3.5-9B+FP16",
+		"lora:crynux-network/my-lora",
+		"base:qwen/qwen3.5-9b+fp16",
+		"controlnet:lllyasviel/canny",
+		"base:stabilityai/sdxl",
+	})
+	want := []string{
+		"base:qwen/qwen3.5-9b+fp16",
+		"base:stabilityai/sdxl",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected base model ids, got %v, want %v", got, want)
+	}
+}
+
 func TestBaseModelHuggingFaceID(t *testing.T) {
 	cases := []struct {
 		modelID string

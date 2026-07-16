@@ -26,7 +26,8 @@ Target trace data:
 - Node selected:
   - Timestamp: time when Relay selects a node for the task before task start.
   - Details: selected node address.
-  - Details: final candidate pool used by weighted random selection, including each recorded candidate's address, card name, staking score, runtime QoS score, and final probability weight after all node selection calculations and model locality boosts are applied.
+  - Details: final base-ready candidate pool used by weighted random selection, including each recorded candidate's address, card name, staking score, runtime QoS score, and final probability weight after the `0.3` in-memory base-model locality component is applied.
+  - Details: every recorded candidate MUST have passed hardware, version, task-specific, and node-name policy filters and MUST have the task's base model ID on disk. Auxiliary model IDs MUST NOT affect the candidate pool.
   - Details: the candidate pool MUST include `candidate_pool_total_count` and `candidate_pool_truncated`. Relay MUST cap the stored candidate list and MUST set `candidate_pool_truncated` to true when the final candidate pool contains more nodes than the stored list.
   - Duration: queue waiting time, calculated as node selected time minus queue entry time.
 - Queue abort:
@@ -36,7 +37,7 @@ Target trace data:
 - Task execution start:
   - Timestamp: task start time.
   - Details: selected node information, including address, card/GPU name, VRAM, version, operator staking, delegated staking summary, QoS score, health score inputs when available, status, delegator share/count, and all other persisted node base information useful for diagnosis.
-  - Details: selected node model cache, including models present on disk and the model or models currently in memory/in use.
+  - Details: selected node model cache snapshot, including authoritative node-reported models present on disk and base models currently in memory or in use. Task start MUST NOT create missing model rows or emit model downloads.
   - Duration: queue waiting time MUST also be present on this step for easy reading.
 - Score submission:
   - Timestamp: score submission time.
