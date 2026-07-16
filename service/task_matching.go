@@ -48,12 +48,16 @@ func entryMatchesTaskVersion(entry *NodeIndexEntry, taskVersionNumbers [3]uint64
 			(entry.MinorVersion == taskVersionNumbers[1] && entry.PatchVersion >= taskVersionNumbers[2]))
 }
 
-func isDarwinEntry(entry *NodeIndexEntry) bool {
-	names := strings.SplitN(entry.GPUName, "+", 2)
+func isDarwinGPUName(gpuName string) bool {
+	names := strings.SplitN(gpuName, "+", 2)
 	if len(names) != 2 {
 		return true
 	}
 	return strings.TrimSpace(names[1]) == "Darwin"
+}
+
+func isDarwinEntry(entry *NodeIndexEntry) bool {
+	return isDarwinGPUName(entry.GPUName)
 }
 
 // filterIndexEntriesForTask applies the hard filters over the round's node

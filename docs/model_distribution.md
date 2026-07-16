@@ -8,18 +8,24 @@ Every inference task requires exactly one base model. `InferenceTask.ModelIDs` s
 
 Relay MUST treat a task's base model as a single scalar value, extracted as the lowercase `base:` entry of `ModelIDs`. Model distribution, readiness evaluation, and download scheduling MUST operate on this single model ID. Auxiliary model IDs MUST NOT participate in model distribution.
 
-Model distribution concerns only two facts: whether a node holds a base model on disk, and how frequently tasks require that base model. Task hardware requirements, task versions, and node capability filters are task-matching concerns specified in [node_selection.md](./node_selection.md) and MUST NOT partition model distribution state.
+## Demand Groups and VRAM Requirements
+
+The unit of model distribution is the demand group: one base model combined with one VRAM demand and, for LLM tasks, the Darwin exclusion. A task's VRAM demand is `RequiredGPUVRAM` when the task sets `RequiredGPU`, and `MinVRAM` otherwise. A node satisfies a demand group when its VRAM is at least the group's VRAM demand and, for LLM demand groups, the node is not a Darwin node. Model distribution MUST NOT match GPU names against `RequiredGPU`; exact-GPU matching is a task-matching concern.
+
+Tasks requiring the same base model but different VRAM demands form separate demand groups. Demand measurement, target computation, coverage, deficit, and download target selection MUST all be evaluated per demand group. A node MUST count toward the coverage of a demand group, and MUST be eligible as a download target for it, only when the node satisfies the group. Task versions and node-status filters beyond the rules in this document remain task-matching concerns specified in [node_selection.md](./node_selection.md).
+
+Selection records and `DownloadModel` events remain keyed by base model ID only: a download commanded for one demand group produces an on-disk copy that serves every demand group of that model on nodes that satisfy them.
 
 ## Controller Loop
 
-Relay MUST run one model distribution controller. The controller MUST run on a fixed interval of `model_distribution.controller_interval_seconds`, independent of task matching rounds. Each run MUST evaluate every base model with current demand.
+Relay MUST run one model distribution controller. The controller MUST run on a fixed interval of `model_distribution.controller_interval_seconds`, independent of task matching rounds. Each run MUST evaluate every demand group with current demand.
 
-A base model has current demand when at least one of these holds:
+A demand group has current demand when at least one of these holds:
 
-- At least one queued task requires the model.
-- At least one task requiring the model was created within the demand window of `model_distribution.demand_window_seconds`.
+- At least one queued task requires the model with the group's VRAM demand.
+- At least one task requiring the model with the group's VRAM demand was created within the demand window of `model_distribution.demand_window_seconds`.
 
-A controller run MUST execute these steps for each base model with current demand:
+A controller run MUST execute these steps for each demand group with current demand:
 
 1. Measure demand and compute the target node count.
 2. Count nodes holding the model and non-expired pending selections.
@@ -29,10 +35,10 @@ A controller run failure MUST NOT affect task matching, matched task pairs, or t
 
 ## Target Node Count
 
-For each base model, the controller MUST measure over the demand window:
+For each demand group, the controller MUST measure over the demand window:
 
-- `arrival_rate`: the number of tasks requiring the model created within the window divided by the window length in seconds.
-- `avg_execution_seconds`: the mean measured execution duration (`ScoreReadyTime - StartTime`) of completed tasks requiring the model within the window. When the window contains no such completed task, the controller MUST use the mean of the stored estimated node seconds, defined in [task-pricing.md](./task-pricing.md), of the demanding tasks.
+- `arrival_rate`: the number of tasks in the group created within the window divided by the window length in seconds.
+- `avg_execution_seconds`: the mean measured execution duration (`ScoreReadyTime - StartTime`) of completed tasks in the group within the window. When the window contains no such completed task, the controller MUST use the mean of the stored estimated node seconds, defined in [task-pricing.md](./task-pricing.md), of the demanding tasks.
 
 The target node count is:
 
@@ -42,25 +48,27 @@ target = clamp(ceil(arrival_rate * avg_execution_seconds * model_distribution.sa
                model_distribution.max_nodes)
 ```
 
-A base model with current demand MUST receive at least `model_distribution.min_nodes` as its target, which covers the cold-start case of a model that has never been executed.
+A demand group with current demand MUST receive at least `model_distribution.min_nodes` as its target, which covers the cold-start case of a model that has never been executed.
 
 ## Coverage and Deficit
 
 A node holds a base model when the node is currently joined in `Available` or `Busy` status and its authoritative on-disk model set contains the model ID. Holding MUST be computed from `node_models`. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT count toward coverage, because they cannot accept new tasks.
 
-The deficit of a base model is:
+The deficit of a demand group is:
 
 ```
-deficit = target - (holding_node_count + non_expired_pending_selection_count)
+deficit = target - (qualified_holding_node_count + qualified_pending_selection_count)
 ```
 
-When the deficit is zero or negative, the controller MUST NOT select nodes or emit events for the model. Coverage above the target MUST NOT be reduced by the controller; it converges as demand falls because no new selections are created.
+`qualified_holding_node_count` counts holding nodes that satisfy the group. `qualified_pending_selection_count` counts nodes with a non-expired pending selection for the model that satisfy the group. A holding node or pending selection on a node that does not satisfy the group MUST NOT count toward the group's coverage.
+
+When the deficit is zero or negative, the controller MUST NOT select nodes or emit events for the group. Coverage above the target MUST NOT be reduced by the controller; it converges as demand falls because no new selections are created.
 
 ## Download Target Selection
 
-When the deficit is positive, the controller MUST select up to `deficit` new download target nodes for the base model.
+When the deficit is positive, the controller MUST select up to `deficit` new download target nodes for the demand group.
 
-The selection pool consists of currently joined nodes in `Available` or `Busy` status that pass the node-name policy filter of [node_selection.md](./node_selection.md) and do not hold the model. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT be selected. Model downloads run on the node independently of inference execution, so a node executing a task remains a valid download target. The controller MUST additionally exclude from the pool:
+The selection pool consists of currently joined nodes in `Available` or `Busy` status that satisfy the group, pass the node-name policy filter of [node_selection.md](./node_selection.md) and do not hold the model. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT be selected. Model downloads run on the node independently of inference execution, so a node executing a task remains a valid download target. The controller MUST additionally exclude from the pool:
 
 - nodes with a non-expired pending selection for the model
 - nodes with any selection record for the model created during the model's current demand period
@@ -116,7 +124,7 @@ A queued task MUST start as soon as task matching finds a qualified node that ho
 - Silent node-side failure: the node reports nothing on download failure. Handling is identical to event loss.
 - Expiry racing with completion: a node that reports after its selection expired still enters the on-disk inventory and counts toward coverage. The expired record stays expired.
 - Relay restart: selection records, deadlines, and demand history are persisted; the controller resumes from persisted state. `DownloadModel` events emitted while a node was offline are not redelivered; the affected selections expire and are replaced through the normal deficit path.
-- Node capability mismatch: a node may hold a base model without qualifying for every task that requires it. Task matching applies its own hardware, version, and policy filters; model distribution does not compensate for capability filtering.
+- Node capability mismatch: a node may hold a base model without qualifying for every task that requires it, because the node downloaded the model for a different demand group, reported it at join, or reported it without a selection. Such a copy MUST NOT count toward the coverage of demand groups the node does not satisfy; the controller keeps selecting qualified nodes for those groups. Exact-GPU matching, task version, and node-status filtering remain task-matching concerns; model distribution does not compensate for them.
 
 ## Task Start Model State
 
@@ -159,7 +167,7 @@ Relay MUST define these settings in every runtime configuration template with th
 
 | File | Responsibility |
 |------|----------------|
-| `service/model_distribution.go` | Model distribution controller loop, demand measurement, target computation, download-target sampling, and event emission |
+| `service/model_distribution.go` | Model distribution controller loop, demand-group measurement, VRAM qualification, target computation, download-target sampling, and event emission |
 | `models/node_model_download_selection.go` | Persistent selection records, uniqueness, and status transitions |
 | `api/v1/nodes/add_model_id.go` | Authoritative on-disk report |
 | `service/node.go` | Join-time model reporting, quit-time cleanup, and task-start updates to existing base-model in-use state |

@@ -13,11 +13,50 @@ import (
 	"gorm.io/gorm"
 )
 
-// modelDemand aggregates the demand facts of one base model over the current
-// demand window: queued tasks, window arrivals, measured execution durations
-// and the pricing estimates used as the cold-start fallback.
+// modelDemandKey identifies one distribution unit: a base model together
+// with the VRAM demand and the LLM Darwin exclusion of the tasks requiring
+// it. Tasks with different VRAM demands form separate demand groups because
+// a node only counts toward coverage of the groups it can execute.
+type modelDemandKey struct {
+	modelID       string
+	minVRAM       uint64
+	excludeDarwin bool
+}
+
+// taskVRAMDemand is the VRAM amount a task requires from a node: the exact
+// GPU VRAM when the task pins a GPU, otherwise the minimum VRAM bound.
+func taskVRAMDemand(task *models.InferenceTask) uint64 {
+	if len(task.RequiredGPU) > 0 {
+		return task.RequiredGPUVRAM
+	}
+	return task.MinVRAM
+}
+
+func modelDemandKeyOf(task *models.InferenceTask, modelID string) modelDemandKey {
+	return modelDemandKey{
+		modelID:       modelID,
+		minVRAM:       taskVRAMDemand(task),
+		excludeDarwin: task.TaskType == models.TaskTypeLLM,
+	}
+}
+
+// nodeSatisfiesDemand reports whether a node's VRAM covers the demand
+// group's requirement and, for LLM demand, the node is not a Darwin node.
+func nodeSatisfiesDemand(gpuName string, gpuVram uint64, key modelDemandKey) bool {
+	if gpuVram < key.minVRAM {
+		return false
+	}
+	if key.excludeDarwin && isDarwinGPUName(gpuName) {
+		return false
+	}
+	return true
+}
+
+// modelDemand aggregates the demand facts of one demand group over the
+// current demand window: queued tasks, window arrivals, measured execution
+// durations and the pricing estimates used as the cold-start fallback.
 type modelDemand struct {
-	modelID              string
+	key                  modelDemandKey
 	queuedCount          int
 	arrivalCount         int
 	latestCreateTime     time.Time
@@ -31,11 +70,12 @@ type modelDemand struct {
 // modelSelectionState is the per-model view over the persisted selection
 // records used for capacity accounting and pool exclusion.
 type modelSelectionState struct {
-	pendingCount int
 	// attemptCounts counts all selection records per node address.
 	attemptCounts map[string]int
 	// nonExpired marks nodes with a pending or completed record.
 	nonExpired map[string]struct{}
+	// pendingNodes marks nodes with a pending record.
+	pendingNodes map[string]struct{}
 }
 
 func StartModelDistribution(ctx context.Context, db *gorm.DB) {
@@ -83,10 +123,7 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 		return nil
 	}
 
-	demandModelIDs := make([]string, 0, len(demands))
-	for modelID := range demands {
-		demandModelIDs = append(demandModelIDs, modelID)
-	}
+	demandModelIDs := demandedModelIDs(demands)
 	holdingNodes, err := getModelHoldingNodes(ctx, db, demandModelIDs)
 	if err != nil {
 		return err
@@ -96,31 +133,87 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	nodeHardwareByAddress := make(map[string]models.Node, len(candidateNodes))
+	for _, node := range candidateNodes {
+		nodeHardwareByAddress[node.Address] = node
+	}
 	candidateNodes, err = filterNodesByNodeNamePolicy(ctx, candidateNodes)
 	if err != nil {
 		return err
 	}
 
 	for _, demand := range demands {
-		state := selectionStates[demand.modelID]
+		modelID := demand.key.modelID
+		state := selectionStates[modelID]
 		target := computeTargetNodeCount(demand, cfg.DemandWindowSeconds, cfg.SafetyFactor, cfg.MinNodes, cfg.MaxNodes)
-		pendingCount := 0
-		if state != nil {
-			pendingCount = state.pendingCount
+
+		// Coverage and pending capacity count only nodes that satisfy the
+		// demand group's VRAM requirement; a copy on a node that cannot
+		// execute the demanding tasks does not serve them.
+		holding := holdingNodes[modelID]
+		qualifiedHoldingCount := 0
+		for address := range holding {
+			if node, ok := nodeHardwareByAddress[address]; ok && nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
+				qualifiedHoldingCount++
+			}
 		}
-		deficit := target - len(holdingNodes[demand.modelID]) - pendingCount
+		qualifiedPendingCount := 0
+		if state != nil {
+			for address := range state.pendingNodes {
+				if node, ok := nodeHardwareByAddress[address]; ok && nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
+					qualifiedPendingCount++
+				}
+			}
+		}
+
+		deficit := target - qualifiedHoldingCount - qualifiedPendingCount
 		if deficit <= 0 {
 			continue
 		}
 
-		selected := selectDownloadTargetNodes(candidateNodes, holdingNodes[demand.modelID], state, now, deficit)
-		for _, node := range selected {
-			if err := emitModelDownloadSelection(ctx, db, demand.modelID, node.Address, demand.latestTaskType, now, cfg.DownloadTimeoutSeconds); err != nil {
-				log.Errorf("ModelDistribution: emit download selection for model %s on node %s error: %v", demand.modelID, node.Address, err)
+		qualifiedCandidates := make([]models.Node, 0, len(candidateNodes))
+		for _, node := range candidateNodes {
+			if nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
+				qualifiedCandidates = append(qualifiedCandidates, node)
 			}
+		}
+
+		selected := selectDownloadTargetNodes(qualifiedCandidates, holding, state, now, deficit)
+		for _, node := range selected {
+			if err := emitModelDownloadSelection(ctx, db, modelID, node.Address, demand.latestTaskType, now, cfg.DownloadTimeoutSeconds); err != nil {
+				log.Errorf("ModelDistribution: emit download selection for model %s on node %s error: %v", modelID, node.Address, err)
+				continue
+			}
+			// Record the new selection in the in-memory state so later
+			// demand groups of the same model see it as pending capacity
+			// and do not select the node again in this round.
+			if state == nil {
+				state = &modelSelectionState{
+					attemptCounts: make(map[string]int),
+					nonExpired:    make(map[string]struct{}),
+					pendingNodes:  make(map[string]struct{}),
+				}
+				selectionStates[modelID] = state
+			}
+			state.attemptCounts[node.Address]++
+			state.nonExpired[node.Address] = struct{}{}
+			state.pendingNodes[node.Address] = struct{}{}
 		}
 	}
 	return nil
+}
+
+func demandedModelIDs(demands map[modelDemandKey]*modelDemand) []string {
+	modelIDSet := make(map[string]struct{})
+	modelIDs := make([]string, 0, len(demands))
+	for key := range demands {
+		if _, ok := modelIDSet[key.modelID]; ok {
+			continue
+		}
+		modelIDSet[key.modelID] = struct{}{}
+		modelIDs = append(modelIDs, key.modelID)
+	}
+	return modelIDs
 }
 
 // applySelectionStatusTransitions moves pending selections to completed when
@@ -187,22 +280,25 @@ func getNodeModelPairs(ctx context.Context, db *gorm.DB, modelIDs []string) (map
 	return pairs, nil
 }
 
-// collectModelDemands measures demand per base model from tasks that are
-// currently queued or were created within the demand window, plus execution
-// durations of tasks completed within the window.
-func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time) (map[string]*modelDemand, error) {
-	demands := make(map[string]*modelDemand)
+// collectModelDemands measures demand per demand group (base model plus task
+// VRAM demand) from tasks that are currently queued or were created within
+// the demand window, plus execution durations of tasks completed within the
+// window.
+func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time) (map[modelDemandKey]*modelDemand, error) {
+	demands := make(map[modelDemandKey]*modelDemand)
 
 	demandTasks, err := getDemandTasks(ctx, db, windowStart)
 	if err != nil {
 		return nil, err
 	}
-	for _, task := range demandTasks {
+	for i := range demandTasks {
+		task := &demandTasks[i]
 		for _, modelID := range models.BaseModelIDs(task.ModelIDs) {
-			demand, ok := demands[modelID]
+			key := modelDemandKeyOf(task, modelID)
+			demand, ok := demands[key]
 			if !ok {
-				demand = &modelDemand{modelID: modelID}
-				demands[modelID] = demand
+				demand = &modelDemand{key: key}
+				demands[key] = demand
 			}
 			if task.Status == models.TaskQueued {
 				demand.queuedCount++
@@ -225,13 +321,14 @@ func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time
 	if err != nil {
 		return nil, err
 	}
-	for _, task := range completedTasks {
+	for i := range completedTasks {
+		task := &completedTasks[i]
 		executionSeconds := task.ScoreReadyTime.Time.Sub(task.StartTime.Time).Seconds()
 		if executionSeconds <= 0 {
 			continue
 		}
 		for _, modelID := range models.BaseModelIDs(task.ModelIDs) {
-			demand, ok := demands[modelID]
+			demand, ok := demands[modelDemandKeyOf(task, modelID)]
 			if !ok {
 				continue
 			}
@@ -248,7 +345,7 @@ func getDemandTasks(ctx context.Context, db *gorm.DB, windowStart time.Time) ([]
 
 	var tasks []models.InferenceTask
 	if err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
-		Select("id, status, task_type, model_ids, create_time, estimated_node_seconds").
+		Select("id, status, task_type, model_ids, create_time, estimated_node_seconds, min_v_ram, required_gpu, required_gpuv_ram").
 		Where("status = ? OR create_time >= ?", models.TaskQueued, windowStart).
 		Find(&tasks).Error; err != nil {
 		return nil, err
@@ -262,7 +359,7 @@ func getCompletedTasksInWindow(ctx context.Context, db *gorm.DB, windowStart tim
 
 	var tasks []models.InferenceTask
 	if err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
-		Select("id, model_ids, start_time, score_ready_time").
+		Select("id, task_type, model_ids, start_time, score_ready_time, min_v_ram, required_gpu, required_gpuv_ram").
 		Where("score_ready_time >= ?", windowStart).
 		Where("start_time IS NOT NULL").
 		Find(&tasks).Error; err != nil {
@@ -303,13 +400,14 @@ func buildModelSelectionStates(selections []models.NodeModelDownloadSelection) m
 			state = &modelSelectionState{
 				attemptCounts: make(map[string]int),
 				nonExpired:    make(map[string]struct{}),
+				pendingNodes:  make(map[string]struct{}),
 			}
 			states[selection.ModelID] = state
 		}
 		state.attemptCounts[selection.NodeAddress]++
 		switch selection.Status {
 		case models.NodeModelDownloadSelectionPending:
-			state.pendingCount++
+			state.pendingNodes[selection.NodeAddress] = struct{}{}
 			state.nonExpired[selection.NodeAddress] = struct{}{}
 		case models.NodeModelDownloadSelectionCompleted:
 			state.nonExpired[selection.NodeAddress] = struct{}{}
@@ -319,11 +417,16 @@ func buildModelSelectionStates(selections []models.NodeModelDownloadSelection) m
 }
 
 // cleanupSelectionsWithoutDemand deletes the selection records of models that
-// no longer have current demand, ending their demand period.
-func cleanupSelectionsWithoutDemand(ctx context.Context, db *gorm.DB, selectionStates map[string]*modelSelectionState, demands map[string]*modelDemand) error {
+// no longer have current demand in any demand group, ending their demand
+// period.
+func cleanupSelectionsWithoutDemand(ctx context.Context, db *gorm.DB, selectionStates map[string]*modelSelectionState, demands map[modelDemandKey]*modelDemand) error {
+	demandedIDs := make(map[string]struct{})
+	for key := range demands {
+		demandedIDs[key.modelID] = struct{}{}
+	}
 	staleModelIDs := make([]string, 0)
 	for modelID := range selectionStates {
-		if _, ok := demands[modelID]; !ok {
+		if _, ok := demandedIDs[modelID]; !ok {
 			staleModelIDs = append(staleModelIDs, modelID)
 		}
 	}
