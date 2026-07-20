@@ -28,7 +28,7 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 | `hf_model_id` | The huggingface base model ID of a `node_models` row. Cardinality is bounded because the `relay_model_nodes` gauge exports only the top 50 models by on-disk node count. |
 | `state` | Model holding state on a node: `on_disk` or `in_memory`. |
 | `gpu` | The exact `RequiredGPU` name for GPU-pinned tasks, `any` otherwise. |
-| `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, or `task_fee_too_low`. |
+| `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, `task_fee_too_low`, `group_timeout`, or `error_reported`. |
 | `status` (aborted task) | The task status enum name at the moment of the abort: `TaskQueued`, `TaskParametersUploaded`, `TaskErrorReported`, `TaskScoreReady`, `TaskValidated`, or `TaskGroupValidated`. `TaskStarted` is split by `delivered_time` into `TaskStartedDelivered` and `TaskStartedUndelivered`. |
 | `status` (terminal task) | Terminal status: `success`, `group_success`, `group_refund`, or `invalidated`. |
 | `status` (node) | Node status: `quit`, `available`, `busy`, `pending_pause`, `pending_quit`, or `paused`. |

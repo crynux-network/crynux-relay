@@ -101,7 +101,7 @@ func ValidateSingleTask(ctx context.Context, originTask *models.InferenceTask, t
 	if task.Status == models.TaskScoreReady {
 		err = SetTaskStatusValidated(ctx, config.GetDB(), &task)
 	} else {
-		task.AbortReason = models.TaskAbortIncorrectResult
+		task.AbortReason = models.TaskAbortErrorReported
 		task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
 		err = ExecuteNodeStateUpdate(ctx, config.GetDB(), []string{task.SelectedNode}, func() error {
 			return SetTaskStatusEndAborted(ctx, config.GetDB(), &task, task.Creator)
@@ -376,7 +376,15 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 					}
 				default:
 					if task.Status != models.TaskEndAborted {
-						task.AbortReason = models.TaskAbortIncorrectResult
+						// A finished task can only stay in the default aborted state for
+						// two reasons: the rest of the group timed out before scoring
+						// (fewer than 2 finished tasks, no comparison possible), or the
+						// comparison ran and no majority was found.
+						if len(finishedTasks) < 2 {
+							task.AbortReason = models.TaskAbortGroupTimeout
+						} else {
+							task.AbortReason = models.TaskAbortIncorrectResult
+						}
 
 						task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
 						if err := SetTaskStatusEndAborted(ctx, tx, task, task.Creator); err != nil {

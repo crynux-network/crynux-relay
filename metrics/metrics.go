@@ -263,6 +263,10 @@ func AbortReasonLabel(reason models.TaskAbortReason) string {
 		return "incorrect_result"
 	case models.TaskAbortTaskFeeTooLow:
 		return "task_fee_too_low"
+	case models.TaskAbortGroupTimeout:
+		return "group_timeout"
+	case models.TaskAbortErrorReported:
+		return "error_reported"
 	default:
 		return "unknown"
 	}

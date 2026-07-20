@@ -140,6 +140,10 @@ func taskStatusLabel(status models.TaskStatus, abortReason models.TaskAbortReaso
 			return "Incorrect Result"
 		case models.TaskAbortTaskFeeTooLow:
 			return "Task Fee Too Low"
+		case models.TaskAbortGroupTimeout:
+			return "Group Timeout"
+		case models.TaskAbortErrorReported:
+			return "Error Reported"
 		default:
 			return "Aborted"
 		}

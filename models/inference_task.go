@@ -52,6 +52,8 @@ const (
 	TaskAbortModelDownloadFailed
 	TaskAbortIncorrectResult
 	TaskAbortTaskFeeTooLow
+	TaskAbortGroupTimeout
+	TaskAbortErrorReported
 )
 
 type TaskError uint8
