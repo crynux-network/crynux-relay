@@ -49,6 +49,10 @@ func validationGroupStatusLabel(task *models.InferenceTask) string {
 			return "AbortedIncorrectResult"
 		case models.TaskAbortTaskFeeTooLow:
 			return "AbortedTaskFeeTooLow"
+		case models.TaskAbortGroupTimeout:
+			return "AbortedGroupTimeout"
+		case models.TaskAbortErrorReported:
+			return "AbortedErrorReported"
 		default:
 			return "Aborted"
 		}

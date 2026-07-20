@@ -107,7 +107,7 @@ For tasks where the VRF confirms no validation is needed (single task):
 1. Verify the `TaskID` against the stored `TaskIDCommitment`.
 2. Verify the VRF proof to confirm the task was correctly classified as non-grouped.
 3. If the task status is `TaskScoreReady` → transition to `TaskValidated`.
-4. If the task status is `TaskErrorReported` → abort with reason `TaskAbortIncorrectResult`.
+4. If the task status is `TaskErrorReported` → abort with reason `TaskAbortErrorReported`.
 
 ### Group Task Validation (`ValidateTaskGroup`)
 
@@ -144,7 +144,9 @@ Given 3 finished tasks (A, B, C), the relay compares all pairs and assigns termi
 
 When only 2 of 3 tasks finished (the third was aborted before scoring):
 - If the 2 finished tasks match → first gets `GroupValidated`, second gets `GroupRefund`
-- If they do not match → both get `EndAborted`
+- If they do not match → both get `EndAborted` with reason `TaskAbortIncorrectResult`
+
+When fewer than 2 tasks finished, no comparison is possible. A single finished task MUST be aborted with reason `TaskAbortGroupTimeout`; its result is not judged incorrect and the task fee is refunded to the creator.
 
 Long-term QoS scoring for tasks already in `TaskEndAborted` follows these rules:
 - If the group contains at least one non-aborted task, each task aborted due to `TaskAbortTimeout` MUST contribute a Task QoS score of `0` to its selected node's long-term QoS rolling average.
@@ -206,8 +208,10 @@ Tasks can be aborted for several reasons:
 |-------------|-------------|
 | `TaskAbortTimeout` | Task exceeded its deadline (creation time + 3 minutes + configured timeout) |
 | `TaskAbortModelDownloadFailed` | Model download failed on the node |
-| `TaskAbortIncorrectResult` | Result failed validation |
+| `TaskAbortIncorrectResult` | Result failed validation: the group comparison ran and no majority was found |
 | `TaskAbortTaskFeeTooLow` | Task fee was too low to attract eligible nodes |
+| `TaskAbortGroupTimeout` | The task finished but fewer than 2 tasks in its validation group finished, so the result could not be validated |
+| `TaskAbortErrorReported` | A single (non-grouped) task ended in `TaskErrorReported` during validation |
 
 `TaskAbortTaskFeeTooLow` is not assigned by any automatic relay task processing path in current implementation. It appears only when a caller explicitly submits `POST /v1/inference_tasks/:task_id_commitment/abort_reason` with `abort_reason = TaskAbortTaskFeeTooLow`.
 
