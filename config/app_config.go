@@ -24,6 +24,11 @@ type SystemBlockchainContractsConfig struct {
 	DelegatedStaking string `mapstructure:"delegated_staking"`
 }
 
+type WithdrawalFeeTierConfig struct {
+	MinAmount uint64  `mapstructure:"min_amount" description:"tier lower bound of withdraw amount, in ether unit"`
+	FeeRatio  float64 `mapstructure:"fee_ratio" description:"proportional fee ratio applied to the whole withdraw amount in this tier"`
+}
+
 type SystemBlockchainConfig struct {
 	RPS                            uint64                          `mapstructure:"rps"`
 	RpcEndpoint                    string                          `mapstructure:"rpc_endpoint"`
@@ -42,6 +47,7 @@ type SystemBlockchainConfig struct {
 	DelegatedStakingReadPageSize   uint64                          `mapstructure:"delegated_staking_read_page_size"`
 	WithdrawalFee                  uint64                          `mapstructure:"withdrawal_fee"`
 	WithdrawalMin                  uint64                          `mapstructure:"withdrawal_min"`
+	WithdrawalFeeTiers             []WithdrawalFeeTierConfig       `mapstructure:"withdrawal_fee_tiers"`
 }
 
 type DepositWithdrawNetworkContractsConfig struct {
@@ -55,23 +61,25 @@ type DepositWithdrawNetworkConfig struct {
 	StartBlockNum uint64                                `mapstructure:"start_block_num"`
 	ChainID       uint64                                `mapstructure:"chain_id"`
 	Contracts     DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
-	LogBlockRange uint64                                `mapstructure:"log_block_range"`
-	WithdrawalFee uint64                                `mapstructure:"withdrawal_fee"`
-	WithdrawalMin uint64                                `mapstructure:"withdrawal_min"`
+	LogBlockRange      uint64                                `mapstructure:"log_block_range"`
+	WithdrawalFee      uint64                                `mapstructure:"withdrawal_fee"`
+	WithdrawalMin      uint64                                `mapstructure:"withdrawal_min"`
+	WithdrawalFeeTiers []WithdrawalFeeTierConfig             `mapstructure:"withdrawal_fee_tiers"`
 }
 
 type EffectiveFundingNetworkConfig struct {
-	Network        string
-	TokenType      string
-	RPS            uint64
-	RpcEndpoint    string
-	StartBlockNum  uint64
-	ChainID        uint64
-	BenefitAddress string
-	TokenAddress   string
-	LogBlockRange  uint64
-	WithdrawalFee  uint64
-	WithdrawalMin  uint64
+	Network            string
+	TokenType          string
+	RPS                uint64
+	RpcEndpoint        string
+	StartBlockNum      uint64
+	ChainID            uint64
+	BenefitAddress     string
+	TokenAddress       string
+	LogBlockRange      uint64
+	WithdrawalFee      uint64
+	WithdrawalMin      uint64
+	WithdrawalFeeTiers []WithdrawalFeeTierConfig
 }
 
 type AppConfig struct {
@@ -203,6 +211,10 @@ type AppConfig struct {
 		Port      string   `mapstructure:"port"`
 		VramTiers []uint64 `mapstructure:"vram_tiers"`
 	} `mapstructure:"metrics"`
+
+	StakingScore struct {
+		LockedEmissionCoefficient *float64 `mapstructure:"locked_emission_coefficient" description:"coefficient applied to locked emission before it is counted into the staking score"`
+	} `mapstructure:"staking_score"`
 
 	QoS struct {
 		ScorePoolSize               uint64  `mapstructure:"score_pool_size"`

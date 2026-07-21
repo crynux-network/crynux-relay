@@ -82,6 +82,9 @@ func InitConfig(configPath string) error {
 	if err := checkModelDistributionConfig(); err != nil {
 		return err
 	}
+	if err := checkStakingScoreConfig(); err != nil {
+		return err
+	}
 	if err := checkQosConfig(); err != nil {
 		return err
 	}
@@ -156,7 +159,15 @@ func checkFundingNetworks() error {
 			return fmt.Errorf("blockchain %s delegated staking contract is invalid", network)
 		}
 	}
+	for network, blockchain := range appConfig.Blockchains {
+		if err := checkWithdrawalFeeTiers(network, blockchain.WithdrawalFeeTiers); err != nil {
+			return err
+		}
+	}
 	for network, fundingNetwork := range appConfig.DepositWithdrawNetworks {
+		if err := checkWithdrawalFeeTiers(network, fundingNetwork.WithdrawalFeeTiers); err != nil {
+			return err
+		}
 		if fundingNetwork.RPS == 0 {
 			return fmt.Errorf("deposit withdraw network %s rps not set", network)
 		}
@@ -255,6 +266,35 @@ func checkModelDistributionConfig() error {
 	}
 	if distribution.DownloadTimeoutSeconds <= 0 {
 		return errors.New("model_distribution.download_timeout_seconds is not set")
+	}
+	return nil
+}
+
+func checkWithdrawalFeeTiers(network string, tiers []WithdrawalFeeTierConfig) error {
+	if len(tiers) == 0 {
+		return nil
+	}
+	if tiers[0].MinAmount != 0 {
+		return fmt.Errorf("network %s withdrawal_fee_tiers first tier min_amount must be 0", network)
+	}
+	for i, tier := range tiers {
+		if i > 0 && tier.MinAmount <= tiers[i-1].MinAmount {
+			return fmt.Errorf("network %s withdrawal_fee_tiers min_amount must be strictly increasing", network)
+		}
+		if tier.FeeRatio < 0 || tier.FeeRatio >= 1 {
+			return fmt.Errorf("network %s withdrawal_fee_tiers fee_ratio must be in [0, 1)", network)
+		}
+	}
+	return nil
+}
+
+func checkStakingScoreConfig() error {
+	coefficient := appConfig.StakingScore.LockedEmissionCoefficient
+	if coefficient == nil {
+		return errors.New("staking_score.locked_emission_coefficient is not set")
+	}
+	if *coefficient < 0 || *coefficient > 1 {
+		return errors.New("staking_score.locked_emission_coefficient must be in [0, 1]")
 	}
 	return nil
 }

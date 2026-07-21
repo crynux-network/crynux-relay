@@ -168,6 +168,11 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(network.GetNetworkTFLOPS, 200))
 
+	networkGroup.GET("/withdraw_config", []fizz.OperationOption{
+		fizz.Summary("Get withdraw fee and limit config of all funding networks"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(network.GetWithdrawConfig, 200))
+
 	workerGroup := v1g.Group("worker", "worker", "Worker count related APIs")
 
 	workerGroup.POST("/:version", []fizz.OperationOption{

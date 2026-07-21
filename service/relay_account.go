@@ -82,7 +82,25 @@ func splitRelayAccountEventReason(eventType models.RelayAccountEventType, reason
 	return parts, true
 }
 
+const initRelayAccountCacheBatchSize = 1000
+
 func InitRelayAccountCache(ctx context.Context, db *gorm.DB) error {
+	var accounts []models.RelayAccount
+	if err := db.WithContext(ctx).
+		Model(&models.RelayAccount{}).
+		FindInBatches(&accounts, initRelayAccountCacheBatchSize, func(tx *gorm.DB, batch int) error {
+			relayAccountCache.mu.Lock()
+			defer relayAccountCache.mu.Unlock()
+			for _, account := range accounts {
+				if _, exists := relayAccountCache.accounts[account.Address]; !exists {
+					relayAccountCache.accounts[account.Address] = new(big.Int).Set(&account.Balance.Int)
+				}
+			}
+			return nil
+		}).Error; err != nil {
+		return err
+	}
+
 	for {
 		events, err := getPendingRelayAccountEvents(ctx, db, 50)
 		if err != nil {
@@ -1106,4 +1124,17 @@ func releaseVestingToRelayAccount(ctx context.Context, db *gorm.DB, vestingID ui
 
 func GetRelayAccountBalance(ctx context.Context, db *gorm.DB, address string) (*big.Int, error) {
 	return getRelayAccountFromCache(ctx, db, address)
+}
+
+// GetCachedRelayAccountBalance reads the relay account balance from the in-memory
+// cache only. All relay accounts are preloaded into the cache at startup and every
+// balance mutation goes through the cache, so an absent address means a zero balance.
+func GetCachedRelayAccountBalance(address string) *big.Int {
+	relayAccountCache.mu.RLock()
+	defer relayAccountCache.mu.RUnlock()
+	balance, exists := relayAccountCache.accounts[address]
+	if !exists {
+		return big.NewInt(0)
+	}
+	return new(big.Int).Set(balance)
 }

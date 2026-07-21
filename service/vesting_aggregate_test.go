@@ -89,6 +89,8 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+staking_score:
+  locked_emission_coefficient: 1.0
 `, vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(macKeyFile))
 	writeVestingAggregateTestFile(t, filepath.Join(dir, "config.yml"), content)
 

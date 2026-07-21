@@ -16,6 +16,29 @@ import (
 var ErrWithdrawRequestNotPending = errors.New("withdraw request is not pending")
 var ErrWithdrawRequestNotProcessedLocally = errors.New("withdraw request has not been processed locally")
 
+// CalculateWithdrawalFee returns the withdrawal fee in wei for the given withdraw
+// amount: the network fixed fee plus a proportional fee. The proportional ratio is
+// taken from the highest configured tier whose min_amount is not greater than the
+// withdraw amount and is applied to the whole amount.
+func CalculateWithdrawalFee(networkConfig config.EffectiveFundingNetworkConfig, amount *big.Int) *big.Int {
+	fee := utils.EtherToWei(big.NewInt(0).SetUint64(networkConfig.WithdrawalFee))
+	ratio := float64(0)
+	for _, tier := range networkConfig.WithdrawalFeeTiers {
+		tierMinAmount := utils.EtherToWei(big.NewInt(0).SetUint64(tier.MinAmount))
+		if amount.Cmp(tierMinAmount) < 0 {
+			break
+		}
+		ratio = tier.FeeRatio
+	}
+	if ratio > 0 {
+		ratioRat := new(big.Rat).SetFloat64(ratio)
+		proportionalFee := new(big.Int).Mul(amount, ratioRat.Num())
+		proportionalFee.Quo(proportionalFee, ratioRat.Denom())
+		fee.Add(fee, proportionalFee)
+	}
+	return fee
+}
+
 func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, amount *big.Int, network string) (*models.WithdrawRecord, error) {
 	appConfig := config.GetConfig()
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -25,7 +48,7 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 	if !ok {
 		return nil, errors.New("unsupported withdraw network")
 	}
-	withdrawalFee := utils.EtherToWei(big.NewInt(0).SetUint64(networkConfig.WithdrawalFee))
+	withdrawalFee := CalculateWithdrawalFee(networkConfig, amount)
 	if address == appConfig.Withdraw.WithdrawalFeeAddress || address == appConfig.Dao.TaskFeeShareAddress {
 		withdrawalFee = big.NewInt(0)
 	}

@@ -5,31 +5,33 @@ import "fmt"
 func (cfg *AppConfig) GetEffectiveFundingNetwork(network string) (EffectiveFundingNetworkConfig, bool) {
 	if blockchain, ok := cfg.Blockchains[network]; ok {
 		return EffectiveFundingNetworkConfig{
-			Network:        network,
-			TokenType:      FundingTokenTypeNative,
-			RPS:            blockchain.RPS,
-			RpcEndpoint:    blockchain.RpcEndpoint,
-			StartBlockNum:  blockchain.StartBlockNum,
-			ChainID:        blockchain.ChainID,
-			BenefitAddress: blockchain.Contracts.BenefitAddress,
-			WithdrawalFee:  blockchain.WithdrawalFee,
-			WithdrawalMin:  blockchain.WithdrawalMin,
+			Network:            network,
+			TokenType:          FundingTokenTypeNative,
+			RPS:                blockchain.RPS,
+			RpcEndpoint:        blockchain.RpcEndpoint,
+			StartBlockNum:      blockchain.StartBlockNum,
+			ChainID:            blockchain.ChainID,
+			BenefitAddress:     blockchain.Contracts.BenefitAddress,
+			WithdrawalFee:      blockchain.WithdrawalFee,
+			WithdrawalMin:      blockchain.WithdrawalMin,
+			WithdrawalFeeTiers: blockchain.WithdrawalFeeTiers,
 		}, true
 	}
 
 	if networkConfig, ok := cfg.DepositWithdrawNetworks[network]; ok {
 		return EffectiveFundingNetworkConfig{
-			Network:        network,
-			TokenType:      FundingTokenTypeERC20,
-			RPS:            networkConfig.RPS,
-			RpcEndpoint:    networkConfig.RpcEndpoint,
-			StartBlockNum:  networkConfig.StartBlockNum,
-			ChainID:        networkConfig.ChainID,
-			BenefitAddress: networkConfig.Contracts.BenefitAddress,
-			TokenAddress:   networkConfig.Contracts.TokenAddress,
-			LogBlockRange:  networkConfig.LogBlockRange,
-			WithdrawalFee:  networkConfig.WithdrawalFee,
-			WithdrawalMin:  networkConfig.WithdrawalMin,
+			Network:            network,
+			TokenType:          FundingTokenTypeERC20,
+			RPS:                networkConfig.RPS,
+			RpcEndpoint:        networkConfig.RpcEndpoint,
+			StartBlockNum:      networkConfig.StartBlockNum,
+			ChainID:            networkConfig.ChainID,
+			BenefitAddress:     networkConfig.Contracts.BenefitAddress,
+			TokenAddress:       networkConfig.Contracts.TokenAddress,
+			LogBlockRange:      networkConfig.LogBlockRange,
+			WithdrawalFee:      networkConfig.WithdrawalFee,
+			WithdrawalMin:      networkConfig.WithdrawalMin,
+			WithdrawalFeeTiers: networkConfig.WithdrawalFeeTiers,
 		}, true
 	}
 

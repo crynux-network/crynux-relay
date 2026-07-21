@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crynux_relay/config"
 	"crynux_relay/models"
 	"errors"
 	"math/big"
@@ -114,6 +115,25 @@ func GetNodeLockedVestingAmount(address string, now time.Time) *big.Int {
 	return globalNodeVestingStakeCache.lockedAmount(address, now)
 }
 
+func lockedEmissionCoefficient() float64 {
+	appConfig := config.GetConfig()
+	if appConfig == nil {
+		return 1
+	}
+	return *appConfig.StakingScore.LockedEmissionCoefficient
+}
+
+func GetNodeScoreLockedEmissionAmount(address string, now time.Time) *big.Int {
+	lockedEmission := GetNodeLockedVestingAmount(address, now)
+	coefficient := lockedEmissionCoefficient()
+	if coefficient == 1 {
+		return lockedEmission
+	}
+	scaled := new(big.Rat).SetFloat64(coefficient)
+	result := new(big.Int).Mul(lockedEmission, scaled.Num())
+	return result.Quo(result, scaled.Denom())
+}
+
 func GetNodeScoreStakeAmount(node models.Node, now time.Time) *big.Int {
 	if node.Status == models.NodeStatusQuit {
 		return big.NewInt(0)
@@ -121,7 +141,8 @@ func GetNodeScoreStakeAmount(node models.Node, now time.Time) *big.Int {
 
 	total := big.NewInt(0).Set(&node.StakeAmount.Int)
 	total.Add(total, GetNodeTotalStakeAmount(node.Address, node.Network))
-	total.Add(total, GetNodeLockedVestingAmount(node.Address, now))
+	total.Add(total, GetNodeScoreLockedEmissionAmount(node.Address, now))
+	total.Add(total, GetCachedRelayAccountBalance(node.Address))
 	return total
 }
 
@@ -162,6 +183,17 @@ func RefreshNodeVestingScoreStakes(ctx context.Context, db *gorm.DB, now time.Ti
 		return err
 	}
 	for _, address := range activeAddresses {
+		addressSet[address] = struct{}{}
+	}
+
+	var nodeAddresses []string
+	if err := db.WithContext(dbCtx).
+		Model(&models.Node{}).
+		Where("status != ?", models.NodeStatusQuit).
+		Pluck("address", &nodeAddresses).Error; err != nil {
+		return err
+	}
+	for _, address := range nodeAddresses {
 		addressSet[address] = struct{}{}
 	}
 

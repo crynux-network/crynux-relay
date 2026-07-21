@@ -25,6 +25,9 @@ func newVestingStakeTestDB(t *testing.T) *gorm.DB {
 
 func resetVestingStakeTestCaches(network string) {
 	globalNodeVestingStakeCache = newNodeVestingStakeCache()
+	relayAccountCache = &relayAccountCacheType{
+		accounts: make(map[string]*big.Int),
+	}
 	globalDelegationCaches = map[string]*delegationCache{
 		network: {
 			nodeDelegations: make(map[string]map[string]*big.Int),

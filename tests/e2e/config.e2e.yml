@@ -55,6 +55,11 @@ blockchains:
     sent_transaction_count_limit: 200
     delegated_staking_slash_batch_size: 20
     delegated_staking_read_page_size: 100
+    withdrawal_fee: 1
+    withdrawal_min: 4
+    withdrawal_fee_tiers:
+      - min_amount: 0
+        fee_ratio: 0
   near:
     rps: 20
     rpc_endpoint: "https://json-rpc.testnet-near.crynux.io"
@@ -77,6 +82,11 @@ blockchains:
     sent_transaction_count_limit: 200
     delegated_staking_slash_batch_size: 20
     delegated_staking_read_page_size: 100
+    withdrawal_fee: 1
+    withdrawal_min: 4
+    withdrawal_fee_tiers:
+      - min_amount: 0
+        fee_ratio: 0
 task:
   stake_amount: 0
   distance_threshold: 0
@@ -128,6 +138,8 @@ metrics:
   enabled: true
   port: "9090"
   vram_tiers: [8, 16, 24, 32, 48]
+staking_score:
+  locked_emission_coefficient: 1.0
 qos:
   score_pool_size: 50
   tracing_max_task_events: 50
