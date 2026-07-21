@@ -84,6 +84,10 @@ func CreateWithdrawRequest(c *gin.Context, in *CreateWithdrawInput) (*CreateWith
 			validationErr := response.NewValidationErrorResponse("amount", "Insufficient relay account balance")
 			return nil, validationErr
 		}
+		if errors.Is(err, service.ErrWithdrawDailyLimitExceeded) {
+			validationErr := response.NewValidationErrorResponse("amount", "Daily withdrawal limit exceeded")
+			return nil, validationErr
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 
