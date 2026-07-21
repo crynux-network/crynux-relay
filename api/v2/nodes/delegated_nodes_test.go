@@ -336,6 +336,7 @@ func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
 		EstimatedNext10kDelegationApr:      0.20,
 		EstimatedNext100kDelegationApr:     0.15,
 		EstimatedNext1mDelegationApr:       0.10,
+		RelayAccountBalance:                models.BigInt{Int: *big.NewInt(3)},
 		AprObservationDays:                 30,
 		DelegationAprUpdatedAt:             1768000001,
 	})
@@ -357,6 +358,7 @@ func TestNodeResponseIncludesEmissionEstimateFields(t *testing.T) {
 		"estimated_next_10k_delegation_apr",
 		"estimated_next_100k_delegation_apr",
 		"estimated_next_1m_delegation_apr",
+		"relay_account_balance",
 		"apr_observation_days",
 		"delegation_apr_updated_at",
 	} {

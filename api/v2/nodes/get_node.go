@@ -80,6 +80,8 @@ func GetNode(c *gin.Context, input *GetNodeInputWithSignature) (*NodeResponse, e
 				ProbWeight:                         0,
 				DelegatorStaking:                   models.BigInt{Int: *big.NewInt(0)},
 				OperatorStaking:                    models.BigInt{Int: *big.NewInt(0)},
+				LockedEmission:                     models.BigInt{Int: *big.NewInt(0)},
+				RelayAccountBalance:                models.BigInt{Int: *big.NewInt(0)},
 				DelegatorShare:                     0,
 				DelegatorsNum:                      0,
 				TotalOperatorEarnings:              models.BigInt{Int: *big.NewInt(0)},

@@ -29,6 +29,7 @@ type Node struct {
 	OperatorStaking                    models.BigInt     `json:"operator_staking"`
 	DelegatorStaking                   models.BigInt     `json:"delegator_staking"`
 	LockedEmission                     models.BigInt     `json:"locked_emission"`
+	RelayAccountBalance                models.BigInt     `json:"relay_account_balance"`
 	DelegatorShare                     uint8             `json:"delegator_share"`
 	DelegatorsNum                      int               `json:"delegators_num"`
 	TotalOperatorEarnings              models.BigInt     `json:"total_operator_earnings"`
@@ -70,6 +71,7 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 
 	delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
 	lockedEmission := service.GetNodeLockedVestingAmount(node.Address, now)
+	relayAccountBalance := service.GetCachedRelayAccountBalance(node.Address)
 	delegatorsNum := service.GetDelegatorCountOfNode(node.Address, node.Network)
 
 	totalOperatorEarnings := big.NewInt(0)
@@ -113,6 +115,7 @@ func getNodeData(ctx context.Context, node *models.Node) (*Node, error) {
 		OperatorStaking:                    node.StakeAmount,
 		DelegatorStaking:                   models.BigInt{Int: *delegatorStaking},
 		LockedEmission:                     models.BigInt{Int: *lockedEmission},
+		RelayAccountBalance:                models.BigInt{Int: *relayAccountBalance},
 		DelegatorShare:                     node.DelegatorShare,
 		DelegatorsNum:                      delegatorsNum,
 		TotalOperatorEarnings:              models.BigInt{Int: *totalOperatorEarnings},

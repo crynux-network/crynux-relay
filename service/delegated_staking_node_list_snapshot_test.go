@@ -60,6 +60,16 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 	nodeAddress := "0xnode"
 	now := time.Date(2026, 1, 29, 12, 0, 0, 0, time.UTC)
 	mainnetStart := "2026-01-01T00:00:00Z"
+	relayAccountCache.mu.Lock()
+	relayAccountCache.accounts = map[string]*big.Int{
+		nodeAddress: big.NewInt(40),
+	}
+	relayAccountCache.mu.Unlock()
+	t.Cleanup(func() {
+		relayAccountCache.mu.Lock()
+		relayAccountCache.accounts = make(map[string]*big.Int)
+		relayAccountCache.mu.Unlock()
+	})
 	globalDelegationCaches = map[string]*delegationCache{
 		network: {
 			nodeDelegations: map[string]map[string]*big.Int{},
@@ -176,13 +186,13 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 	if snapshot.DelegatorEmission4w.Int.Cmp(big.NewInt(285)) != 0 {
 		t.Fatalf("unexpected delegator emission %s", snapshot.DelegatorEmission4w.String())
 	}
-	if snapshot.OperatorStaking.Int.Cmp(big.NewInt(120)) != 0 {
+	if snapshot.OperatorStaking.Int.Cmp(big.NewInt(160)) != 0 {
 		t.Fatalf("unexpected operator staking %s", snapshot.OperatorStaking.String())
 	}
 	if snapshot.DelegatorStaking.Int.Cmp(big.NewInt(30)) != 0 {
 		t.Fatalf("unexpected delegator staking %s", snapshot.DelegatorStaking.String())
 	}
-	if snapshot.TotalStaking.Int.Cmp(big.NewInt(150)) != 0 {
+	if snapshot.TotalStaking.Int.Cmp(big.NewInt(190)) != 0 {
 		t.Fatalf("unexpected total staking %s", snapshot.TotalStaking.String())
 	}
 	if snapshot.DelegatorsNum != 1 {

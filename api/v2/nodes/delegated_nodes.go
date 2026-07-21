@@ -5,7 +5,6 @@ import (
 	"crynux_relay/api/v2/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
-	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -152,7 +151,7 @@ func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeL
 	sortColumn := delegatedNodeSortColumns[filters.SortBy]
 	var snapshots []models.DelegatedStakingNodeListSnapshot
 	if err := dbi.
-		Select("node_address, delegation_apr_12m, estimated_next_10k_delegation_apr, estimated_next_100k_delegation_apr, estimated_next_1m_delegation_apr, apr_observation_days, delegation_apr_updated_at").
+		Select("node_address, operator_staking, delegator_staking, total_staking, delegation_apr_12m, estimated_next_10k_delegation_apr, estimated_next_100k_delegation_apr, estimated_next_1m_delegation_apr, apr_observation_days, delegation_apr_updated_at").
 		Order("status_rank ASC").
 		Order(sortColumn + " DESC").
 		Order("node_address ASC").
@@ -189,6 +188,14 @@ func getDelegatedNodes(ctx context.Context, db *gorm.DB, filters *delegatedNodeL
 		}
 	}
 	return items, total, nil
+}
+
+func applyDelegatedNodeListStakingSnapshot(nodeData *Node, snapshot *models.DelegatedStakingNodeListSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	nodeData.OperatorStaking = snapshot.OperatorStaking
+	nodeData.DelegatorStaking = snapshot.DelegatorStaking
 }
 
 func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDelegatedNodesOutput, error) {
@@ -232,6 +239,7 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 				return
 			}
 			applyDelegationAPRSnapshot(nodeData, &listItem.Snapshot)
+			applyDelegatedNodeListStakingSnapshot(nodeData, &listItem.Snapshot)
 			results[idx] = nodeData
 		}()
 	}
@@ -244,7 +252,6 @@ func GetDelegatedNodes(c *gin.Context, input *GetDelegatedNodesInput) (*GetDeleg
 	}
 	for _, nodeData := range results {
 		if nodeData != nil {
-			nodeData.OperatorStaking = models.BigInt{Int: *big.NewInt(0).Add(&nodeData.OperatorStaking.Int, &nodeData.LockedEmission.Int)}
 			nodeDatas = append(nodeDatas, nodeData)
 		}
 	}

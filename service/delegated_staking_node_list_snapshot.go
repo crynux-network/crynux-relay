@@ -95,10 +95,9 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 		return nil, err
 	}
 
-	lockedEmission := GetNodeLockedVestingAmount(node.Address, now)
-	operatorStaking := big.NewInt(0).Add(&node.StakeAmount.Int, lockedEmission)
 	delegatorStaking := GetNodeTotalStakeAmount(node.Address, node.Network)
-	totalStaking := big.NewInt(0).Add(operatorStaking, delegatorStaking)
+	totalStaking := GetNodeScoreStakeAmount(node, now)
+	operatorStaking := big.NewInt(0).Sub(totalStaking, delegatorStaking)
 	delegatorsNum := GetDelegatorCountOfNode(node.Address, node.Network)
 	selectingProb := CalculateNodeSelectingProb(node, now)
 	operatorEmissionEstimate := GetNodeOperatorEmissionEstimate(node.Address)
