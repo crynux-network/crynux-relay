@@ -45,10 +45,12 @@ StakingScore = sqrt(staking / maxStaking)
 ```
 
 Where:
-- `staking`: the node score stake. Score stake is the sum of operator stake, non-slashed delegated stake on the node current blockchain network, and active unslashed locked vesting for the node address across all vesting types.
+- `staking`: the node score stake. Score stake is the sum of operator stake, non-slashed delegated stake on the node current blockchain network, active unslashed locked vesting for the node address across all vesting types multiplied by `staking_score.locked_emission_coefficient`, and the node relay account balance.
 - `maxStaking`: the maximum score stake among all non-quit nodes.
 
-Vesting contributes only to staking score and selection probability. Displayed staking token amounts MUST use operator stake plus delegated stake and MUST NOT include vesting amounts.
+`staking_score.locked_emission_coefficient` is a required config value in `[0, 1]`. It scales only the locked vesting component; the scaled amount is rounded down to an integer wei value. The relay account balance component uses the node address balance from the in-memory relay account cache and is counted in full.
+
+Vesting and relay account balance contribute only to staking score and selection probability. Displayed staking token amounts MUST use operator stake plus delegated stake and MUST NOT include vesting amounts or relay account balance.
 
 ### QoS Score
 

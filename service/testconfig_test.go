@@ -41,9 +41,11 @@ func initServiceTestConfig(t *testing.T) {
 }
 
 // taskPricingMatchingTestConfigYAML holds the required task_pricing,
-// task_matching and model_distribution config sections shared by inline test
-// configurations.
-const taskPricingMatchingTestConfigYAML = "task_pricing:\n" +
+// task_matching, model_distribution and staking_score config sections shared
+// by inline test configurations.
+const taskPricingMatchingTestConfigYAML = "staking_score:\n" +
+	"  locked_emission_coefficient: 1.0\n" +
+	"task_pricing:\n" +
 	"  overhead_seconds: 30\n" +
 	"  initial_seconds_per_sd_unit: 10\n" +
 	"  initial_seconds_per_llm_token: 0.1\n" +

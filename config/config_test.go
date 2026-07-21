@@ -97,6 +97,8 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+staking_score:
+  locked_emission_coefficient: 1.0
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 
@@ -195,6 +197,8 @@ model_distribution:
   min_nodes: 1
   max_nodes: 10
   download_timeout_seconds: 1800
+staking_score:
+  locked_emission_coefficient: 1.0
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 
@@ -258,6 +262,8 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+staking_score:
+  locked_emission_coefficient: 1.0
 %s`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile), taskConfig)
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 	return dir

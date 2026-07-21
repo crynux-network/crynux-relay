@@ -18,17 +18,18 @@ type GetNodeScoresInput struct {
 }
 
 type NodeScoresData struct {
-	Address          string  `json:"address"`
-	Network          string  `json:"network"`
-	OperatorStaking  string  `json:"operator_staking"`
-	DelegatorStaking string  `json:"delegator_staking"`
-	VestingStaking   string  `json:"vesting_staking"`
-	ScoreStaking     string  `json:"score_staking"`
-	MaxStaking       string  `json:"max_staking"`
-	VestingScore     float64 `json:"vesting_score"`
-	StakingScore     float64 `json:"staking_score"`
-	QOSScore         float64 `json:"qos_score"`
-	ProbWeight       float64 `json:"prob_weight"`
+	Address             string  `json:"address"`
+	Network             string  `json:"network"`
+	OperatorStaking     string  `json:"operator_staking"`
+	DelegatorStaking    string  `json:"delegator_staking"`
+	VestingStaking      string  `json:"vesting_staking"`
+	RelayBalanceStaking string  `json:"relay_balance_staking"`
+	ScoreStaking        string  `json:"score_staking"`
+	MaxStaking          string  `json:"max_staking"`
+	VestingScore        float64 `json:"vesting_score"`
+	StakingScore        float64 `json:"staking_score"`
+	QOSScore            float64 `json:"qos_score"`
+	ProbWeight          float64 `json:"prob_weight"`
 }
 
 type GetNodeScoresResponse struct {
@@ -52,6 +53,7 @@ func GetNodeScores(c *gin.Context, in *GetNodeScoresInput) (*GetNodeScoresRespon
 	operatorStaking := &node.StakeAmount.Int
 	delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
 	vestingStaking := service.GetNodeLockedVestingAmount(node.Address, now)
+	relayBalanceStaking := service.GetCachedRelayAccountBalance(node.Address)
 	selectingProb := service.CalculateNodeSelectingProb(*node, now)
 	scoreStaking := selectingProb.ScoreStakeAmount
 	maxStaking := service.GetMaxStaking()
@@ -59,17 +61,18 @@ func GetNodeScores(c *gin.Context, in *GetNodeScoresInput) (*GetNodeScoresRespon
 
 	return &GetNodeScoresResponse{
 		Data: NodeScoresData{
-			Address:          nodeAddress,
-			Network:          node.Network,
-			OperatorStaking:  formatCNXAmount4(operatorStaking),
-			DelegatorStaking: formatCNXAmount4(delegatorStaking),
-			VestingStaking:   formatCNXAmount4(vestingStaking),
-			ScoreStaking:     formatCNXAmount4(scoreStaking),
-			MaxStaking:       formatCNXAmount4(maxStaking),
-			VestingScore:     vestingScore,
-			StakingScore:     selectingProb.StakingScore,
-			QOSScore:         selectingProb.QOSScore,
-			ProbWeight:       selectingProb.ProbWeight,
+			Address:             nodeAddress,
+			Network:             node.Network,
+			OperatorStaking:     formatCNXAmount4(operatorStaking),
+			DelegatorStaking:    formatCNXAmount4(delegatorStaking),
+			VestingStaking:      formatCNXAmount4(vestingStaking),
+			RelayBalanceStaking: formatCNXAmount4(relayBalanceStaking),
+			ScoreStaking:        formatCNXAmount4(scoreStaking),
+			MaxStaking:          formatCNXAmount4(maxStaking),
+			VestingScore:        vestingScore,
+			StakingScore:        selectingProb.StakingScore,
+			QOSScore:            selectingProb.QOSScore,
+			ProbWeight:          selectingProb.ProbWeight,
 		},
 	}, nil
 }

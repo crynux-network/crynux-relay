@@ -98,7 +98,7 @@ A withdrawal converts relay account balance to on-chain native tokens.
 On `POST /v1/client/:address/withdraw`, Relay MUST:
 
 1. Validate JWT, signature, amount, and benefit address.
-2. Compute withdrawal fee based on configured policy. Set `withdrawal_fee` to zero when requester address equals `dao.task_fee_share_address` or `withdraw.withdrawal_fee_address`.
+2. Compute withdrawal fee for the withdraw network as `withdrawal_fee + amount * fee_ratio`, where `withdrawal_fee` is the fixed fee of the network and `fee_ratio` is taken from the highest `withdrawal_fee_tiers` entry whose `min_amount` is not greater than `amount`. When the network has no `withdrawal_fee_tiers`, the proportional part is zero. The proportional part is computed in wei and rounded down. Set `withdrawal_fee` to zero when requester address equals `dao.task_fee_share_address` or `withdraw.withdrawal_fee_address`.
 3. Create a `withdraw_records` row with `Status = Pending`.
 4. Create a `Withdraw` relay account event for `amount + withdrawal_fee`.
 5. Store the created relay account event ID into `withdraw_records.relay_account_event_id`.
@@ -264,9 +264,19 @@ Serial withdrawal processing prevents multiple wallet-side withdrawal records fr
 | Key | Type | Description |
 |-----|------|-------------|
 | `relay_wallet_address` | string | Wallet service signer address |
-| `min_withdrawal_amount` | uint64 | Minimum withdraw amount |
-| `withdrawal_fee` | uint64 | Withdraw fee. This fee is waived for `dao.task_fee_share_address` and `withdrawal_fee_address` |
 | `withdrawal_fee_address` | string | Relay operator fee income address |
+
+### Per-Network Withdraw Config
+
+Each funding network entry under `blockchains` and `deposit_withdraw_networks` carries its own withdraw config:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `withdrawal_fee` | uint64 | Fixed withdraw fee, in ether unit. The whole fee is waived for `dao.task_fee_share_address` and `withdraw.withdrawal_fee_address` |
+| `withdrawal_min` | uint64 | Minimum withdraw amount, in ether unit |
+| `withdrawal_fee_tiers` | list | Proportional fee tiers. Each entry has `min_amount` (tier lower bound of withdraw amount, in ether unit) and `fee_ratio` (proportional fee ratio applied to the whole withdraw amount in this tier) |
+
+`withdrawal_fee_tiers` MUST satisfy: the first entry has `min_amount` equal to `0`, `min_amount` values are strictly increasing, and every `fee_ratio` is in `[0, 1)`. Config loading MUST fail otherwise.
 
 ## API Endpoints
 
@@ -280,6 +290,7 @@ Serial withdrawal processing prevents multiple wallet-side withdrawal records fr
 | `GET` | `/v1/client/:address/task_fee` | Query task fee records |
 | `GET` | `/v2/relay_account/:address/vesting/locked` | Query locked vesting amount |
 | `GET` | `/v2/relay_account/:address/vesting/list` | Query vesting records with pagination |
+| `GET` | `/v1/network/withdraw_config` | Query withdraw fee and limit config of all funding networks: `network`, `token_type`, `withdrawal_fee`, `withdrawal_min`, and `withdrawal_fee_tiers` |
 
 ### Wallet APIs
 

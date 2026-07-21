@@ -58,6 +58,9 @@ blockchains:
     delegated_staking_read_page_size: 100
     withdrawal_fee: 100
     withdrawal_min: 10000
+    withdrawal_fee_tiers:
+      - min_amount: 0
+        fee_ratio: 0
   near:
     rps: 20
     rpc_endpoint: "https://json-rpc.testnet-near.crynux.io"
@@ -82,6 +85,9 @@ blockchains:
     delegated_staking_read_page_size: 100
     withdrawal_fee: 100
     withdrawal_min: 10000
+    withdrawal_fee_tiers:
+      - min_amount: 0
+        fee_ratio: 0
 deposit_withdraw_networks:
   base-sepolia:
     rps: 20
@@ -94,6 +100,9 @@ deposit_withdraw_networks:
     log_block_range: 1000
     withdrawal_fee: 100
     withdrawal_min: 10000
+    withdrawal_fee_tiers:
+      - min_amount: 0
+        fee_ratio: 0
 task:
   stake_amount: 0
   distance_threshold: 0
@@ -143,6 +152,8 @@ metrics:
   enabled: true
   port: "9090"
   vram_tiers: [8, 16, 24, 32, 48]
+staking_score:
+  locked_emission_coefficient: 1.0
 qos:
   score_pool_size: 50
   tracing_max_task_events: 50
