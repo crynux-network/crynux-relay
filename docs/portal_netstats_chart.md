@@ -11,7 +11,7 @@ This document specifies the Relay API implementation logic used by Portal netsta
 | [`GET /v1/stats/histogram/task_execution_time`](#api-task-execution-time) | Return task execution-time histogram bins for elapsed time from `start_time` to `score_ready_time`. | Read pre-aggregated `task_execution_time_counts`, optionally filter by `model_switched`, then sum by `seconds` bin. |
 | [`GET /v1/stats/histogram/task_fee`](#api-task-fee) | Return task-fee histogram for recent tasks. | Scan last-hour `inference_tasks` raw rows and build 10 logarithmic fee buckets. |
 | [`GET /v1/stats/line_chart/incentive`](#api-incentive-line-chart) | Return incentive time series by day/week/month. | Build fixed intervals, map rows to interval index, and sum `node_incentives.incentive` per interval. |
-| [`GET /v2/incentive/nodes`](#api-top-incentivized-nodes) | Return top incentivized nodes in a period. | Aggregate per-node incentive/task counters and enrich with real-time `network_node_data` fields. |
+| [`GET /v2/incentive/nodes`](#api-top-incentivized-nodes) | Return top incentivized nodes in a period. | Aggregate per-node incentive/task counters and enrich with real-time node fields, scores, and effective stake. |
 
 ## Shared Stats Pipeline
 
@@ -218,4 +218,9 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
   - Sort by `incentive DESC`, apply `size` limit
   - Join `network_node_data` by node address
   - Compute QoS and selection probability fields through service helpers
-  - Return node rows with incentive totals plus current card, VRAM, staking, and score fields
+  - Return node rows with incentive totals plus current card, VRAM, effective stake, and score fields
+- Effective stake:
+  - The response field is `staking`.
+  - Portal MUST label this field as `Effective Stake`.
+  - Portal MUST explain the field with this formula: `Effective Stake = Operator Stake + Delegated Stake + Locked Emission * 0.4 + Relay Account Balance`.
+  - The locked emission component is rounded down to integer wei after the coefficient is applied.

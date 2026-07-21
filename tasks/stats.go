@@ -690,8 +690,9 @@ func batchCreateNodeStakings(ctx context.Context, db *gorm.DB, nodes []models.No
 				OperatorStaking:  models.BigInt{Int: *big.NewInt(0)},
 				DelegatorStaking: models.BigInt{Int: *big.NewInt(0)},
 			}
-			nodeStaking.OperatorStaking = node.StakeAmount
 			delegatorStaking := service.GetNodeTotalStakeAmount(node.Address, node.Network)
+			operatorStaking := big.NewInt(0).Sub(service.GetNodeScoreStakeAmount(node, t), delegatorStaking)
+			nodeStaking.OperatorStaking = models.BigInt{Int: *operatorStaking}
 			nodeStaking.DelegatorStaking = models.BigInt{Int: *delegatorStaking}
 			if _, ok := existedNodeStakingMap[node.Address]; ok {
 				operatorStakingCase.WriteString(fmt.Sprintf("WHEN node_address = '%s' AND time = '%s' THEN '%s' ", node.Address, t.Format("2006-01-02 15:04:05.000"), nodeStaking.OperatorStaking.String()))

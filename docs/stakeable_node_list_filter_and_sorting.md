@@ -27,12 +27,14 @@ Relay maintains `delegated_staking_node_list_snapshots` as the indexed list sour
 Each snapshot row stores:
 
 - identity and filter fields: node address, blockchain network, status group, GPU name, GPU VRAM, and normalized version
-- ranking fields: status rank, operator four-week emission, delegator four-week emission, estimated upcoming operator emission, estimated upcoming delegator emission, operator staking, delegator staking, total staking, delegator count, probability weight, QoS, GPU VRAM, delegation APR, and estimated next delegation APR values
+- ranking fields: status rank, operator four-week emission, delegator four-week emission, estimated upcoming operator emission, estimated upcoming delegator emission, effective operator staking, delegator staking, effective total staking, delegator count, probability weight, QoS, GPU VRAM, delegation APR, and estimated next delegation APR values
 - maintenance timestamps
 
 The status group MUST be `running` for all non-quit node statuses and `stopped` for quit nodes. `running` MUST have a lower status rank than `stopped`.
 
 Amount sort fields MUST be stored as database-native decimal values so list queries can order by indexed numeric columns without runtime string casts.
+
+`operator_staking` MUST store effective operator stake for Portal display and sorting. Effective operator stake is computed as `Effective Stake - Delegators Stake`, where `Effective Stake = Operator Stake + Delegated Stake + Locked Emission * 0.4 + Relay Account Balance`. `total_staking` MUST store Effective Stake.
 
 ## Snapshot Refresh
 
@@ -55,7 +57,7 @@ The hourly full refresh covers lower-frequency values such as vesting changes, Q
 
 `GET /v2/delegated_staking/nodes` MUST query snapshot rows first. Relay MUST apply the selected filters to snapshot columns, count matching rows, order by `status_rank ASC`, the selected sort metric descending, and `node_address ASC`, then apply pagination.
 
-After pagination, Relay MUST load only the corresponding `nodes` rows and build the existing node response for those page addresses.
+After pagination, Relay MUST load only the corresponding `nodes` rows and build the existing node response for those page addresses. Relay MUST copy the paginated snapshot's `operator_staking` and `delegator_staking` fields into the response so Portal displays the same values used by list sorting.
 
 Supported filters are:
 

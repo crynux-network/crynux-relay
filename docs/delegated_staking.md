@@ -53,7 +53,7 @@ Relay MUST store delegated staking in these places:
 | `user_staking_earnings` | Earnings of one delegation tuple `(user, node, network)` |
 | `user_earnings` | Total delegated staking earnings of one user |
 | `vesting_delegation_emission_details` | Issued delegation emission mapped back to `(user, node, network)` details |
-| `node_stakings` | Historical operator staking and delegated staking snapshots |
+| `node_stakings` | Historical effective operator staking and delegated staking snapshots |
 | `node_delegator_counts` | Historical delegator count snapshots |
 | `delegated_slash_jobs` | Durable node-level delegated slash progress |
 | `delegated_staking_slash_records` | Per-delegator slash outcome audit records |
@@ -253,9 +253,11 @@ Relay MUST expose delegated staking statistics through these APIs:
 - `GET /v1/stats/line_chart/delegator/:address/earnings`
 - `GET /v1/stats/line_chart/delegation/:user_address/:node_address/earnings`
 
+`GET /v1/stats/line_chart/node/:address/staking` MUST return `operator_stakings` as historical effective operator stake. Effective operator stake is computed as `Effective Stake - Delegators Stake`, where `Effective Stake = Operator Stake + Delegated Stake + Locked Emission * 0.4 + Relay Account Balance`. `delegator_stakings` MUST return the historical active delegated staking amount. `total_stakings` MUST equal effective operator stake plus delegated staking.
+
 The delegated-staking-only node APIs and statistics APIs MUST return `404` when `delegator_share = 0`.
 
-`GET /v2/delegated_staking/nodes` and `GET /v2/delegated_staking/nodes/:address` MUST include node-level delegated staking APR fields in each node response. `delegation_apr_12m` MUST be the simple annualized APR ratio, where `1.0` means 100% APR. `estimated_next_10k_delegation_apr`, `estimated_next_100k_delegation_apr`, and `estimated_next_1m_delegation_apr` MUST be estimated simple annualized APR ratios for the corresponding fixed new delegation amounts, where `1.0` means 100% APR. `apr_observation_days` MUST be the number of daily delegated staking snapshot rows used in the denominator. `delegation_apr_updated_at` MUST be the Unix timestamp for the APR snapshot refresh time. The delegated staking node list API MUST support `sort_by=delegation_apr_12m`, `sort_by=estimated_next_10k_delegation_apr`, `sort_by=estimated_next_100k_delegation_apr`, and `sort_by=estimated_next_1m_delegation_apr`.
+`GET /v2/delegated_staking/nodes` and `GET /v2/delegated_staking/nodes/:address` MUST include node-level delegated staking APR fields in each node response. `delegation_apr_12m` MUST be the simple annualized APR ratio, where `1.0` means 100% APR. `estimated_next_10k_delegation_apr`, `estimated_next_100k_delegation_apr`, and `estimated_next_1m_delegation_apr` MUST be estimated simple annualized APR ratios for the corresponding fixed new delegation amounts, where `1.0` means 100% APR. `apr_observation_days` MUST be the number of daily delegated staking snapshot rows used in the denominator. `delegation_apr_updated_at` MUST be the Unix timestamp for the APR snapshot refresh time. `relay_account_balance` MUST be the node address balance from the in-memory relay account cache. The delegated staking node list API MUST support `sort_by=delegation_apr_12m`, `sort_by=estimated_next_10k_delegation_apr`, `sort_by=estimated_next_100k_delegation_apr`, and `sort_by=estimated_next_1m_delegation_apr`.
 
 `GET /v1/delegator/:user_address/delegation` and `GET /v1/delegator/:user_address/delegations` MUST return user-visible delegation records with `status = active`, `status = inactive`, or `status = slashed`. They MUST include the delegation blockchain network and the node current blockchain network. Earnings lookup for these APIs MUST be keyed by `(node_address, network)`.
 

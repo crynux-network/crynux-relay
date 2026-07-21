@@ -50,7 +50,7 @@ Where:
 
 `staking_score.locked_emission_coefficient` is a required config value in `[0, 1]`. It scales only the locked vesting component; the scaled amount is rounded down to an integer wei value. The relay account balance component uses the node address balance from the in-memory relay account cache and is counted in full.
 
-Vesting and relay account balance contribute only to staking score and selection probability. Displayed staking token amounts MUST use operator stake plus delegated stake and MUST NOT include vesting amounts or relay account balance.
+Relay APIs that expose selection probability fields MAY expose this score stake as `staking` for effective-stake displays. Portal netstats MUST label that value as `Effective Stake` and present it as `Operator Stake + Delegated Stake + Locked Emission * 0.4 + Relay Account Balance`. Displayed raw staking token amounts MUST use operator stake plus delegated stake and MUST NOT include vesting amounts or relay account balance.
 
 ### QoS Score
 
