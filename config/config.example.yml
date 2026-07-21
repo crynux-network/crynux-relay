@@ -143,6 +143,7 @@ stats:
 withdraw:
   relay_wallet_address: ""
   withdrawal_fee_address: ""
+  max_withdrawals_per_day: 10
 credits:
   api_auth_address: ""
 dao:

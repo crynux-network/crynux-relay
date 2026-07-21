@@ -184,6 +184,7 @@ type AppConfig struct {
 		MinWithdrawalAmount  uint64 `mapstructure:"min_withdrawal_amount"`
 		WithdrawalFee        uint64 `mapstructure:"withdrawal_fee"`
 		WithdrawalFeeAddress string `mapstructure:"withdrawal_fee_address"`
+		MaxWithdrawalsPerDay uint64 `mapstructure:"max_withdrawals_per_day"`
 	} `mapstructure:"withdraw"`
 
 	Credits struct {

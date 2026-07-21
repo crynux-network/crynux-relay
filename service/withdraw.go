@@ -15,6 +15,7 @@ import (
 
 var ErrWithdrawRequestNotPending = errors.New("withdraw request is not pending")
 var ErrWithdrawRequestNotProcessedLocally = errors.New("withdraw request has not been processed locally")
+var ErrWithdrawDailyLimitExceeded = errors.New("daily withdrawal limit exceeded")
 
 // CalculateWithdrawalFee returns the withdrawal fee in wei for the given withdraw
 // amount: the network fixed fee plus a proportional fee. The proportional ratio is
@@ -67,6 +68,17 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 	totalAmount := big.NewInt(0).Add(amount, withdrawalFee)
 
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
+		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		var todayCount int64
+		if err := tx.Model(&models.WithdrawRecord{}).
+			Where("address = ? AND created_at >= ? AND status != ?", address, dayStart, models.WithdrawStatusFailed).
+			Count(&todayCount).Error; err != nil {
+			return err
+		}
+		if todayCount >= int64(appConfig.Withdraw.MaxWithdrawalsPerDay) {
+			return ErrWithdrawDailyLimitExceeded
+		}
 		if err := tx.Create(record).Error; err != nil {
 			return err
 		}
