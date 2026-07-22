@@ -21,6 +21,7 @@
 | [deposit-withdraw-only-networks.md](./deposit-withdraw-only-networks.md) | Deposit and withdrawal only network configuration, processing, BenefitAddress |
 | [task_fee_charge_and_settlement.md](./task_fee_charge_and_settlement.md) | Task fee charge, refund, settlement split, and rounding rules in relay account ledger |
 | [delegated_staking.md](./delegated_staking.md) | Delegation state sync, total-staking selection impact, income split, and delegated staking API surface |
+| [historical_and_estimated_delegation_apr.md](./historical_and_estimated_delegation_apr.md) | Historical delegation APR and estimated next delegation APR definitions, difference, and calculation |
 | [stakeable_node_list_filter_and_sorting.md](./stakeable_node_list_filter_and_sorting.md) | Snapshot-backed filtering and sorting for the Portal stakeable node list |
 | [delegated_staking_slash.md](./delegated_staking_slash.md) | Batched delegated slash ownership, pagination, audit, and recovery requirements |
 | [node-multi-chain-events.md](./node-multi-chain-events.md) | Node join network ownership, multi-chain blockchain processor guards, and join-time staking state rebuild |

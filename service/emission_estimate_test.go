@@ -126,6 +126,60 @@ func TestRefreshCurrentEmissionEstimateSnapshotAggregatesCurrentWeek(t *testing.
 	}
 }
 
+func TestGetNodeDelegationWeeklyTaskFeeEstimateScalesByElapsedWeekTime(t *testing.T) {
+	db := setupEmissionEstimateTestDB(t)
+	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	currentWeekDay := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
+
+	if err := db.Create(&models.NodeEarning{
+		NodeAddress:      "0xnode-a",
+		OperatorEarning:  models.BigInt{Int: *big.NewInt(20)},
+		DelegatorEarning: models.BigInt{Int: *big.NewInt(30)},
+		Time:             sqlNullTime(currentWeekDay),
+	}).Error; err != nil {
+		t.Fatalf("create node earning: %v", err)
+	}
+
+	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("refresh estimate snapshot: %v", err)
+	}
+
+	// Week start is Jan 8, elapsed 2.5 days: 30 * 7 / 2.5 = 84.
+	got := GetNodeDelegationWeeklyTaskFeeEstimate("0xnode-a")
+	if got.Cmp(big.NewInt(84)) != 0 {
+		t.Fatalf("expected 84, got %s", got)
+	}
+
+	missing := GetNodeDelegationWeeklyTaskFeeEstimate("0xnode-missing")
+	if missing.Sign() != 0 {
+		t.Fatalf("expected zero for missing node, got %s", missing)
+	}
+}
+
+func TestGetNodeDelegationWeeklyTaskFeeEstimateClampsMinimumElapsed(t *testing.T) {
+	db := setupEmissionEstimateTestDB(t)
+	now := time.Date(2026, 1, 8, 1, 0, 0, 0, time.UTC)
+
+	if err := db.Create(&models.NodeEarning{
+		NodeAddress:      "0xnode-a",
+		OperatorEarning:  models.BigInt{Int: *big.NewInt(20)},
+		DelegatorEarning: models.BigInt{Int: *big.NewInt(30)},
+		Time:             sqlNullTime(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
+	}).Error; err != nil {
+		t.Fatalf("create node earning: %v", err)
+	}
+
+	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("refresh estimate snapshot: %v", err)
+	}
+
+	// Elapsed 1 hour is clamped to 1 day: 30 * 7 / 1 = 210.
+	got := GetNodeDelegationWeeklyTaskFeeEstimate("0xnode-a")
+	if got.Cmp(big.NewInt(210)) != 0 {
+		t.Fatalf("expected 210, got %s", got)
+	}
+}
+
 func TestRefreshCurrentEmissionEstimateSnapshotReturnsZeroWithNoTaskFee(t *testing.T) {
 	db := setupEmissionEstimateTestDB(t)
 	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)

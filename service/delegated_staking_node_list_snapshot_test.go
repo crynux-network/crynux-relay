@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/models"
+	"crynux_relay/utils"
 	"database/sql"
 	"math"
 	"math/big"
@@ -252,30 +253,31 @@ func TestCalculateNodeDelegationAPR12mReturnsZeroForZeroDenominator(t *testing.T
 }
 
 func TestCalculateEstimatedNextDelegationAPRUsesPoolAfterDelegation(t *testing.T) {
-	input := &delegationAPRInput{
-		TotalDelegatorEarning:  big.NewInt(100),
-		TotalDelegatorEmission: big.NewInt(0),
-		ObservationDays:        10,
-	}
-
-	got := calculateEstimatedNextDelegationAPR(input, big.NewInt(100), big.NewInt(100), 0.5, 0.5)
-	expected := 18.25
+	got := calculateEstimatedNextDelegationAPR(big.NewInt(140), big.NewInt(100), big.NewInt(100), 0.5, 0.5)
+	expected := 36.5
 	if math.Abs(got-expected) > 0.000001 {
 		t.Fatalf("expected %f, got %f", expected, got)
 	}
 }
 
 func TestCalculateEstimatedNextDelegationAPRAppliesWeightShareMultiplier(t *testing.T) {
-	input := &delegationAPRInput{
-		TotalDelegatorEarning:  big.NewInt(100),
-		TotalDelegatorEmission: big.NewInt(0),
-		ObservationDays:        10,
-	}
-
-	got := calculateEstimatedNextDelegationAPR(input, big.NewInt(100), big.NewInt(100), 0.25, 0.5)
-	expected := 36.5
+	got := calculateEstimatedNextDelegationAPR(big.NewInt(140), big.NewInt(100), big.NewInt(100), 0.25, 0.5)
+	expected := 73.0
 	if math.Abs(got-expected) > 0.000001 {
 		t.Fatalf("expected %f, got %f", expected, got)
+	}
+}
+
+func TestProjectedWeeklyDelegatorIncomeConvertsEmissionToWei(t *testing.T) {
+	got := projectedWeeklyDelegatorIncome(big.NewInt(2), big.NewInt(500))
+	expected := big.NewInt(0).Add(utils.EtherToWei(big.NewInt(2)), big.NewInt(500))
+	if got.Cmp(expected) != 0 {
+		t.Fatalf("expected %s, got %s", expected, got)
+	}
+
+	zero := projectedWeeklyDelegatorIncome(nil, nil)
+	if zero.Sign() != 0 {
+		t.Fatalf("expected zero income, got %s", zero)
 	}
 }
 
@@ -320,40 +322,23 @@ func TestDelegationAPRProjectionContextHandlesProjectedMaxStakingChange(t *testi
 }
 
 func TestCalculateEstimatedNextDelegationAPRReturnsZeroForMissingInputs(t *testing.T) {
-	validInput := &delegationAPRInput{
-		TotalDelegatorEarning:  big.NewInt(100),
-		TotalDelegatorEmission: big.NewInt(0),
-		ObservationDays:        10,
-	}
-	zeroIncomeInput := &delegationAPRInput{
-		TotalDelegatorEarning:  big.NewInt(0),
-		TotalDelegatorEmission: big.NewInt(0),
-		ObservationDays:        10,
-	}
-	zeroObservationInput := &delegationAPRInput{
-		TotalDelegatorEarning:  big.NewInt(100),
-		TotalDelegatorEmission: big.NewInt(0),
-		ObservationDays:        0,
-	}
-
 	cases := []struct {
 		name      string
-		input     *delegationAPRInput
+		income    *big.Int
 		amount    *big.Int
 		current   float64
 		projected float64
 	}{
-		{name: "nil input", input: nil, amount: big.NewInt(100), current: 0.5, projected: 0.5},
-		{name: "zero income", input: zeroIncomeInput, amount: big.NewInt(100), current: 0.5, projected: 0.5},
-		{name: "zero observation days", input: zeroObservationInput, amount: big.NewInt(100), current: 0.5, projected: 0.5},
-		{name: "zero amount", input: validInput, amount: big.NewInt(0), current: 0.5, projected: 0.5},
-		{name: "zero current share", input: validInput, amount: big.NewInt(100), current: 0, projected: 0.5},
-		{name: "zero projected share", input: validInput, amount: big.NewInt(100), current: 0.5, projected: 0},
+		{name: "nil income", income: nil, amount: big.NewInt(100), current: 0.5, projected: 0.5},
+		{name: "zero income", income: big.NewInt(0), amount: big.NewInt(100), current: 0.5, projected: 0.5},
+		{name: "zero amount", income: big.NewInt(140), amount: big.NewInt(0), current: 0.5, projected: 0.5},
+		{name: "zero current share", income: big.NewInt(140), amount: big.NewInt(100), current: 0, projected: 0.5},
+		{name: "zero projected share", income: big.NewInt(140), amount: big.NewInt(100), current: 0.5, projected: 0},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := calculateEstimatedNextDelegationAPR(tc.input, big.NewInt(100), tc.amount, tc.current, tc.projected)
+			got := calculateEstimatedNextDelegationAPR(tc.income, big.NewInt(100), tc.amount, tc.current, tc.projected)
 			if got != 0 {
 				t.Fatalf("expected zero APR, got %f", got)
 			}
