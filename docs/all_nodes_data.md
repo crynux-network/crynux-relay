@@ -15,6 +15,7 @@ The `nodes` table remains the source of truth for node lifecycle, scheduling sta
 Each `network_node_data` row SHALL keep the node address and public display fields:
 
 - `address`: node address.
+- `network`: the last blockchain network recorded when the node joined.
 - `card_model`: GPU model name last recorded for public display.
 - `v_ram`: GPU VRAM last recorded for public display.
 - `qo_s`: current QoS score for active nodes or the last known QoS score for quit nodes.
@@ -24,9 +25,9 @@ Each `network_node_data` row SHALL keep the node address and public display fiel
 
 ## Join Behavior
 
-When a node joins Relay, Relay MUST upsert the `network_node_data` row by `address`. The upsert MUST write the node's public display fields from the join request and current Relay-derived state.
+When a node joins Relay, Relay MUST upsert the `network_node_data` row by `address`. The upsert MUST write the node's blockchain network, public display fields from the join request, and current Relay-derived state.
 
-If the address has joined before, the new join MUST update the existing row instead of creating a duplicate row. The row's historical identity MUST remain associated with the same node address.
+If the address has joined before, the new join MUST update the existing row instead of creating a duplicate row. The row's historical identity MUST remain associated with the same node address, and `network` MUST reflect the node's most recent join network.
 
 ## Quit Retention
 

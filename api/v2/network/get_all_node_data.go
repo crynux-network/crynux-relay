@@ -17,6 +17,7 @@ type GetAllNodesDataParams struct {
 
 type NetworkNodeData struct {
 	Address      string  `json:"address"`
+	Network      string  `json:"network"`
 	CardModel    string  `json:"card_model"`
 	VRam         int     `json:"v_ram"`
 	Staking      string  `json:"staking"`
@@ -69,6 +70,7 @@ func GetAllNodeData(c *gin.Context, in *GetAllNodesDataParams) (*GetAllNodesData
 		}
 		data = append(data, NetworkNodeData{
 			Address:      node.Address,
+			Network:      node.Network,
 			CardModel:    node.CardModel,
 			VRam:         node.VRam,
 			Staking:      node.Staking.String(),
