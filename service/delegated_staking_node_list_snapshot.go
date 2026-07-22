@@ -114,11 +114,10 @@ func buildDelegatedStakingNodeListSnapshot(ctx context.Context, db *gorm.DB, nod
 		if err != nil {
 			return nil, err
 		}
-		delegationAPR12m, aprObservationDays = calculateDelegationAPR(aprInput)
-	} else {
-		delegationAPR12m, aprObservationDays = calculateDelegationAPR(aprInput)
 	}
-	estimatedNextAPRs := calculateEstimatedNextDelegationAPRs(node.Address, delegatorStaking, aprInput, projectionContext)
+	delegationAPR12m, aprObservationDays = calculateDelegationAPR(aprInput)
+	weeklyDelegatorIncome := projectedWeeklyDelegatorIncome(delegatorEmissionEstimate.EstimatedEmission, GetNodeDelegationWeeklyTaskFeeEstimate(node.Address))
+	estimatedNextAPRs := calculateEstimatedNextDelegationAPRs(node.Address, delegatorStaking, weeklyDelegatorIncome, projectionContext)
 
 	return &models.DelegatedStakingNodeListSnapshot{
 		NodeAddress:                        node.Address,
@@ -237,32 +236,38 @@ func estimatedNextDelegationAPRAmounts() []estimatedNextDelegationAPRAmount {
 	}
 }
 
-func calculateEstimatedNextDelegationAPRs(nodeAddress string, currentDelegatorStaking *big.Int, aprInput *delegationAPRInput, projectionContext *delegationAPRProjectionContext) [3]float64 {
+func projectedWeeklyDelegatorIncome(estimatedDelegatorEmissionCNX, currentWeekDelegatorTaskFee *big.Int) *big.Int {
+	income := big.NewInt(0)
+	if estimatedDelegatorEmissionCNX != nil && estimatedDelegatorEmissionCNX.Sign() > 0 {
+		income.Add(income, utils.EtherToWei(estimatedDelegatorEmissionCNX))
+	}
+	if currentWeekDelegatorTaskFee != nil && currentWeekDelegatorTaskFee.Sign() > 0 {
+		income.Add(income, currentWeekDelegatorTaskFee)
+	}
+	return income
+}
+
+func calculateEstimatedNextDelegationAPRs(nodeAddress string, currentDelegatorStaking, weeklyDelegatorIncome *big.Int, projectionContext *delegationAPRProjectionContext) [3]float64 {
 	var res [3]float64
-	if aprInput == nil || projectionContext == nil {
+	if projectionContext == nil {
 		return res
 	}
 
 	amounts := estimatedNextDelegationAPRAmounts()
 	for i, amount := range amounts {
 		currentShare, projectedShare := projectionContext.projectedNodeWeightShare(nodeAddress, amount.amount)
-		res[i] = calculateEstimatedNextDelegationAPR(aprInput, currentDelegatorStaking, amount.amount, currentShare, projectedShare)
+		res[i] = calculateEstimatedNextDelegationAPR(weeklyDelegatorIncome, currentDelegatorStaking, amount.amount, currentShare, projectedShare)
 	}
 	return res
 }
 
-func calculateEstimatedNextDelegationAPR(aprInput *delegationAPRInput, currentDelegatorStaking, newDelegationAmount *big.Int, currentNodeWeightShare, projectedNodeWeightShare float64) float64 {
-	if aprInput == nil ||
-		aprInput.ObservationDays == 0 ||
+func calculateEstimatedNextDelegationAPR(weeklyDelegatorIncome, currentDelegatorStaking, newDelegationAmount *big.Int, currentNodeWeightShare, projectedNodeWeightShare float64) float64 {
+	if weeklyDelegatorIncome == nil ||
+		weeklyDelegatorIncome.Sign() <= 0 ||
 		newDelegationAmount == nil ||
 		newDelegationAmount.Sign() <= 0 ||
 		currentNodeWeightShare == 0 ||
 		projectedNodeWeightShare == 0 {
-		return 0
-	}
-
-	totalDelegatorIncome := big.NewInt(0).Add(aprInput.TotalDelegatorEarning, aprInput.TotalDelegatorEmission)
-	if totalDelegatorIncome.Sign() == 0 {
 		return 0
 	}
 
@@ -275,9 +280,8 @@ func calculateEstimatedNextDelegationAPR(aprInput *delegationAPRInput, currentDe
 		return 0
 	}
 
-	apr := new(big.Rat).SetInt(totalDelegatorIncome)
-	apr.Mul(apr, big.NewRat(365, 1))
-	apr.Quo(apr, big.NewRat(int64(aprInput.ObservationDays), 1))
+	apr := new(big.Rat).SetInt(weeklyDelegatorIncome)
+	apr.Mul(apr, big.NewRat(365, 7))
 	apr.Quo(apr, new(big.Rat).SetInt(poolAfterDelegation))
 	aprFloat, _ := apr.Float64()
 	return aprFloat * projectedNodeWeightShare / currentNodeWeightShare

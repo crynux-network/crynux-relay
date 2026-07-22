@@ -147,6 +147,33 @@ func GetNodeDelegationEmissionEstimate(nodeAddress string) EmissionEstimateResul
 	})
 }
 
+const weeklyTaskFeeMinElapsed = 24 * time.Hour
+const weeklyTaskFeeMaxElapsed = 7 * 24 * time.Hour
+
+// Scales the partial-week accumulated delegator task fee to a full-week
+// equivalent by the elapsed time within the current emission week.
+func GetNodeDelegationWeeklyTaskFeeEstimate(nodeAddress string) *big.Int {
+	currentEmissionEstimateSnapshotMutex.RLock()
+	defer currentEmissionEstimateSnapshotMutex.RUnlock()
+
+	snapshot := globalCurrentEmissionEstimateSnapshot
+	taskFee := snapshot.delegationTaskFeeByNode[nodeAddress]
+	if taskFee == nil || taskFee.Sign() <= 0 {
+		return big.NewInt(0)
+	}
+
+	elapsed := snapshot.updatedAt.Sub(snapshot.emissionWeekStart)
+	if elapsed < weeklyTaskFeeMinElapsed {
+		elapsed = weeklyTaskFeeMinElapsed
+	}
+	if elapsed > weeklyTaskFeeMaxElapsed {
+		elapsed = weeklyTaskFeeMaxElapsed
+	}
+
+	scaled := big.NewInt(0).Mul(taskFee, big.NewInt(int64(weeklyTaskFeeMaxElapsed/time.Second)))
+	return scaled.Div(scaled, big.NewInt(int64(elapsed/time.Second)))
+}
+
 func GetUserDelegationEmissionEstimate(userAddress string) EmissionEstimateResult {
 	return estimateFromSnapshot(func(snapshot *currentEmissionEstimateSnapshot) *big.Int {
 		return snapshot.delegationTaskFeeByUser[userAddress]
