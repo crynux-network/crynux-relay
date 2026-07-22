@@ -14,10 +14,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type GetNodeIncentiveParams struct {
-	Period TimeUnit `query:"period" validate:"required" enum:"Day,Week,Month"`
-	Size   int      `query:"size" default:"30"`
-}
+const topNodeIncentiveSize = 10
+
+type GetNodeIncentiveParams struct{}
 
 type NodeIncentive struct {
 	NodeAddress       string  `json:"node_address"`
@@ -45,26 +44,9 @@ type GetNodeIncentiveOutput struct {
 func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIncentiveOutput, error) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
-	size := input.Size
-	if size == 0 {
-		size = 30
-	}
-	var start, end time.Time
 	now := time.Now().UTC()
-	switch input.Period {
-	case UnitDay:
-		duration := 24 * time.Hour
-		end = now
-		start = end.Add(-duration)
-	case UnitWeek:
-		duration := 7 * 24 * time.Hour
-		end = now
-		start = end.Add(-duration)
-	default:
-		year, month, _ := time.Now().UTC().Date()
-		start = time.Date(year, month-1, 1, 0, 0, 0, 0, time.UTC)
-		end = time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
-	}
+	end := now
+	start := end.Add(-24 * time.Hour)
 
 	rows, err := config.GetDB().WithContext(ctx).Model(&models.NodeIncentive{}).
 		Select("node_address, SUM(incentive) as incentive, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count").
@@ -73,7 +55,7 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 		Group("node_address").
 		Order("incentive DESC").
 		Offset(0).
-		Limit(size).
+		Limit(topNodeIncentiveSize).
 		Rows()
 
 	if err != nil {

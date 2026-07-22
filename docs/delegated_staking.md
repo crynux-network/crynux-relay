@@ -197,6 +197,8 @@ Relay MUST also maintain historical snapshots for:
 
 Relay MUST calculate the node-level historical delegation APR and estimated next delegation APR values as specified in [historical_and_estimated_delegation_apr.md](./historical_and_estimated_delegation_apr.md). The historical delegation APR (`delegation_apr_12m`) uses realized delegator income over the APR observation window. The estimated next delegation APR values (`estimated_next_10k_delegation_apr`, `estimated_next_100k_delegation_apr`, and `estimated_next_1m_delegation_apr`) use the current emission week projected delegator income.
 
+Relay MUST maintain a pre-aggregated delegation task fee leaderboard in `delegation_task_fee_leaderboard_snapshots`. A background task MUST rebuild the leaderboard at startup and every 5 minutes from the current UTC-day `user_staking_earnings` daily rows, joining non-slashed `delegations` for the staking amount and `delegated_staking_node_list_snapshots` for the node-level historical delegation APR, ordering by task fee descending with address-based tie-breaking, and storing at most 10 ranked rows in one replacing transaction. `GET /v2/incentive/delegations` MUST read only this snapshot table, MUST return rows in rank order, and MUST NOT accept period, size, or pagination query parameters. The specification of this endpoint is in [portal_netstats_chart.md](./portal_netstats_chart.md).
+
 Relay MUST refresh both APR families in `delegated_staking_node_list_snapshots` as part of the delegated staking node list snapshot rebuild. The snapshot MUST store the historical delegation APR, the estimated next delegation APR values, the number of staking snapshot days used as the historical delegation APR denominator observation count, and the APR refresh time. Stakeable node list APIs MUST use the snapshot fields for filtering, sorting, pagination, and response data and MUST NOT aggregate `delegations`, `node_stakings`, `node_earnings`, or `user_staking_earnings` during list requests.
 
 ## API Requirements
@@ -211,6 +213,7 @@ Relay MUST expose delegated staking through these public APIs:
 | `GET /v2/delegated_staking/nodes` | Delegated staking node list |
 | `GET /v2/delegated_staking/nodes/:address` | Delegated staking node details |
 | `GET /v2/delegated_staking/nodes/:address/delegations` | Delegation list for one delegated staking node and network |
+| `GET /v2/incentive/delegations` | Current UTC-day top 10 delegations by task fee |
 | `GET /v2/admin/delegated_slash/audits` | Authenticated paginated delegated slash audit lookup |
 | `GET /v1/client/:address/income/stats` | Split of operator income and delegated staking income for one client |
 
