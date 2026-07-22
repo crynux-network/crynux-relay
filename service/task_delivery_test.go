@@ -25,6 +25,8 @@ func initDeliveryTestConfig(t *testing.T) {
 		"  max_body_bytes: 33554432\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
+		"network_flops:\n" +
+		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
 		taskPricingMatchingTestConfigYAML +

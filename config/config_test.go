@@ -76,6 +76,8 @@ mac:
   secret_key_file: %q
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+network_flops:
+  gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
 task_pricing:
@@ -99,6 +101,8 @@ qos:
   tracing_max_task_events: 50
 staking_score:
   locked_emission_coefficient: 1.0
+withdraw:
+  max_withdrawals_per_day: 10
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 
@@ -178,6 +182,8 @@ mac:
   secret_key_file: %q
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+network_flops:
+  gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
 task_pricing:
@@ -204,6 +210,72 @@ staking_score:
 
 	if err := InitConfig(dir); err == nil {
 		t.Fatal("expected missing qos.tracing_max_task_events to fail config initialization")
+	}
+}
+
+func TestInitConfigRequiresNetworkFLOPSFile(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := t.TempDir()
+	privateKey := "0440cb8b2962699e5ce6835170ba86a085d67477e5581e398674a59feb8e7b9c"
+	privateKeyFile := filepath.Join(dir, "private_key")
+	jwtKeyFile := filepath.Join(dir, "jwt_key")
+	macKeyFile := filepath.Join(dir, "mac_key")
+
+	writeTestFile(t, privateKeyFile, "0x"+privateKey)
+	writeTestFile(t, jwtKeyFile, "jwt-secret")
+	writeTestFile(t, macKeyFile, "mac-secret")
+
+	content := fmt.Sprintf(`environment: debug
+blockchains:
+  testnet:
+    rps: 1
+    rpc_endpoint: "http://localhost:8545"
+    account:
+      address: %q
+      private_key_file: %q
+    contracts:
+      benefit_address: "0x0000000000000000000000000000000000000001"
+      node_staking: "0x0000000000000000000000000000000000000002"
+      credits: "0x0000000000000000000000000000000000000003"
+http:
+  max_body_bytes: 33554432
+  jwt:
+    secret_key_file: %q
+mac:
+  secret_key_file: %q
+stats:
+  init_start_time: "2026-01-01T00:00:00Z"
+task:
+  passive_slash_mode: true
+task_pricing:
+  overhead_seconds: 30
+  initial_seconds_per_sd_unit: 10
+  initial_seconds_per_llm_token: 0.1
+  calibration_alpha: 0.1
+  default_llm_max_new_tokens: 256
+  base_vram: 8
+task_matching:
+  batch_size: 100
+  tick_interval_seconds: 2
+model_distribution:
+  controller_interval_seconds: 60
+  demand_window_seconds: 1800
+  safety_factor: 2.0
+  min_nodes: 1
+  max_nodes: 10
+  download_timeout_seconds: 1800
+qos:
+  tracing_max_task_events: 50
+staking_score:
+  locked_emission_coefficient: 1.0
+`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
+	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
+
+	if err := InitConfig(dir); err == nil {
+		t.Fatal("expected missing network_flops.gpu_flops_file to fail config initialization")
 	}
 }
 
@@ -243,6 +315,8 @@ mac:
   secret_key_file: %q
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+network_flops:
+  gpu_flops_file: "config/gpu_flops.json"
 task_pricing:
   overhead_seconds: 30
   initial_seconds_per_sd_unit: 10
@@ -264,6 +338,8 @@ qos:
   tracing_max_task_events: 50
 staking_score:
   locked_emission_coefficient: 1.0
+withdraw:
+  max_withdrawals_per_day: 10
 %s`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile), taskConfig)
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 	return dir

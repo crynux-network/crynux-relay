@@ -27,6 +27,7 @@
 | [node-multi-chain-events.md](./node-multi-chain-events.md) | Node join network ownership, multi-chain blockchain processor guards, and join-time staking state rebuild |
 | [relay_account_event_cache_flow.md](./relay_account_event_cache_flow.md) | End-to-end relay account flow from event creation to in-memory cache mutation and DB projection for task and withdraw paths |
 | [portal_netstats_chart.md](./portal_netstats_chart.md) | Portal netstats chart inventory, data sources, and aggregation logic |
+| [network_flops.md](./network_flops.md) | Network FLOPS configuration, background aggregation, API response path, GPU matching, and VRAM estimation |
 | [emission.md](./emission.md) | Emission week boundaries, task fee allocation, vesting creation and release, and chart aggregation |
 | [emission_estimation.md](./emission_estimation.md) | Current-week estimated upcoming emission calculation, snapshot refresh, and API exposure |
 | [monitoring.md](./monitoring.md) | Prometheus metric definitions, task delivery and node last-seen tracking, and the AWS AMP/AMG deployment runbook |

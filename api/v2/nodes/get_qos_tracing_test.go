@@ -30,6 +30,8 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"    expires_in: 3600\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
+		"network_flops:\n" +
+		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
 		"task_pricing:\n" +
@@ -52,7 +54,9 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"staking_score:\n" +
 		"  locked_emission_coefficient: 1.0\n" +
 		"qos:\n" +
-		"  tracing_max_task_events: 3\n"
+		"  tracing_max_task_events: 3\n" +
+		"withdraw:\n" +
+		"  max_withdrawals_per_day: 10\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}

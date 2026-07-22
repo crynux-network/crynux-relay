@@ -134,6 +134,8 @@ task_schema:
   stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-finetune-lora-task.json"
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+network_flops:
+  gpu_flops_file: "config/gpu_flops.json"
 withdraw:
   relay_wallet_address: ""
   withdrawal_fee_address: ""

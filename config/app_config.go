@@ -56,11 +56,11 @@ type DepositWithdrawNetworkContractsConfig struct {
 }
 
 type DepositWithdrawNetworkConfig struct {
-	RPS           uint64                                `mapstructure:"rps"`
-	RpcEndpoint   string                                `mapstructure:"rpc_endpoint"`
-	StartBlockNum uint64                                `mapstructure:"start_block_num"`
-	ChainID       uint64                                `mapstructure:"chain_id"`
-	Contracts     DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
+	RPS                uint64                                `mapstructure:"rps"`
+	RpcEndpoint        string                                `mapstructure:"rpc_endpoint"`
+	StartBlockNum      uint64                                `mapstructure:"start_block_num"`
+	ChainID            uint64                                `mapstructure:"chain_id"`
+	Contracts          DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
 	LogBlockRange      uint64                                `mapstructure:"log_block_range"`
 	WithdrawalFee      uint64                                `mapstructure:"withdrawal_fee"`
 	WithdrawalMin      uint64                                `mapstructure:"withdrawal_min"`
@@ -178,6 +178,10 @@ type AppConfig struct {
 	Stats struct {
 		InitStartTime string `mapstructure:"init_start_time"`
 	} `mapstructure:"stats"`
+
+	NetworkFLOPS struct {
+		GPUFLOPSFile string `mapstructure:"gpu_flops_file"`
+	} `mapstructure:"network_flops"`
 
 	Withdraw struct {
 		RelayWalletAddress   string `mapstructure:"relay_wallet_address"`

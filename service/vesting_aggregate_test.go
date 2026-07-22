@@ -68,6 +68,8 @@ mac:
   secret_key_file: %q
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+network_flops:
+  gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
 task_pricing:
@@ -91,6 +93,8 @@ qos:
   tracing_max_task_events: 50
 staking_score:
   locked_emission_coefficient: 1.0
+withdraw:
+  max_withdrawals_per_day: 10
 `, vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(macKeyFile))
 	writeVestingAggregateTestFile(t, filepath.Join(dir, "config.yml"), content)
 
