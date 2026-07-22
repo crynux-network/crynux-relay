@@ -46,6 +46,7 @@ type NetworkNodeData struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	Address         string       `json:"address" gorm:"index"`
+	Network         string       `json:"network" gorm:"type:string;size:64;not null;default:'';index"`
 	CardModel       string       `json:"card_model"`
 	VRam            int          `json:"v_ram"`
 	QoS             float64      `json:"qos"`
