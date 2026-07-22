@@ -14,6 +14,7 @@ type DelegationIncentive struct {
 	DelegatorAddress string  `json:"delegator_address"`
 	NodeAddress      string  `json:"node_address"`
 	Network          string  `json:"network"`
+	GPUName          string  `json:"gpu_name"`
 	StakingAmount    string  `json:"staking_amount"`
 	TaskFee          string  `json:"task_fee"`
 	DelegationApr12m float64 `json:"delegation_apr_12m"`
@@ -39,6 +40,7 @@ func GetDelegationIncentive(c *gin.Context, input *GetDelegationIncentiveParams)
 			DelegatorAddress: snapshot.DelegatorAddress,
 			NodeAddress:      snapshot.NodeAddress,
 			Network:          snapshot.Network,
+			GPUName:          snapshot.GPUName,
 			StakingAmount:    snapshot.StakingAmount.String(),
 			TaskFee:          snapshot.TaskFee.String(),
 			DelegationApr12m: snapshot.DelegationApr12m,

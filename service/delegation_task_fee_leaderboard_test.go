@@ -78,6 +78,7 @@ func TestRebuildDelegationTaskFeeLeaderboardSortsByTaskFeeAndJoinsStakingAndAPR(
 	if err := db.Create(&models.DelegatedStakingNodeListSnapshot{
 		NodeAddress:            "0xnode-b",
 		StatusGroup:            "running",
+		GPUName:                "RTX 4090",
 		DelegationApr12m:       0.42,
 		DelegationAprUpdatedAt: day,
 	}).Error; err != nil {
@@ -112,8 +113,14 @@ func TestRebuildDelegationTaskFeeLeaderboardSortsByTaskFeeAndJoinsStakingAndAPR(
 	if snapshots[0].Network != "base" {
 		t.Fatalf("unexpected network %s", snapshots[0].Network)
 	}
+	if snapshots[0].GPUName != "RTX 4090" {
+		t.Fatalf("unexpected GPU name %s", snapshots[0].GPUName)
+	}
 	if snapshots[0].DelegationApr12m != 0.42 {
 		t.Fatalf("unexpected APR %f", snapshots[0].DelegationApr12m)
+	}
+	if snapshots[1].GPUName != "" {
+		t.Fatalf("expected empty GPU name for node without snapshot, got %s", snapshots[1].GPUName)
 	}
 	if snapshots[1].DelegationApr12m != 0 {
 		t.Fatalf("expected zero APR for node without snapshot, got %f", snapshots[1].DelegationApr12m)
