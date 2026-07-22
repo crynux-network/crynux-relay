@@ -15,7 +15,6 @@ type delegationTaskFeeLeaderboardSnapshotForM20260722 struct {
 	DelegatorAddress string  `gorm:"type:string;size:191;not null"`
 	NodeAddress      string  `gorm:"type:string;size:191;not null"`
 	Network          string  `gorm:"type:string;size:64;not null"`
-	GPUName          string  `gorm:"type:string;size:191;not null;default:''"`
 	StakingAmount    string  `gorm:"type:decimal(65,0);not null;default:0"`
 	TaskFee          string  `gorm:"type:decimal(65,0);not null;default:0"`
 	DelegationApr12m float64 `gorm:"column:delegation_apr_12m;not null;default:0"`
