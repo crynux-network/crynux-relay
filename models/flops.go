@@ -1,111 +1,196 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+)
+
+var gpuCountPrefixRegexp = regexp.MustCompile(`^(\d+)x\s+`)
 
 type NetworkFLOPS struct {
 	gorm.Model
 	GFLOPS float64 `json:"gflops"`
 }
 
-var gpuGFLOPSMap map[string]float64 = map[string]float64{
-	"NVIDIA GeForce GTX 1050 Ti":                2138.1,
-	"NVIDIA GeForce GTX 1060":                   4375.0,
-	"NVIDIA GeForce GTX 1070":                   6462.7,
-	"NVIDIA GeForce GTX 1070 Ti":                8186.1,
-	"NVIDIA GeForce GTX 1080":                   8872.9,
-	"NVIDIA GeForce GTX 1080 Ti":                11339.7,
-	"NVIDIA TITAN X Pascal":                     10974.2,
-	"NVIDIA TITAN Xp":                           12149.7,
-	"NVIDIA TITAN V":                            14899.2,
-	"NVIDIA GeForce GTX 1650":                   2849.28,
-	"NVIDIA GeForce GTX 1650 Super":             4416.00,
-	"NVIDIA GeForce GTX 1660":                   5027.00,
-	"NVIDIA GeForce GTX 1660 Super":             5027.00,
-	"NVIDIA GeForce GTX 1660 Ti":                5437.44,
-	"NVIDIA GeForce RTX 2060":                   6451.20,
-	"NVIDIA GeForce RTX 2060 Super":             7180.00,
-	"NVIDIA GeForce RTX 2070":                   7464.96,
-	"NVIDIA GeForce RTX 2070 Super":             9060.00,
-	"NVIDIA GeForce RTX 2080":                   10068.48,
-	"NVIDIA GeForce RTX 2080 Super":             11150.00,
-	"NVIDIA GeForce RTX 2080 Ti":                13447.68,
-	"NVIDIA TITAN RTX":                          16312.32,
-	"NVIDIA GeForce RTX 3050":                   9.01 * 1024,
-	"NVIDIA GeForce RTX 3060":                   12.74 * 1024,
-	"NVIDIA GeForce RTX 3060 Ti":                16.20 * 1024,
-	"NVIDIA GeForce RTX 3070":                   20.31 * 1024,
-	"NVIDIA GeForce RTX 3070 Ti":                21.75 * 1024,
-	"NVIDIA GeForce RTX 3080":                   30.6 * 1024,
-	"NVIDIA GeForce RTX 3080 Ti":                34.1 * 1024,
-	"NVIDIA GeForce RTX 3090":                   35.58 * 1024,
-	"NVIDIA GeForce RTX 3090 Ti":                40 * 1024,
-	"NVIDIA GeForce RTX 4060":                   15.1 * 1024,
-	"NVIDIA GeForce RTX 4060 Ti":                22.1 * 1024,
-	"NVIDIA GeForce RTX 4070":                   29.1 * 1024,
-	"NVIDIA GeForce RTX 4070 Super":             35.48 * 1024,
-	"NVIDIA GeForce RTX 4070 Ti":                40.1 * 1024,
-	"NVIDIA GeForce RTX 4070 Ti Super":          44.10 * 1024,
-	"NVIDIA GeForce RTX 4080":                   48.7 * 1024,
-	"NVIDIA GeForce RTX 4080 Super":             52.22 * 1024,
-	"NVIDIA GeForce RTX 4090 D":                 73.5 * 1024,
-	"NVIDIA GeForce RTX 4090":                   82.6 * 1024,
-	"NVIDIA RTX A4000":                          19170,
-	"NVIDIA RTX A4500":                          23655.91,
-	"NVIDIA RTX A5000":                          27772.65,
-	"NVIDIA RTX A5500":                          34101.38,
-	"NVIDIA RTX A6000":                          38709.67,
-	"NVIDIA RTX 4000 Ada":                       26730,
-	"NVIDIA RTX 4500 Ada":                       39630,
-	"NVIDIA RTX 5000 Ada":                       65280,
-	"NVIDIA RTX 5880 Ada":                       69272,
-	"NVIDIA RTX 6000 Ada":                       91060,
-	"NVIDIA A2":                                 4531,
-	"NVIDIA A10":                                31240,
-	"NVIDIA A16":                                4608,
-	"NVIDIA A30":                                10320,
-	"NVIDIA A40":                                37420,
-	"NVIDIA A100":                               19500,
-	"NVIDIA H100":                               51200,
-	"NVIDIA L40":                                90516,
-	"NVIDIA L4":                                 30300,
-	"NVIDIA GeForce RTX 2060 Laptop GPU":        4608,
-	"NVIDIA GeForce RTX 2070 Laptop GPU":        6636,
-	"NVIDIA GeForce RTX 2070 Super Laptop GPU":  7066,
-	"NVIDIA GeForce RTX 2080 Laptop GPU":        9362,
-	"NVIDIA GeForce RTX 2080 Super Laptop GPU":  9585,
-	"NVIDIA GeForce RTX 3050 Laptop GPU":        7.13 * 1024,
-	"NVIDIA GeForce RTX 3060 Laptop GPU":        13.07 * 1024,
-	"NVIDIA GeForce RTX 3070 Laptop GPU":        16.59 * 1024,
-	"NVIDIA GeForce RTX 3070 Ti Laptop GPU":     17.49 * 1024,
-	"NVIDIA GeForce RTX 3080 Laptop GPU":        21.01 * 1024,
-	"NVIDIA GeForce RTX 3080 Ti Laptop GPU":     23.60 * 1024,
-	"NVIDIA GeForce RTX 4050 Laptop GPU":        12.1 * 1024,
-	"NVIDIA GeForce RTX 4060 Laptop GPU":        14.5 * 1024,
-	"NVIDIA GeForce RTX 4070 Laptop GPU":        20.0 * 1024,
-	"NVIDIA GeForce RTX 4080 Laptop GPU":        33.8 * 1024,
-	"NVIDIA GeForce RTX 4090 Laptop GPU":        50.1 * 1024,
-	"NVIDIA RTX 2000 Ada Generation Laptop GPU": 14500,
-	"NVIDIA RTX 3000 Ada Generation Laptop GPU": 19900,
-	"NVIDIA RTX 3500 Ada Generation Laptop GPU": 23300,
-	"NVIDIA RTX 4000 Ada Generation Laptop GPU": 33600,
-	"NVIDIA RTX 5000 Ada Generation Laptop GPU": 42600,
-	"Apple M1 Type":                             2.6 * 1024,
-	"Apple M1 Max Type":                         10.4 * 1024,
-	"Apple M1 Pro Type":                         5.3 * 1024,
-	"Apple M1 Ultra Type":                       21 * 1024,
-	"Apple M2 Type":                             3.6 * 1024,
-	"Apple M2 Max Type":                         13.6 * 1024,
-	"Apple M2 Pro Type":                         6.8 * 1024,
-	"Apple M2 Ultra Type":                       27.2 * 1024,
-	"Apple M3 Type":                             4.1 * 1024,
-	"Apple M3 Max Type":                         14.131 * 1024,
-	"Apple M3 Pro Type":                         6.359 * 1024,
+type GPUFLOPSConfig struct {
+	DefaultGFLOPS float64         `json:"default_gflops"`
+	GPUs          []GPUFLOPSEntry `json:"gpus"`
+	entries       []gpuFLOPSEntry
 }
 
-func GetGPUGFLOPS(gpuName string) float64 {
-	if gflops, ok := gpuGFLOPSMap[gpuName]; ok {
-		return gflops
-	} else {
-		return 10 * 1024
+type GPUFLOPSEntry struct {
+	Name   string  `json:"name"`
+	VRAM   *int    `json:"vram,omitempty"`
+	GFLOPS float64 `json:"gflops"`
+}
+
+type gpuFLOPSEntry struct {
+	GPUFLOPSEntry
+	normalizedName string
+}
+
+var gpuFLOPSConfig *GPUFLOPSConfig
+
+func LoadGPUFLOPS(path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read gpu flops file: %w", err)
 	}
+
+	conf := &GPUFLOPSConfig{}
+	if err := json.Unmarshal(content, conf); err != nil {
+		return fmt.Errorf("parse gpu flops file: %w", err)
+	}
+	if err := conf.validate(); err != nil {
+		return err
+	}
+
+	gpuFLOPSConfig = conf
+	return nil
+}
+
+func (conf *GPUFLOPSConfig) validate() error {
+	if conf.DefaultGFLOPS <= 0 {
+		return errors.New("gpu flops default_gflops must be greater than 0")
+	}
+	if len(conf.GPUs) == 0 {
+		return errors.New("gpu flops gpus must not be empty")
+	}
+
+	entries := make([]gpuFLOPSEntry, 0, len(conf.GPUs))
+	for i, gpu := range conf.GPUs {
+		normalizedName := strings.ToLower(strings.TrimSpace(gpu.Name))
+		if normalizedName == "" {
+			return fmt.Errorf("gpu flops gpus[%d].name must not be empty", i)
+		}
+		if gpu.GFLOPS <= 0 {
+			return fmt.Errorf("gpu flops gpus[%d].gflops must be greater than 0", i)
+		}
+		if gpu.VRAM != nil && *gpu.VRAM <= 0 {
+			return fmt.Errorf("gpu flops gpus[%d].vram must be greater than 0", i)
+		}
+		entries = append(entries, gpuFLOPSEntry{
+			GPUFLOPSEntry:  gpu,
+			normalizedName: normalizedName,
+		})
+	}
+	conf.entries = entries
+	return nil
+}
+
+func CalculateTotalGFLOPS(nodes []NetworkNodeData) float64 {
+	if gpuFLOPSConfig == nil {
+		log.Error("GPU FLOPS config is not loaded")
+		return 0
+	}
+
+	matched := make([]bool, len(nodes))
+	matchedGFLOPS := make([]float64, len(nodes))
+	vramSamples := make(map[int][]float64)
+
+	for i, node := range nodes {
+		gflops, ok := matchGPUGFLOPS(node.CardModel, node.VRam)
+		if !ok {
+			continue
+		}
+		matched[i] = true
+		matchedGFLOPS[i] = gflops
+		if node.VRam > 0 {
+			vramSamples[node.VRam] = append(vramSamples[node.VRam], gflops)
+		}
+	}
+
+	vramEstimates := medianGFLOPSByVRAM(vramSamples)
+
+	var totalGFLOPS float64
+	for i, node := range nodes {
+		if matched[i] {
+			totalGFLOPS += matchedGFLOPS[i]
+			continue
+		}
+
+		gflops := estimateGFLOPSByVRAM(node.VRam, vramEstimates)
+		totalGFLOPS += gflops
+		log.WithFields(log.Fields{
+			"card_model": node.CardModel,
+			"vram":       node.VRam,
+			"gflops":     gflops,
+		}).Warn("GPU model not found in FLOPS config; using VRAM estimate")
+	}
+
+	return totalGFLOPS
+}
+
+func matchGPUGFLOPS(cardModel string, vram int) (float64, bool) {
+	cardModel = strings.ToLower(strings.TrimSpace(cardModel))
+	if cardModel == "" {
+		return 0, false
+	}
+
+	gpuCount := 1
+	if m := gpuCountPrefixRegexp.FindStringSubmatch(cardModel); m != nil {
+		if count, err := strconv.Atoi(m[1]); err == nil && count > 0 {
+			gpuCount = count
+			cardModel = cardModel[len(m[0]):]
+		}
+	}
+
+	bestIndex := -1
+	bestHasVRAM := false
+	for i, gpu := range gpuFLOPSConfig.entries {
+		if !strings.Contains(cardModel, gpu.normalizedName) {
+			continue
+		}
+		hasVRAM := gpu.VRAM != nil
+		if hasVRAM && *gpu.VRAM != vram {
+			continue
+		}
+		if bestIndex == -1 ||
+			len(gpu.normalizedName) > len(gpuFLOPSConfig.entries[bestIndex].normalizedName) ||
+			(len(gpu.normalizedName) == len(gpuFLOPSConfig.entries[bestIndex].normalizedName) && hasVRAM && !bestHasVRAM) {
+			bestIndex = i
+			bestHasVRAM = hasVRAM
+		}
+	}
+
+	if bestIndex == -1 {
+		return 0, false
+	}
+	return gpuFLOPSConfig.entries[bestIndex].GFLOPS * float64(gpuCount), true
+}
+
+func medianGFLOPSByVRAM(samples map[int][]float64) map[int]float64 {
+	estimates := make(map[int]float64, len(samples))
+	for vram, values := range samples {
+		sort.Float64s(values)
+		middle := len(values) / 2
+		if len(values)%2 == 0 {
+			estimates[vram] = (values[middle-1] + values[middle]) / 2
+		} else {
+			estimates[vram] = values[middle]
+		}
+	}
+	return estimates
+}
+
+func estimateGFLOPSByVRAM(vram int, estimates map[int]float64) float64 {
+	bestVRAM := 0
+	for candidateVRAM := range estimates {
+		if candidateVRAM <= vram && candidateVRAM > bestVRAM {
+			bestVRAM = candidateVRAM
+		}
+	}
+	if bestVRAM == 0 {
+		return gpuFLOPSConfig.DefaultGFLOPS
+	}
+	return estimates[bestVRAM]
 }

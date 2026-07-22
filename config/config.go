@@ -70,6 +70,9 @@ func InitConfig(configPath string) error {
 	if err := checkStatsConfig(); err != nil {
 		return err
 	}
+	if err := checkNetworkFLOPSConfig(); err != nil {
+		return err
+	}
 	if err := checkTaskConfig(); err != nil {
 		return err
 	}
@@ -206,6 +209,13 @@ func checkStatsConfig() error {
 		return fmt.Errorf("stats.init_start_time must be RFC3339: %w", err)
 	}
 	appConfig.Stats.InitStartTime = raw
+	return nil
+}
+
+func checkNetworkFLOPSConfig() error {
+	if strings.TrimSpace(appConfig.NetworkFLOPS.GPUFLOPSFile) == "" {
+		return errors.New("network_flops.gpu_flops_file is not set")
+	}
 	return nil
 }
 

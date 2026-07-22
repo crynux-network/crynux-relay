@@ -153,7 +153,6 @@ func syncTaskNumber(ctx context.Context) error {
 func syncNodeData(ctx context.Context) error {
 	limit := 100
 	offset := 0
-	var totalGFLOPS float64 = 0
 
 	workerCount := 10
 	semaphore := make(chan struct{}, workerCount)
@@ -210,10 +209,8 @@ func syncNodeData(ctx context.Context) error {
 		ctx1, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		defer wg.Done()
-		for _, data := range allNodeDatas {
-			totalGFLOPS += models.GetGPUGFLOPS(data.CardModel)
-		}
 
+		totalGFLOPS := models.CalculateTotalGFLOPS(allNodeDatas)
 		networkFLOPS := models.NetworkFLOPS{GFLOPS: totalGFLOPS}
 		networkFLOPS.ID = 1
 		if err := config.GetDB().WithContext(ctx1).Clauses(clause.OnConflict{

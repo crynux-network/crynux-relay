@@ -7,6 +7,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/metrics"
 	"crynux_relay/migrate"
+	"crynux_relay/models"
 	"crynux_relay/service"
 	"crynux_relay/tasks"
 	"fmt"
@@ -27,6 +28,11 @@ func main() {
 	if err := config.InitLog(conf); err != nil {
 		print("Error initializing log")
 		print(err.Error())
+		os.Exit(1)
+	}
+
+	if err := models.LoadGPUFLOPS(conf.NetworkFLOPS.GPUFLOPSFile); err != nil {
+		log.Errorln(err.Error())
 		os.Exit(1)
 	}
 

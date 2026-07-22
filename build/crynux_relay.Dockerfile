@@ -19,6 +19,7 @@ ENV TZ=Asia/Tokyo
 WORKDIR /app
 
 COPY --from=builder /crynux_relay/crynux_relay .
+COPY config/gpu_flops.json ./config/gpu_flops.json
 COPY static ./static
 
 CMD ["/app/crynux_relay"]

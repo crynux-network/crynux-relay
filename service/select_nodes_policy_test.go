@@ -29,6 +29,8 @@ func initSelectionPolicyTestConfig(t *testing.T, minCount uint64, whitelistEnabl
 		"  max_body_bytes: 33554432\n" +
 		"stats:\n" +
 		"  init_start_time: \"2026-01-01T00:00:00Z\"\n" +
+		"network_flops:\n" +
+		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  minimum_node_name_number: " + strconv.FormatUint(minCount, 10) + "\n" +
 		"  node_name_whitelist_enabled: " + whitelistFlag + "\n" +
