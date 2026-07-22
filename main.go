@@ -92,6 +92,7 @@ func main() {
 	go tasks.StartStatsNodeStakings(context.Background())
 	go tasks.StartStatsNodeDelegatorCount(context.Background())
 	go tasks.StartDelegatedStakingNodeListSnapshotRefresh(context.Background())
+	go tasks.StartDelegationTaskFeeLeaderboardRefresh(context.Background())
 	go tasks.StartCurrentEmissionEstimateSnapshotRefresh(context.Background())
 
 	if conf.Metrics.Enabled {

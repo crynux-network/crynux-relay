@@ -11,7 +11,8 @@ This document specifies the Relay API implementation logic used by Portal netsta
 | [`GET /v1/stats/histogram/task_execution_time`](#api-task-execution-time) | Return task execution-time histogram bins for elapsed time from `start_time` to `score_ready_time`. | Read pre-aggregated `task_execution_time_counts`, optionally filter by `model_switched`, then sum by `seconds` bin. |
 | [`GET /v1/stats/histogram/task_fee`](#api-task-fee) | Return task-fee histogram for recent tasks. | Scan last-hour `inference_tasks` raw rows and build 10 logarithmic fee buckets. |
 | [`GET /v1/stats/line_chart/incentive`](#api-incentive-line-chart) | Return incentive time series by day/week/month. | Build fixed intervals, map rows to interval index, and sum `node_incentives.incentive` per interval. |
-| [`GET /v2/incentive/nodes`](#api-top-incentivized-nodes) | Return top incentivized nodes in a period. | Aggregate per-node incentive/task counters and enrich with real-time node fields, scores, and effective stake. |
+| [`GET /v2/incentive/nodes`](#api-top-incentivized-nodes) | Return the current-day top 10 incentivized nodes. | Aggregate per-node incentive/task counters over a fixed one-day window and enrich with real-time node fields, scores, and effective stake. |
+| [`GET /v2/incentive/delegations`](#api-top-delegations-by-task-fee) | Return the current UTC-day top 10 delegations by task fee. | Read the pre-aggregated `delegation_task_fee_leaderboard_snapshots` rows in rank order. |
 
 ## Shared Stats Pipeline
 
@@ -199,15 +200,12 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
 
 - Handler: `api/v2/incentive/nodes.go:GetNodeIncentive`
 - Inputs:
-  - `period`: `Day|Week|Month`
-  - optional `size` (default `30`)
+  - None. The endpoint MUST NOT accept `period`, `size`, or pagination query parameters.
 - Data sources:
   - Aggregated stats from `models.NodeIncentive`
   - Real-time node snapshot from `models.NetworkNodeData`
-- Period window:
-  - `Day`: now minus 24 hours to now
-  - `Week`: now minus 7 days to now
-  - `Month`: previous calendar month
+- Window:
+  - Fixed one-day window: now minus 24 hours to now
 - Aggregation and enrichment:
   - Sum by node address:
     - `incentive`
@@ -215,7 +213,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
     - `sd_task_count`
     - `llm_task_count`
     - `sd_ft_lora_task_count`
-  - Sort by `incentive DESC`, apply `size` limit
+  - Sort by `incentive DESC`, apply a fixed limit of 10 rows
   - Join `network_node_data` by node address
   - Compute QoS and selection probability fields through service helpers
   - Return node rows with incentive totals plus current card, VRAM, effective stake, and score fields
@@ -224,3 +222,26 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
   - Portal MUST label this field as `Effective Stake`.
   - Portal MUST explain the field with this formula: `Effective Stake = Operator Stake + Delegated Stake + Locked Emission * 0.4 + Relay Account Balance`.
   - The locked emission component is rounded down to integer wei after the coefficient is applied.
+
+<a id="api-top-delegations-by-task-fee"></a>
+### API: `GET /v2/incentive/delegations`
+
+- Handler: `api/v2/incentive/delegations.go:GetDelegationIncentive`
+- Inputs:
+  - None. The endpoint MUST NOT accept `period`, `size`, or pagination query parameters.
+- Data source:
+  - `models.DelegationTaskFeeLeaderboardSnapshot` (`delegation_task_fee_leaderboard_snapshots`)
+- Response fields per row:
+  - `delegator_address`
+  - `node_address`
+  - `network`
+  - `staking_amount`: current delegation stake in wei integer string
+  - `task_fee`: current UTC-day delegation task fee earning in wei integer string
+  - `delegation_apr_12m`: node-level historical delegation APR ratio
+- Read path:
+  - The handler MUST read the snapshot table in `leaderboard_rank ASC` order with a fixed limit of 10 rows and MUST NOT scan or aggregate `user_staking_earnings` during the request.
+- Snapshot producer:
+  - `tasks/delegation_task_fee_leaderboard.go:StartDelegationTaskFeeLeaderboardRefresh` runs `service.RebuildDelegationTaskFeeLeaderboardSnapshots` at startup and every 5 minutes.
+  - The rebuild reads current UTC-day `user_staking_earnings` daily rows (`time = current UTC day start`), joins non-slashed `delegations` rows on `(delegator, node, network)` for the staking amount, and left-joins `delegated_staking_node_list_snapshots` on node address for `delegation_apr_12m` (`0` when the node has no snapshot).
+  - Rows are ordered by task fee descending, then by delegator address, node address, and network ascending for stable ordering, truncated to 10 rows, assigned ranks `1..10`, and written in one transaction that replaces all previous snapshot rows.
+  - The leaderboard is minute-level delayed and MUST NOT be required to reflect task settlements in real time.
