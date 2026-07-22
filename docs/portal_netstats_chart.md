@@ -235,13 +235,16 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
   - `delegator_address`
   - `node_address`
   - `network`
+  - `gpu_name`: cached node GPU/card display name; empty string when the node has no snapshot during leaderboard refresh
   - `staking_amount`: current delegation stake in wei integer string
   - `task_fee`: current UTC-day delegation task fee earning in wei integer string
   - `delegation_apr_12m`: node-level historical delegation APR ratio
 - Read path:
-  - The handler MUST read the snapshot table in `leaderboard_rank ASC` order with a fixed limit of 10 rows and MUST NOT scan or aggregate `user_staking_earnings` during the request.
+  - The handler MUST read only the snapshot table in `leaderboard_rank ASC` order with a fixed limit of 10 rows.
+  - The handler MUST NOT scan or aggregate `user_staking_earnings` during the request.
+  - The handler MUST NOT join node snapshot tables during the request.
 - Snapshot producer:
   - `tasks/delegation_task_fee_leaderboard.go:StartDelegationTaskFeeLeaderboardRefresh` runs `service.RebuildDelegationTaskFeeLeaderboardSnapshots` at startup and every 5 minutes.
-  - The rebuild reads current UTC-day `user_staking_earnings` daily rows (`time = current UTC day start`), joins non-slashed `delegations` rows on `(delegator, node, network)` for the staking amount, and left-joins `delegated_staking_node_list_snapshots` on node address for `delegation_apr_12m` (`0` when the node has no snapshot).
+  - The rebuild reads current UTC-day `user_staking_earnings` daily rows (`time = current UTC day start`), joins non-slashed `delegations` rows on `(delegator, node, network)` for the staking amount, and left-joins `delegated_staking_node_list_snapshots` on node address for `gpu_name` and `delegation_apr_12m` (`""` and `0` when the node has no snapshot).
   - Rows are ordered by task fee descending, then by delegator address, node address, and network ascending for stable ordering, truncated to 10 rows, assigned ranks `1..10`, and written in one transaction that replaces all previous snapshot rows.
   - The leaderboard is minute-level delayed and MUST NOT be required to reflect task settlements in real time.
