@@ -99,6 +99,12 @@ func InitRoutes(r *fizz.Fizz) {
 	}, tonic.Handler(nodes.GetNodeEmissionChart, 200))
 
 	relayAccountGroup := v2g.Group("relay_account", "relay_account", "relay account related APIs")
+	relayAccountGroup.GET("/:address/balance", []fizz.OperationOption{
+		fizz.ID("relay_account_balance_v2"),
+		fizz.Summary("Get relay account balance"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetBalance, 200))
 	relayAccountGroup.GET("/:address/vesting/locked", []fizz.OperationOption{
 		fizz.ID("relay_account_vesting_locked_v2"),
 		fizz.Summary("Get locked vesting amount"),
