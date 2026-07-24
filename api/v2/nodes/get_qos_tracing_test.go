@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"crynux_relay/api/tools"
+	"crynux_relay/api/v2/middleware"
 	"crynux_relay/api/v2/response"
 	"crynux_relay/config"
 	"crynux_relay/service"
@@ -89,6 +90,7 @@ func TestGetNodeQosTracingAllowsJWTAuthorization(t *testing.T) {
 	}
 	c := newQosTracingTestContext("/v2/node/" + address + "/qos/tracing")
 	c.Request.Header.Set("Authorization", "Bearer "+token)
+	applyNodeAuthMiddleware(c, address)
 
 	res, err := GetNodeQosTracing(c, &GetNodeInputWithSignature{GetNodeInput: GetNodeInput{Address: address}})
 	if err != nil {
@@ -114,8 +116,13 @@ func TestGetNodeQosTracingAllowsSignatureAuthorization(t *testing.T) {
 	timestamp := time.Now().Unix()
 	signature := signGetNodeInput(t, privateKeyHex, GetNodeInput{Address: address}, timestamp)
 
+	c := newQosTracingTestContext(
+		"/v2/node/" + address + "/qos/tracing?timestamp=" +
+			strconv.FormatInt(timestamp, 10) + "&signature=" + signature,
+	)
+	applyNodeAuthMiddleware(c, address)
 	res, err := GetNodeQosTracing(
-		newQosTracingTestContext("/v2/node/"+address+"/qos/tracing"),
+		c,
 		&GetNodeInputWithSignature{
 			GetNodeInput: GetNodeInput{Address: address},
 			Timestamp:    &timestamp,
@@ -139,6 +146,7 @@ func TestGetNodeQosTracingRejectsMismatchedJWTAddress(t *testing.T) {
 	}
 	c := newQosTracingTestContext("/v2/node/0x0000000000000000000000000000000000000b02/qos/tracing")
 	c.Request.Header.Set("Authorization", "Bearer "+token)
+	applyNodeAuthMiddleware(c, "0x0000000000000000000000000000000000000b02")
 
 	_, err = GetNodeQosTracing(c, &GetNodeInputWithSignature{GetNodeInput: GetNodeInput{Address: "0x0000000000000000000000000000000000000b02"}})
 	if validationErr, ok := err.(*response.ValidationErrorResponse); !ok || validationErr.GetFieldName() != "address" {
@@ -156,6 +164,7 @@ func TestGetNodeQosTracingReturnsEmptyEventList(t *testing.T) {
 	}
 	c := newQosTracingTestContext("/v2/node/" + address + "/qos/tracing")
 	c.Request.Header.Set("Authorization", "Bearer "+token)
+	applyNodeAuthMiddleware(c, address)
 
 	res, err := GetNodeQosTracing(c, &GetNodeInputWithSignature{GetNodeInput: GetNodeInput{Address: address}})
 	if err != nil {
@@ -164,6 +173,13 @@ func TestGetNodeQosTracingReturnsEmptyEventList(t *testing.T) {
 	if len(res.Data.Events) != 0 {
 		t.Fatalf("expected empty event list, got %+v", res.Data.Events)
 	}
+}
+
+func applyNodeAuthMiddleware(c *gin.Context, address string) {
+	c.Params = gin.Params{{Key: "address", Value: address}}
+	middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return GetNodeInput{Address: c.Param("address")}
+	})(c)
 }
 
 func signGetNodeInput(t *testing.T, privateKeyHex string, input GetNodeInput, timestamp int64) string {

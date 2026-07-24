@@ -3,7 +3,6 @@ package nodes
 import (
 	"crynux_relay/api/v2/middleware"
 	"crynux_relay/api/v2/response"
-	"crynux_relay/api/v2/validate"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
@@ -11,7 +10,6 @@ import (
 	"math/big"
 
 	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -25,33 +23,8 @@ type GetNodeInputWithSignature struct {
 	Signature string `json:"signature" query:"signature" description:"Signature"`
 }
 
-func validateNodeSignature(input *GetNodeInputWithSignature) (string, error) {
-	if input.Timestamp == nil || input.Signature == "" {
-		return "", response.NewValidationErrorResponse("signature", "Invalid signature")
-	}
-	match, address, err := validate.ValidateSignature(input.GetNodeInput, *input.Timestamp, input.Signature)
-	if err != nil || !match {
-		if err != nil {
-			log.Debugln("error in sig validate: " + err.Error())
-		}
-		return "", response.NewValidationErrorResponse("signature", "Invalid signature")
-	}
-	return address, nil
-}
-
 func authorizeGetNode(c *gin.Context, input *GetNodeInputWithSignature) error {
-	if address, ok := middleware.GetAuthorizedAddress(c); ok {
-		if address != input.Address {
-			return response.NewValidationErrorResponse("address", "Signer not allowed")
-		}
-		return nil
-	}
-
-	address, err := validateNodeSignature(input)
-	if err != nil {
-		return err
-	}
-	if address != input.Address {
+	if middleware.GetUserAddress(c) != input.Address {
 		return response.NewValidationErrorResponse("address", "Signer not allowed")
 	}
 	return nil

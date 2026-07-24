@@ -9,7 +9,9 @@ import (
 	"crynux_relay/api/v2/nodes"
 	relayaccount "crynux_relay/api/v2/relay_account"
 	"crynux_relay/api/v2/response"
+	"crynux_relay/api/v2/tasks"
 
+	"github.com/gin-gonic/gin"
 	"github.com/loopfz/gadgeto/tonic"
 	"github.com/wI2L/fizz"
 )
@@ -56,12 +58,18 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.ID("node_get_v2"),
 		fizz.Summary("Get node info"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(nodes.GetNode, 200))
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return nodes.GetNodeInput{Address: c.Param("address")}
+	}), tonic.Handler(nodes.GetNode, 200))
 	nodeGroup.GET("/:address/qos/tracing", []fizz.OperationOption{
 		fizz.ID("node_qos_tracing_v2"),
 		fizz.Summary("Get node QoS tracing events"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(nodes.GetNodeQosTracing, 200))
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return nodes.GetNodeInput{Address: c.Param("address")}
+	}), tonic.Handler(nodes.GetNodeQosTracing, 200))
 	nodeGroup.POST("/:address/join", []fizz.OperationOption{
 		fizz.ID("node_join_v2"),
 		fizz.Summary("Node join"),
@@ -99,6 +107,14 @@ func InitRoutes(r *fizz.Fizz) {
 	}, tonic.Handler(nodes.GetNodeEmissionChart, 200))
 
 	relayAccountGroup := v2g.Group("relay_account", "relay_account", "relay account related APIs")
+	relayAccountGroup.GET("/:address/balance", []fizz.OperationOption{
+		fizz.ID("relay_account_balance_v2"),
+		fizz.Summary("Get relay account balance"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return relayaccount.GetBalanceSigningInput{Address: c.Param("address")}
+	}), tonic.Handler(relayaccount.GetBalance, 200))
 	relayAccountGroup.GET("/:address/vesting/locked", []fizz.OperationOption{
 		fizz.ID("relay_account_vesting_locked_v2"),
 		fizz.Summary("Get locked vesting amount"),
@@ -118,7 +134,23 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetEmissionChart, 200))
 
+	taskGroup := v2g.Group("tasks", "tasks", "Task APIs")
+	taskGroup.POST("/:task_id_commitment/node_error", []fizz.OperationOption{
+		fizz.ID("task_node_error_v2"),
+		fizz.Summary("Report a node task execution diagnostic"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("404", "not found", response.NotFoundErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, tonic.Handler(tasks.ReportNodeTaskError, 200))
+
 	adminGroup := v2g.Group("admin", "admin", "Admin APIs")
+	adminGroup.GET("/node_task_errors", []fizz.OperationOption{
+		fizz.ID("admin_node_task_errors_v2"),
+		fizz.Summary("List node task execution diagnostics"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListNodeTaskErrors, 200))
 	adminNodesGroup := adminGroup.Group("nodes", "admin nodes", "Admin node management APIs")
 	adminNodesGroup.GET("/qos", []fizz.OperationOption{
 		fizz.ID("admin_nodes_qos_v2"),
