@@ -14,7 +14,7 @@ func TestGetBalanceRejectsAddressMismatch(t *testing.T) {
 	c.Set("user_address", "0x123")
 
 	_, err := GetBalance(c, &GetBalanceInput{
-		Address: "0x456",
+		GetBalanceSigningInput: GetBalanceSigningInput{Address: "0x456"},
 	})
 	if err == nil {
 		t.Fatal("expected validation error, got nil")

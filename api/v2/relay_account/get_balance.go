@@ -10,8 +10,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type GetBalanceInput struct {
+type GetBalanceSigningInput struct {
 	Address string `path:"address" json:"address" description:"Address of account"`
+}
+
+type GetBalanceInput struct {
+	GetBalanceSigningInput
+	Timestamp *int64 `query:"timestamp" json:"timestamp" description:"Signature timestamp"`
+	Signature string `query:"signature" json:"signature" description:"Signature"`
 }
 
 type GetBalanceResponse struct {
@@ -20,8 +26,7 @@ type GetBalanceResponse struct {
 }
 
 func GetBalance(c *gin.Context, in *GetBalanceInput) (*GetBalanceResponse, error) {
-	address := middleware.GetUserAddress(c)
-	if address != in.Address {
+	if middleware.GetUserAddress(c) != in.Address {
 		return nil, response.NewValidationErrorResponse("address", "Address mismatch")
 	}
 

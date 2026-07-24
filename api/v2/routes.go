@@ -11,6 +11,7 @@ import (
 	"crynux_relay/api/v2/response"
 	"crynux_relay/api/v2/tasks"
 
+	"github.com/gin-gonic/gin"
 	"github.com/loopfz/gadgeto/tonic"
 	"github.com/wI2L/fizz"
 )
@@ -57,12 +58,18 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.ID("node_get_v2"),
 		fizz.Summary("Get node info"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(nodes.GetNode, 200))
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return nodes.GetNodeInput{Address: c.Param("address")}
+	}), tonic.Handler(nodes.GetNode, 200))
 	nodeGroup.GET("/:address/qos/tracing", []fizz.OperationOption{
 		fizz.ID("node_qos_tracing_v2"),
 		fizz.Summary("Get node QoS tracing events"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(nodes.GetNodeQosTracing, 200))
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return nodes.GetNodeInput{Address: c.Param("address")}
+	}), tonic.Handler(nodes.GetNodeQosTracing, 200))
 	nodeGroup.POST("/:address/join", []fizz.OperationOption{
 		fizz.ID("node_join_v2"),
 		fizz.Summary("Node join"),
@@ -105,7 +112,9 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get relay account balance"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
-	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetBalance, 200))
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return relayaccount.GetBalanceSigningInput{Address: c.Param("address")}
+	}), tonic.Handler(relayaccount.GetBalance, 200))
 	relayAccountGroup.GET("/:address/vesting/locked", []fizz.OperationOption{
 		fizz.ID("relay_account_vesting_locked_v2"),
 		fizz.Summary("Get locked vesting amount"),
