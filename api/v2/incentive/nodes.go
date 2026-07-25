@@ -45,8 +45,8 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 	now := time.Now().UTC()
-	end := now
-	start := end.Add(-24 * time.Hour)
+	start := now.Truncate(24 * time.Hour)
+	end := start.Add(24 * time.Hour)
 
 	rows, err := config.GetDB().WithContext(ctx).Model(&models.NodeIncentive{}).
 		Select("node_address, SUM(incentive) as incentive, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count").
