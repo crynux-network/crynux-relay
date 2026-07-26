@@ -11,7 +11,7 @@ This document specifies the Relay API implementation logic used by Portal netsta
 | [`GET /v1/stats/histogram/task_execution_time`](#api-task-execution-time) | Return task execution-time histogram bins for elapsed time from `start_time` to `score_ready_time`. | Read pre-aggregated `task_execution_time_counts`, optionally filter by `model_switched`, then sum by `seconds` bin. |
 | [`GET /v1/stats/histogram/task_fee`](#api-task-fee) | Return task-fee histogram for recent tasks. | Scan last-hour `inference_tasks` raw rows and build 10 logarithmic fee buckets. |
 | [`GET /v1/stats/line_chart/incentive`](#api-incentive-line-chart) | Return incentive time series by day/week/month. | Build fixed intervals, map rows to interval index, and sum `node_incentives.incentive` per interval. |
-| [`GET /v2/incentive/nodes`](#api-top-incentivized-nodes) | Return the current-day top 10 incentivized nodes. | Aggregate per-node incentive/task counters over a fixed one-day window and enrich with real-time node fields, scores, and effective stake. |
+| [`GET /v2/incentive/nodes`](#api-top-incentivized-nodes) | Return the current UTC day top 10 incentivized nodes. | Aggregate per-node incentive/task counters for the current UTC calendar day and enrich with real-time node fields, scores, and effective stake. |
 | [`GET /v2/incentive/delegations`](#api-top-delegations-by-task-fee) | Return the current UTC-day top 10 delegations by task fee. | Read the pre-aggregated `delegation_task_fee_leaderboard_snapshots` rows in rank order. |
 
 ## Shared Stats Pipeline
@@ -202,10 +202,11 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
 - Inputs:
   - None. The endpoint MUST NOT accept `period`, `size`, or pagination query parameters.
 - Data sources:
-  - Aggregated stats from `models.NodeIncentive`
+  - Aggregated stats from `models.NodeIncentive` (`node_incentives`)
   - Real-time node snapshot from `models.NetworkNodeData`
 - Window:
-  - Fixed one-day window: now minus 24 hours to now
+  - Current UTC calendar day: `time >= UTC day start AND time < UTC day start + 24h`
+  - `node_incentives.time` is truncated to the UTC day start when rows are written, so the query selects that day's pre-aggregated rows
 - Aggregation and enrichment:
   - Sum by node address:
     - `incentive`

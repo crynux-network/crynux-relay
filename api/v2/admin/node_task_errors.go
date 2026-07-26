@@ -31,6 +31,10 @@ type NodeTaskErrorRecord struct {
 	ErrorType        string `json:"error_type"`
 	Message          string `json:"message"`
 	StackTrace       string `json:"stack_trace"`
+	GpuCount         int    `json:"gpu_count"`
+	GpuModel         string `json:"gpu_model"`
+	GpuVramMb        int64  `json:"gpu_vram_mb"`
+	ExecutorMode     string `json:"executor_mode"`
 	CapturedAt       int64  `json:"captured_at"`
 	CreatedAt        int64  `json:"created_at"`
 }
@@ -103,6 +107,10 @@ func buildNodeTaskErrorRecord(record models.NodeTaskError) NodeTaskErrorRecord {
 		ErrorType:        record.ErrorType,
 		Message:          record.Message,
 		StackTrace:       record.StackTrace,
+		GpuCount:         record.GpuCount,
+		GpuModel:         record.GpuModel,
+		GpuVramMb:        record.GpuVramMb,
+		ExecutorMode:     record.ExecutorMode,
 		CapturedAt:       record.CapturedAt,
 		CreatedAt:        record.CreatedAt.Unix(),
 	}

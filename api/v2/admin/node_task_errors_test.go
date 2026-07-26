@@ -36,6 +36,10 @@ func TestListNodeTaskErrorsReturnsFilteredReversePageWithCompleteContent(t *test
 			ErrorType:        "TaskExecutionError",
 			Message:          fmt.Sprintf("failure %d", i),
 			StackTrace:       fmt.Sprintf("complete trace %d", i),
+			GpuCount:         2,
+			GpuModel:         "2x NVIDIA GeForce RTX 4090",
+			GpuVramMb:        24564,
+			ExecutorMode:     "tensor_parallel",
 			CapturedAt:       int64(i),
 		}
 		if err := db.Create(&record).Error; err != nil {
@@ -58,6 +62,9 @@ func TestListNodeTaskErrorsReturnsFilteredReversePageWithCompleteContent(t *test
 	}
 	if result.Data.Items[0].TaskArgs != `{"prompt":"task 3"}` || result.Data.Items[0].StackTrace != "complete trace 3" {
 		t.Fatalf("expected complete task args and stack trace, got %+v", result.Data.Items[0])
+	}
+	if result.Data.Items[0].GpuCount != 2 || result.Data.Items[0].GpuModel != "2x NVIDIA GeForce RTX 4090" || result.Data.Items[0].GpuVramMb != 24564 || result.Data.Items[0].ExecutorMode != "tensor_parallel" {
+		t.Fatalf("expected worker GPU diagnostic fields, got %+v", result.Data.Items[0])
 	}
 
 	combined, err := listNodeTaskErrors(context.Background(), db, &ListNodeTaskErrorsInput{

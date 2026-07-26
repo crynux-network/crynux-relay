@@ -23,11 +23,15 @@ The signed request data MUST contain:
 - `task_args`;
 - `error_type`;
 - `message`;
-- `stack_trace`.
+- `stack_trace`;
+- `gpu_count`;
+- `gpu_model`;
+- `gpu_vram_mb`;
+- `executor_mode`.
 
-The request envelope MUST also contain `captured_at`, `timestamp`, and `signature`. `captured_at` MUST be an `int64` Node capture time and MUST be stored with the report, but MUST NOT be included in the signed data. `task_args` MUST contain the complete Task arguments used by the Node. `stack_trace` MUST contain the complete traceback when one exists, or the Node-generated no-traceback explanation.
+The request envelope MUST also contain `captured_at`, `timestamp`, and `signature`. `captured_at` MUST be an `int64` Node capture time and MUST be stored with the report, but MUST NOT be included in the signed data. `task_args` MUST contain the complete Task arguments used by the Node. `stack_trace` MUST contain the complete traceback when one exists, or the Node-generated no-traceback explanation. `gpu_count` MUST be the number of selected worker GPUs. `gpu_model` MUST be the aggregated selected GPU model name without the executor marker. `gpu_vram_mb` MUST be the per-card VRAM total in MB as a single integer; the selected worker GPUs are of one identical model, so one value describes every card. `executor_mode` MUST be `tensor_parallel` or `device_map` and MUST reflect the Node-effective worker mode at capture time.
 
-Relay MUST canonicalize only the six signed fields as JSON using lexicographically sorted object keys and compact separators. Relay MUST append the base-10 `timestamp` without a separator and MUST verify the secp256k1 signature against the Keccak-256 hash of those bytes. The timestamp MUST be within 60 seconds of Relay time.
+Relay MUST canonicalize only the ten signed fields as JSON using lexicographically sorted object keys and compact separators. Relay MUST append the base-10 `timestamp` without a separator and MUST verify the secp256k1 signature against the Keccak-256 hash of those bytes. The timestamp MUST be within 60 seconds of Relay time.
 
 Relay MUST reject the request unless all of the following conditions hold:
 
@@ -52,6 +56,10 @@ Relay MUST store reports in `node_task_errors`. Each record MUST contain:
 - error type;
 - diagnostic message;
 - complete stack trace or no-traceback explanation;
+- selected worker GPU count;
+- selected worker GPU model name;
+- per-card VRAM total in MB;
+- worker executor mode (`tensor_parallel` or `device_map`);
 - Node capture time.
 
 The pair `(node_address, task_id_commitment)` MUST be unique. A retry for an existing pair MUST return success without changing the existing record. This constraint limits one Node execution attempt for one Task ID Commitment to one stored report.
@@ -73,4 +81,4 @@ The endpoint MUST use the existing Admin authentication middleware. It MUST acce
 
 The filters MAY be used independently, together, or omitted. Relay MUST use equality predicates and MUST NOT use pattern matching. Results MUST be ordered by `created_at DESC, id DESC`.
 
-`page` MUST default to `1`. `page_size` MUST default to `30` and MUST be limited to `100`. The response data MUST contain `total`, `page`, `page_size`, and `items`. Every item MUST include the complete Task arguments and stack trace content.
+`page` MUST default to `1`. `page_size` MUST default to `30` and MUST be limited to `100`. The response data MUST contain `total`, `page`, `page_size`, and `items`. Every item MUST include the complete Task arguments, stack trace content, GPU count, GPU model, per-card VRAM, and executor mode.

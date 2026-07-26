@@ -13,6 +13,10 @@ type nodeTaskErrorGoldenInput struct {
 	ErrorType        string `json:"error_type"`
 	Message          string `json:"message"`
 	StackTrace       string `json:"stack_trace"`
+	GpuCount         int    `json:"gpu_count"`
+	GpuModel         string `json:"gpu_model"`
+	GpuVramMb        int64  `json:"gpu_vram_mb"`
+	ExecutorMode     string `json:"executor_mode"`
 }
 
 func TestPythonNodeTaskErrorSignerGoldenVector(t *testing.T) {

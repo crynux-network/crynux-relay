@@ -22,6 +22,10 @@ type NodeTaskErrorSigningInput struct {
 	ErrorType        string `json:"error_type" description:"Diagnostic error type" validate:"required"`
 	Message          string `json:"message" description:"Diagnostic message" validate:"required"`
 	StackTrace       string `json:"stack_trace" description:"Stack trace or no-traceback explanation" validate:"required"`
+	GpuCount         int    `json:"gpu_count" description:"Selected worker GPU count"`
+	GpuModel         string `json:"gpu_model" description:"Selected worker GPU model name"`
+	GpuVramMb        int64  `json:"gpu_vram_mb" description:"Per-card VRAM total in MB"`
+	ExecutorMode     string `json:"executor_mode" description:"Worker executor mode tensor_parallel or device_map" validate:"required"`
 }
 
 type NodeTaskErrorInput struct {
@@ -74,6 +78,10 @@ func reportNodeTaskError(ctx context.Context, db *gorm.DB, pathTaskIDCommitment 
 		ErrorType:        in.ErrorType,
 		Message:          in.Message,
 		StackTrace:       in.StackTrace,
+		GpuCount:         in.GpuCount,
+		GpuModel:         in.GpuModel,
+		GpuVramMb:        in.GpuVramMb,
+		ExecutorMode:     in.ExecutorMode,
 		CapturedAt:       in.CapturedAt,
 	}
 	created, err := service.CreateNodeTaskError(ctx, db, &record)
