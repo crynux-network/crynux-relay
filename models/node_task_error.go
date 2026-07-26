@@ -12,5 +12,9 @@ type NodeTaskError struct {
 	ErrorType        string    `json:"error_type" gorm:"type:string;size:64;not null"`
 	Message          string    `json:"message" gorm:"type:longtext;not null"`
 	StackTrace       string    `json:"stack_trace" gorm:"type:longtext;not null"`
+	GpuCount         int       `json:"gpu_count" gorm:"not null;default:0"`
+	GpuModel         string    `json:"gpu_model" gorm:"type:string;size:255;not null;default:''"`
+	GpuVramMb        int64     `json:"gpu_vram_mb" gorm:"not null;default:0"`
+	ExecutorMode     string    `json:"executor_mode" gorm:"type:string;size:32;not null;default:''"`
 	CapturedAt       int64     `json:"captured_at" gorm:"not null"`
 }

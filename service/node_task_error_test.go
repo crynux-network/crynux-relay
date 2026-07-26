@@ -32,6 +32,10 @@ func TestCreateNodeTaskErrorIsIdempotent(t *testing.T) {
 		ErrorType:        "TaskExecutionError",
 		Message:          "execution failed",
 		StackTrace:       "Traceback: original",
+		GpuCount:         2,
+		GpuModel:         "2x NVIDIA GeForce RTX 4090",
+		GpuVramMb:        24564,
+		ExecutorMode:     "tensor_parallel",
 		CapturedAt:       1_721_234_567,
 	}
 
@@ -81,6 +85,10 @@ func TestListNodeTaskErrorsUsesExactFiltersAndReversePagination(t *testing.T) {
 		records[i].ErrorType = "TaskExecutionError"
 		records[i].Message = "failed"
 		records[i].StackTrace = "trace"
+		records[i].GpuCount = 1
+		records[i].GpuModel = "NVIDIA GeForce RTX 4090"
+		records[i].GpuVramMb = 24564
+		records[i].ExecutorMode = "device_map"
 		records[i].CapturedAt = int64(i + 1)
 		if err := db.Create(&records[i]).Error; err != nil {
 			t.Fatalf("failed to create record: %v", err)

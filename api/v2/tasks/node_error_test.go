@@ -49,6 +49,10 @@ func newSignedNodeTaskErrorInput(t *testing.T, privateKeyHex string, taskIDCommi
 			ErrorType:        "TaskExecutionError",
 			Message:          "worker execution failed",
 			StackTrace:       "Traceback (most recent call last):\n  File \"worker.py\", line 7\nRuntimeError: boom",
+			GpuCount:         2,
+			GpuModel:         "2x NVIDIA GeForce RTX 4090",
+			GpuVramMb:        24564,
+			ExecutorMode:     "tensor_parallel",
 		},
 		CapturedAt: timestamp - 10,
 	}
@@ -112,6 +116,9 @@ func TestReportNodeTaskErrorAcceptsTerminalTaskAndIsIdempotent(t *testing.T) {
 	}
 	if records[0].TaskArgs != input.TaskArgs || records[0].StackTrace != input.StackTrace {
 		t.Fatalf("expected complete diagnostic content, got %+v", records[0])
+	}
+	if records[0].GpuCount != input.GpuCount || records[0].GpuModel != input.GpuModel || records[0].GpuVramMb != input.GpuVramMb || records[0].ExecutorMode != input.ExecutorMode {
+		t.Fatalf("expected worker GPU diagnostic fields, got %+v", records[0])
 	}
 	var storedTask models.InferenceTask
 	if err := db.First(&storedTask, task.ID).Error; err != nil {
