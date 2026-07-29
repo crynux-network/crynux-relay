@@ -19,12 +19,13 @@ Both task version and node version use semantic version style with three numeric
 - Task version format: `major.minor.patch`
 - Node version format: `major.minor.patch`
 
-In relay, the `version` field sent by node join and node version update APIs SHALL be interpreted as the current runner version of that node. It MUST NOT be interpreted as the version of the node manager, web UI, packaging layer, or any other component.
+In relay, the `version` field sent by node join, joined-node capability synchronization, and node version update APIs SHALL be interpreted as the current runner version of that node. It MUST NOT be interpreted as the version of the node manager, web UI, packaging layer, or any other component.
 
 Validation entry points:
 
 - Task creation validates `task_version` in `api/v1/inference_tasks/create_task.go`
 - Node join validates `version` in `api/v1/nodes/join.go` and `api/v2/nodes/join.go`
+- Joined-node capability synchronization validates `version` in `api/v2/nodes/capabilities.go`
 - Node version update validates `version` in `api/v1/nodes/version.go`
 
 ## Data Model
@@ -110,6 +111,7 @@ Reporting requirements:
 
 - On local worker connection, node SHALL receive the runner version from the worker connection handshake
 - When node joins relay, the `version` field in the join request SHALL be that runner version
+- When a node process starts while its address remains joined, node SHALL report that runner version through joined-node capability synchronization
 - When the local runner version changes later, node SHALL call the relay node version update API with the new runner version
 - Relay SHALL persist that new runner version into `models.Node`
 - The worker process SHALL also report the same runner version directly to relay worker count APIs
@@ -180,6 +182,7 @@ Given a task version `A.B.C`:
 - `api/v1/inference_tasks/create_task.go`
 - `api/v1/nodes/join.go`
 - `api/v2/nodes/join.go`
+- `api/v2/nodes/capabilities.go`
 - `api/v1/nodes/version.go`
 - `api/v1/worker/worker.go`
 - `models/worker.go`

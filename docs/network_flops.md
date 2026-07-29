@@ -12,6 +12,8 @@ The public API MUST NOT scan node rows or recalculate GPU power during a request
 
 The calculation input MUST be the `NetworkNodeData` rows loaded by `syncNodeData`. Each row supplies `CardModel` and `VRam` for GPU matching and estimation.
 
+Node join and joined-node capability synchronization MUST write the reported GPU name and VRAM to `NetworkNodeData`. A capability change becomes visible in Network FLOPS on the next normal `StartSyncNetwork` run.
+
 ## Configuration File
 
 Relay MUST load GPU FLOPS data from the JSON file configured by `network_flops.gpu_flops_file`. The file SHALL be loaded during application startup after YAML configuration and logging are initialized and before background tasks start.

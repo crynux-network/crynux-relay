@@ -33,6 +33,14 @@
 | [emission_estimation.md](./emission_estimation.md) | Current-week estimated upcoming emission calculation, snapshot refresh, and API exposure |
 | [monitoring.md](./monitoring.md) | Prometheus metric definitions, task delivery and node last-seen tracking, and the AWS AMP/AMG deployment runbook |
 
+## Model Compatibility Authority
+
+The longitudinal OpenAI-compatible flow, canonical task ownership boundaries, and public response normalization MUST use `crynux-bridge/docs/model-compatibility/` in the standalone Bridge repository as their authority.
+
+Prompt rendering, chat templates, processor behavior, tools and tool history inside model input, thinking template controls, AutoClass, remote `auto_map`, execution backends, generation, and raw decoding MUST use `gpt-task/docs/model-compatibility/` in the standalone gpt-task repository as their authority.
+
+Relay documentation MUST retain Relay-owned validation, persistence, scheduling, transport, and task lifecycle protocols. It MUST NOT duplicate or redefine Bridge API adaptation or gpt-task execution facts. Model pages MUST NOT be implemented as Relay runtime model-ID allowlists.
+
 ## Doc Update Requirements
 
 When updating documentation files:

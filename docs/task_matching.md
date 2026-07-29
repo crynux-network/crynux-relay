@@ -49,6 +49,7 @@ Relay MUST update the index after the owning database transaction commits, at ev
 - task finish (`nodeFinishTask`): status, occupancy, and deferred status transitions
 - timeout abort completion
 - node model registration (add-model API)
+- joined-node capability synchronization (GPU, VRAM, runner version, and full on-disk model inventory)
 - node health penalty and health boost
 - node QoS score update
 - stake amount changes
