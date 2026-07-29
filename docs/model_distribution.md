@@ -103,7 +103,7 @@ Before its deadline, a `pending` selection MUST keep occupying capacity regardle
 
 When a node quits or is slashed, Relay MUST delete the node's selection records in the same transaction that deletes its `node_models` rows, so a rejoining node can be selected again.
 
-When joined-node capability synchronization permanently deletes a `node_models` row because the model is absent from the node's reported inventory, Relay MUST delete that node's selection records for the same model ID in the same transaction. This clears pending, completed, and expired attempts for the removed model so the node can be selected again while the demand period is still open. Selection records for models retained or newly reported by the synchronization MUST remain unchanged.
+When joined-node capability synchronization commits a full on-disk inventory, Relay MUST delete that node's selection records for every model ID absent from the reported inventory, in the same transaction. This includes models that still have a `node_models` row being deleted by the synchronization, and models whose `node_models` row is already absent while a stale selection remains. Pending, completed, and expired attempts for those absent models MUST all be deleted so the node can be selected again while the demand period is still open. Selection records for models retained or newly reported by the synchronization MUST remain unchanged.
 
 When a controller run finds a base model without current demand, it MUST delete the model's selection records. Downloads already commanded on nodes are not cancelled; models that finish downloading later enter the on-disk inventory through the normal reporting paths and count toward coverage if demand returns.
 
@@ -115,7 +115,7 @@ A demand period of a base model starts at the first controller run that finds th
 
 The signed AddModelID node API is the authoritative incremental report that a model is present on disk. Relay MUST normalize the reported model ID and create the `node_models` row when it does not already exist. Model IDs reported at node join MUST create `node_models` rows through the same normalization.
 
-The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST normalize and deduplicate the reported IDs, permanently delete `node_models` rows absent from the report, delete the node's selection records for each removed model ID in the same transaction, preserve `in_use` on retained rows, and create newly reported rows with `in_use = false`. The synchronization MUST refresh the node scheduling index after the inventory transaction commits.
+The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST normalize and deduplicate the reported IDs, permanently delete `node_models` rows absent from the report, delete the node's selection records for every model ID absent from the reported inventory in the same transaction, preserve `in_use` on retained rows, and create newly reported rows with `in_use = false`. The synchronization MUST refresh the node scheduling index after the inventory transaction commits.
 
 An AddModelID report MUST remain authoritative even when no matching selection exists. Relay MUST retain the reported `node_models` row and MUST NOT require a selection before accepting the report.
 

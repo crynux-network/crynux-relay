@@ -121,3 +121,16 @@ func DeleteNodeModelDownloadSelectionsByNodeAddressAndModelIDs(ctx context.Conte
 		Where("model_id IN ?", modelIDs).
 		Delete(&NodeModelDownloadSelection{}).Error
 }
+
+// DeleteNodeModelDownloadSelectionsAbsentFromModelIDs deletes every selection
+// record for nodeAddress whose model_id is not in modelIDs. An empty modelIDs
+// list clears all selections for the node.
+func DeleteNodeModelDownloadSelectionsAbsentFromModelIDs(ctx context.Context, db *gorm.DB, nodeAddress string, modelIDs []string) error {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	q := db.WithContext(dbCtx).Where("node_address = ?", nodeAddress)
+	if len(modelIDs) == 0 {
+		return q.Delete(&NodeModelDownloadSelection{}).Error
+	}
+	return q.Where("model_id NOT IN ?", modelIDs).Delete(&NodeModelDownloadSelection{}).Error
+}

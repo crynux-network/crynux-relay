@@ -248,3 +248,36 @@ func TestSyncNodeCapabilitiesClearsSelectionsForRemovedModels(t *testing.T) {
 		t.Fatal("other node selection for the same model should remain")
 	}
 }
+
+func TestSyncNodeCapabilitiesClearsStaleSelectionsWithoutNodeModelRows(t *testing.T) {
+	resetNodeNamePolicyCacheForTest()
+	ctx := context.Background()
+	db := newNodeCapabilitiesTestDB(t)
+	node := seedNodeCapabilitiesTestNode(t, db, models.NodeStatusAvailable)
+
+	now := time.Now().UTC()
+	stale := models.NewNodeModelDownloadSelection("base:model-stale", node.Address, 100, now.Add(-time.Hour), now.Add(time.Hour))
+	stale.Status = models.NodeModelDownloadSelectionCompleted
+	if err := models.CreateNodeModelDownloadSelection(ctx, db, stale); err != nil {
+		t.Fatalf("create stale selection: %v", err)
+	}
+
+	if err := SyncNodeCapabilities(ctx, db, node.Address, NodeCapabilities{
+		GPUName:      node.GPUName,
+		GPUVram:      node.GPUVram,
+		MajorVersion: node.MajorVersion,
+		MinorVersion: node.MinorVersion,
+		PatchVersion: node.PatchVersion,
+		ModelIDs:     []string{"base:model-retained"},
+	}); err != nil {
+		t.Fatalf("sync capabilities failed: %v", err)
+	}
+
+	selections, err := models.GetAllNodeModelDownloadSelections(ctx, db)
+	if err != nil {
+		t.Fatalf("load selections: %v", err)
+	}
+	if len(selections) != 0 {
+		t.Fatalf("expected stale selection absent from inventory to be deleted, got %#v", selections)
+	}
+}
