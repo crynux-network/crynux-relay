@@ -111,7 +111,9 @@ A demand period of a base model starts at the first controller run that finds th
 
 ## Completion and On-Disk Authority
 
-The signed AddModelID node API is the authoritative report that a model is present on disk. Relay MUST normalize the reported model ID and create the `node_models` row when it does not already exist. Model IDs reported at node join MUST create `node_models` rows through the same normalization.
+The signed AddModelID node API is the authoritative incremental report that a model is present on disk. Relay MUST normalize the reported model ID and create the `node_models` row when it does not already exist. Model IDs reported at node join MUST create `node_models` rows through the same normalization.
+
+The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST normalize and deduplicate the reported IDs, permanently delete `node_models` rows absent from the report, preserve `in_use` on retained rows, and create newly reported rows with `in_use = false`. The synchronization MUST refresh the node scheduling index after the inventory transaction commits.
 
 An AddModelID report MUST remain authoritative even when no matching selection exists. Relay MUST retain the reported `node_models` row and MUST NOT require a selection before accepting the report.
 
@@ -170,7 +172,9 @@ Relay MUST define these settings in every runtime configuration template with th
 |------|----------------|
 | `service/model_distribution.go` | Model distribution controller loop, demand-group measurement, VRAM qualification, target computation, download-target sampling, and event emission |
 | `models/node_model_download_selection.go` | Persistent selection records, uniqueness, and status transitions |
-| `api/v1/nodes/add_model_id.go` | Authoritative on-disk report |
+| `api/v1/nodes/add_model_id.go` | Authoritative incremental on-disk report |
+| `api/v2/nodes/capabilities.go` | Authenticated full on-disk inventory report for joined nodes |
+| `service/node_capabilities.go` | Joined-node capability and full model-inventory synchronization |
 | `service/node.go` | Join-time model reporting, quit-time cleanup, and task-start updates to existing base-model in-use state |
 | `models/model_id.go` | Model ID normalization and base-model extraction |
 | `models/event.go` | `DownloadModelEvent` payload |

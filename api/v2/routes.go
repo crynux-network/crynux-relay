@@ -75,6 +75,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Node join"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.NodeJoin, 200))
+	nodeGroup.POST("/:address/capabilities", []fizz.OperationOption{
+		fizz.ID("node_capabilities_v2"),
+		fizz.Summary("Synchronize joined node capabilities"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, tonic.Handler(nodes.SyncNodeCapabilities, 200))
 
 	delegatedStakingGroup := v2g.Group("delegated_staking", "delegated_staking", "Delegated staking APIs")
 	delegatedStakingGroup.GET("/nodes", []fizz.OperationOption{

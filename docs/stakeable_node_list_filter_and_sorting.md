@@ -44,6 +44,7 @@ Relay MUST refresh a single node snapshot after committed node lifecycle changes
 
 - node join
 - node quit
+- joined-node capability synchronization when GPU name, GPU VRAM, or runner version changes
 - delegation stake update
 - delegation unstake
 - delegation slash

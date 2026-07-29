@@ -29,6 +29,8 @@ When a node joins Relay, Relay MUST upsert the `network_node_data` row by `addre
 
 If the address has joined before, the new join MUST update the existing row instead of creating a duplicate row. The row's historical identity MUST remain associated with the same node address, and `network` MUST reflect the node's most recent join network.
 
+While a node remains joined, an authenticated capability synchronization MUST update `card_model` and `v_ram` from the node's current GPU report. This update MUST NOT change the stored blockchain network, QoS, staking, or health fields. The capability synchronization MUST update these public GPU fields directly because `SyncNetwork` does not derive them from the `nodes` table.
+
 ## Quit Retention
 
 When a node quits, is kicked out, or is slashed, Relay MUST keep the `network_node_data` row. Quit nodes retain their last known public snapshot fields. Relay MUST NOT remove, soft-delete, or hide the row as part of node lifecycle transitions.
