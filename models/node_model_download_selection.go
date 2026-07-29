@@ -109,3 +109,15 @@ func DeleteNodeModelDownloadSelectionsByNodeAddress(ctx context.Context, db *gor
 		Where("node_address = ?", nodeAddress).
 		Delete(&NodeModelDownloadSelection{}).Error
 }
+
+func DeleteNodeModelDownloadSelectionsByNodeAddressAndModelIDs(ctx context.Context, db *gorm.DB, nodeAddress string, modelIDs []string) error {
+	if len(modelIDs) == 0 {
+		return nil
+	}
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return db.WithContext(dbCtx).
+		Where("node_address = ?", nodeAddress).
+		Where("model_id IN ?", modelIDs).
+		Delete(&NodeModelDownloadSelection{}).Error
+}

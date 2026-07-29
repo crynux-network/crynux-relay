@@ -139,13 +139,18 @@ func replaceNodeModels(ctx context.Context, tx *gorm.DB, address string, modelID
 		reported[modelID] = struct{}{}
 	}
 	existing := make(map[string]struct{}, len(existingModels))
+	removedModelIDs := make([]string, 0)
 	for _, model := range existingModels {
 		existing[model.ModelID] = struct{}{}
 		if _, ok := reported[model.ModelID]; !ok {
+			removedModelIDs = append(removedModelIDs, model.ModelID)
 			if err := tx.WithContext(ctx).Delete(&model).Error; err != nil {
 				return err
 			}
 		}
+	}
+	if err := models.DeleteNodeModelDownloadSelectionsByNodeAddressAndModelIDs(ctx, tx, address, removedModelIDs); err != nil {
+		return err
 	}
 
 	missing := make([]models.NodeModel, 0)

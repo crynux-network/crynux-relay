@@ -5,6 +5,7 @@ import (
 	"crynux_relay/models"
 	"errors"
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -21,6 +22,7 @@ func newNodeCapabilitiesTestDB(t *testing.T) *gorm.DB {
 		&models.NodeModel{},
 		&models.NodeNameCount{},
 		&models.NetworkNodeData{},
+		&models.NodeModelDownloadSelection{},
 	); err != nil {
 		t.Fatalf("failed to migrate test db: %v", err)
 	}
@@ -192,5 +194,57 @@ func TestSyncNodeCapabilitiesRejectsQuitNode(t *testing.T) {
 	})
 	if !errors.Is(err, ErrNodeCapabilitiesIllegalStatus) {
 		t.Fatalf("expected illegal status error, got %v", err)
+	}
+}
+
+func TestSyncNodeCapabilitiesClearsSelectionsForRemovedModels(t *testing.T) {
+	resetNodeNamePolicyCacheForTest()
+	ctx := context.Background()
+	db := newNodeCapabilitiesTestDB(t)
+	node := seedNodeCapabilitiesTestNode(t, db, models.NodeStatusAvailable)
+
+	now := time.Now().UTC()
+	retained := models.NewNodeModelDownloadSelection("base:model-retained", node.Address, 24, now, now.Add(time.Hour))
+	retained.Status = models.NodeModelDownloadSelectionCompleted
+	removed := models.NewNodeModelDownloadSelection("base:model-removed", node.Address, 100, now.Add(-time.Hour), now.Add(time.Hour))
+	removed.Status = models.NodeModelDownloadSelectionCompleted
+	otherNode := models.NewNodeModelDownloadSelection("base:model-removed", "0xother", 100, now, now.Add(time.Hour))
+	otherNode.Status = models.NodeModelDownloadSelectionCompleted
+	for _, selection := range []*models.NodeModelDownloadSelection{retained, removed, otherNode} {
+		if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
+			t.Fatalf("create selection: %v", err)
+		}
+	}
+
+	if err := SyncNodeCapabilities(ctx, db, node.Address, NodeCapabilities{
+		GPUName:      node.GPUName,
+		GPUVram:      node.GPUVram,
+		MajorVersion: node.MajorVersion,
+		MinorVersion: node.MinorVersion,
+		PatchVersion: node.PatchVersion,
+		ModelIDs:     []string{"base:model-retained"},
+	}); err != nil {
+		t.Fatalf("sync capabilities failed: %v", err)
+	}
+
+	selections, err := models.GetAllNodeModelDownloadSelections(ctx, db)
+	if err != nil {
+		t.Fatalf("load selections: %v", err)
+	}
+	if len(selections) != 2 {
+		t.Fatalf("expected 2 remaining selections, got %d", len(selections))
+	}
+	remaining := make(map[string]string, len(selections))
+	for _, selection := range selections {
+		remaining[selection.NodeAddress+"|"+selection.ModelID] = string(selection.Status)
+	}
+	if remaining[node.Address+"|base:model-retained"] != string(models.NodeModelDownloadSelectionCompleted) {
+		t.Fatalf("retained model selection should remain, got %#v", remaining)
+	}
+	if _, ok := remaining[node.Address+"|base:model-removed"]; ok {
+		t.Fatal("removed model selection should be deleted for the synced node")
+	}
+	if remaining["0xother|base:model-removed"] != string(models.NodeModelDownloadSelectionCompleted) {
+		t.Fatal("other node selection for the same model should remain")
 	}
 }
