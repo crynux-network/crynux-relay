@@ -144,6 +144,7 @@ type AppConfig struct {
 		NodeNameWhitelistEnabled bool   `mapstructure:"node_name_whitelist_enabled"`
 		PassiveSlashMode         *bool  `mapstructure:"passive_slash_mode"`
 		TaskTracingDurationDays  uint64 `mapstructure:"task_tracing_duration_days"`
+		HistoryRetentionDays     uint64 `mapstructure:"history_retention_days"`
 	} `mapstructure:"task"`
 
 	TaskPricing struct {
