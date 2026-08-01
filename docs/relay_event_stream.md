@@ -24,6 +24,12 @@ Relay SHALL store each event as one `models.Event` row:
 
 Relay MUST write event rows only through `service.emitEvent`. Each payload type MUST implement `models.ToEventType` and convert itself through `ToEvent`.
 
+## Retention
+
+When `task.history_retention_days` is greater than `0`, Relay MUST hard-delete every `events` row whose `created_at` is older than that many days. The purge covers all event types, including node lifecycle, staking, delegation, model download, and task events. A value of `0` disables event retention cleanup.
+
+Event retention cleanup is independent of inference task row retention. The full retention contract is specified in [task_history_retention.md](./task_history_retention.md).
+
 ## API
 
 ### `GET /v1/events/current_id`

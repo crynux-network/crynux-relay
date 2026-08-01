@@ -13,6 +13,7 @@
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
 | [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, base-ready candidate snapshots, validation, upload, and missing-data reporting |
 | [task_error_reporting.md](./task_error_reporting.md) | Node task diagnostic signature authorization, protocol isolation, idempotent storage, and Admin exact-query contract |
+| [task_history_retention.md](./task_history_retention.md) | Configurable retention cleanup for terminal inference tasks, node task errors, task artifacts, and the `events` stream |
 | [passive_slash_model.md](./passive_slash_model.md) | Passive slash review mode, slash evidence capture, pending slash states, and admin approval flow |
 | [relay_event_stream.md](./relay_event_stream.md) | Relay `events` table, v1 event APIs, node watcher polling, and single-shot base-model download events |
 | [model_distribution.md](./model_distribution.md) | Demand-driven model distribution controller, persisted download selections, timeout and replacement, and on-disk authority |

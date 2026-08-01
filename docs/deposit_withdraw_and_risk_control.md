@@ -98,11 +98,12 @@ A withdrawal converts relay account balance to on-chain native tokens.
 On `POST /v1/client/:address/withdraw`, Relay MUST:
 
 1. Validate JWT, signature, amount, and benefit address.
-2. Compute withdrawal fee for the withdraw network as `withdrawal_fee + amount * fee_ratio`, where `withdrawal_fee` is the fixed fee of the network and `fee_ratio` is taken from the highest `withdrawal_fee_tiers` entry whose `min_amount` is not greater than `amount`. When the network has no `withdrawal_fee_tiers`, the proportional part is zero. The proportional part is computed in wei and rounded down. Set `withdrawal_fee` to zero when requester address equals `dao.task_fee_share_address` or `withdraw.withdrawal_fee_address`.
-3. Create a `withdraw_records` row with `Status = Pending`.
-4. Create a `Withdraw` relay account event for `amount + withdrawal_fee`.
-5. Store the created relay account event ID into `withdraw_records.relay_account_event_id`.
-6. Decrease requester relay account balance by `amount + withdrawal_fee`.
+2. Enforce the daily withdrawal count limit `withdraw.max_withdrawals_per_day` for both the requester `address` and the destination `benefit_address`. The count for each key MUST include non-`Failed` `withdraw_records` created since the current UTC day start. Relay MUST reject the request when either count has already reached the limit.
+3. Compute withdrawal fee for the withdraw network as `withdrawal_fee + amount * fee_ratio`, where `withdrawal_fee` is the fixed fee of the network and `fee_ratio` is taken from the highest `withdrawal_fee_tiers` entry whose `min_amount` is not greater than `amount`. When the network has no `withdrawal_fee_tiers`, the proportional part is zero. The proportional part is computed in wei and rounded down. Set `withdrawal_fee` to zero when requester address equals `dao.task_fee_share_address` or `withdraw.withdrawal_fee_address`.
+4. Create a `withdraw_records` row with `Status = Pending`.
+5. Create a `Withdraw` relay account event for `amount + withdrawal_fee`.
+6. Store the created relay account event ID into `withdraw_records.relay_account_event_id`.
+7. Decrease requester relay account balance by `amount + withdrawal_fee`.
 
 When wallet fulfills a withdrawal, Relay MUST:
 
@@ -212,6 +213,7 @@ When Relay Wallet skips applying an event type, it MUST still:
 
 - Relay MUST validate sufficient relay account balance before task charge and withdrawal charge.
 - Relay MUST validate benefit address from on-chain source before withdrawal acceptance.
+- Relay MUST enforce `withdraw.max_withdrawals_per_day` against non-`Failed` withdrawals per UTC day for both requester `address` and destination `benefit_address`.
 - Relay MUST enforce idempotency on deposit events.
 
 ### Relay Wallet Controls
@@ -265,6 +267,7 @@ Serial withdrawal processing prevents multiple wallet-side withdrawal records fr
 |-----|------|-------------|
 | `relay_wallet_address` | string | Wallet service signer address |
 | `withdrawal_fee_address` | string | Relay operator fee income address |
+| `max_withdrawals_per_day` | uint64 | Maximum non-`Failed` withdrawals allowed per UTC day for each requester `address` and each destination `benefit_address` |
 
 ### Per-Network Withdraw Config
 
