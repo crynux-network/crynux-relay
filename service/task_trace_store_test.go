@@ -22,6 +22,7 @@ func initTaskTraceStoreTestConfig(t *testing.T, retentionDays uint64) {
 		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		"  history_cleanup_batch_size: 2000\n" +
 		"  task_tracing_duration_days: " + strconv.FormatUint(retentionDays, 10) + "\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +

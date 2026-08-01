@@ -4,14 +4,14 @@ This document specifies automatic retention cleanup for finished inference task 
 
 ## Configuration
 
-`task.history_retention_days` controls both cleanup paths.
-
-| Value | Behavior |
-|-------|----------|
-| `0` | Cleanup MUST NOT run. |
-| `N` where `N > 0` | Relay MUST delete eligible history older than `N` days. |
+| Config | Behavior |
+|--------|----------|
+| `task.history_retention_days` | `0` disables cleanup. A value `N > 0` deletes eligible history older than `N` days. |
+| `task.history_cleanup_batch_size` | Positive batch size for both cleanup paths. Each hourly tick deletes in batches of this size until no eligible rows remain. |
 
 Relay MUST evaluate retention on an hourly background tick. Each enabled tick MUST run task history cleanup, then event history cleanup, using the same UTC cutoff `now - N days`.
+
+Task cleanup MUST select only `id` and `task_id_commitment` for eligibility filtering, ledger/slash safety checks, and artifact directory removal. Event cleanup MUST delete in the database with a batched `LIMIT` and MUST NOT load full event rows into the application.
 
 ## Task History Cleanup
 

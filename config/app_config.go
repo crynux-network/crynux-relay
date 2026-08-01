@@ -145,6 +145,7 @@ type AppConfig struct {
 		PassiveSlashMode         *bool  `mapstructure:"passive_slash_mode"`
 		TaskTracingDurationDays  uint64 `mapstructure:"task_tracing_duration_days"`
 		HistoryRetentionDays     uint64 `mapstructure:"history_retention_days"`
+		HistoryCleanupBatchSize  int    `mapstructure:"history_cleanup_batch_size"`
 	} `mapstructure:"task"`
 
 	TaskPricing struct {

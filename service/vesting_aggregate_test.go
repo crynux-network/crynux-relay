@@ -72,6 +72,7 @@ network_flops:
   gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
+  history_cleanup_batch_size: 2000
 task_pricing:
   overhead_seconds: 30
   initial_seconds_per_sd_unit: 10

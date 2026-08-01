@@ -41,6 +41,7 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		"  history_cleanup_batch_size: 2000\n" +
 		"staking_score:\n" +
 		"  locked_emission_coefficient: 1.0\n" +
 		"task_pricing:\n" +

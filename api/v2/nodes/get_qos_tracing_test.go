@@ -35,6 +35,7 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		"  history_cleanup_batch_size: 2000\n" +
 		"task_pricing:\n" +
 		"  overhead_seconds: 30\n" +
 		"  initial_seconds_per_sd_unit: 10\n" +

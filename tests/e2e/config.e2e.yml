@@ -96,6 +96,7 @@ task:
   passive_slash_mode: true
   task_tracing_duration_days: 0
   history_retention_days: 0
+  history_cleanup_batch_size: 2000
 task_pricing:
   overhead_seconds: 30
   initial_seconds_per_sd_unit: 10
