@@ -35,6 +35,7 @@ func initSelectionPolicyTestConfig(t *testing.T, minCount uint64, whitelistEnabl
 		"  minimum_node_name_number: " + strconv.FormatUint(minCount, 10) + "\n" +
 		"  node_name_whitelist_enabled: " + whitelistFlag + "\n" +
 		"  passive_slash_mode: true\n" +
+		"  history_cleanup_batch_size: 2000\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
 		"  tracing_max_task_events: 50\n"

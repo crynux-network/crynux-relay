@@ -80,6 +80,7 @@ network_flops:
   gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
+  history_cleanup_batch_size: 2000
 task_pricing:
   overhead_seconds: 30
   initial_seconds_per_sd_unit: 10
@@ -186,6 +187,7 @@ network_flops:
   gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
+  history_cleanup_batch_size: 2000
 task_pricing:
   overhead_seconds: 30
   initial_seconds_per_sd_unit: 10
@@ -250,6 +252,7 @@ stats:
   init_start_time: "2026-01-01T00:00:00Z"
 task:
   passive_slash_mode: true
+  history_cleanup_batch_size: 2000
 task_pricing:
   overhead_seconds: 30
   initial_seconds_per_sd_unit: 10
@@ -291,9 +294,9 @@ func writeConfigTestFiles(t *testing.T, passiveSlashMode bool, includePassiveSla
 	writeTestFile(t, jwtKeyFile, "jwt-secret")
 	writeTestFile(t, macKeyFile, "mac-secret")
 
-	taskConfig := ""
+	taskConfig := "task:\n  history_cleanup_batch_size: 2000\n"
 	if includePassiveSlashMode {
-		taskConfig = fmt.Sprintf("task:\n  passive_slash_mode: %t\n", passiveSlashMode)
+		taskConfig = fmt.Sprintf("task:\n  passive_slash_mode: %t\n  history_cleanup_batch_size: 2000\n", passiveSlashMode)
 	}
 	content := fmt.Sprintf(`environment: debug
 blockchains:

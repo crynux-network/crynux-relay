@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +12,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
+
+var errHistoryCleanupBatchSize = errors.New("history cleanup batch size must be positive")
 
 var terminalTaskStatuses = []models.TaskStatus{
 	models.TaskEndInvalidated,
@@ -28,17 +31,14 @@ var pendingTaskLedgerEventTypes = []models.RelayAccountEventType{
 	models.RelayAccountEventTypeUserDelegation,
 }
 
-const (
-	taskHistoryCleanupBatchSize  = 200
-	eventHistoryCleanupBatchSize = 1000
-)
+const historyCleanupDBTimeout = 60 * time.Second
 
 // CleanupTaskHistory deletes terminal inference tasks older than cutoff, their
 // node_task_errors rows, and best-effort on-disk artifact directories. It does not
-// delete events rows.
+// delete events rows. Each select only loads id and task_id_commitment.
 func CleanupTaskHistory(ctx context.Context, db *gorm.DB, cutoff time.Time, inferenceTasksDir, slashedTasksDir string, batchSize int) error {
 	if batchSize <= 0 {
-		batchSize = taskHistoryCleanupBatchSize
+		return errHistoryCleanupBatchSize
 	}
 
 	var lastID uint
@@ -77,7 +77,8 @@ func CleanupTaskHistory(ctx context.Context, db *gorm.DB, cutoff time.Time, infe
 		}
 
 		if len(eligibleIDs) > 0 {
-			if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			dbCtx, cancel := context.WithTimeout(ctx, historyCleanupDBTimeout)
+			err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 				if err := tx.Where("task_id_commitment IN ?", eligibleCommitments).
 					Delete(&models.NodeTaskError{}).Error; err != nil {
 					return err
@@ -87,7 +88,9 @@ func CleanupTaskHistory(ctx context.Context, db *gorm.DB, cutoff time.Time, infe
 					return err
 				}
 				return nil
-			}); err != nil {
+			})
+			cancel()
+			if err != nil {
 				return err
 			}
 
@@ -101,10 +104,11 @@ func CleanupTaskHistory(ctx context.Context, db *gorm.DB, cutoff time.Time, infe
 	}
 }
 
-// CleanupEventHistory hard-deletes all events rows with created_at older than cutoff.
+// CleanupEventHistory hard-deletes all events rows with created_at older than cutoff
+// using batched DELETE ... LIMIT without loading full event rows into the app.
 func CleanupEventHistory(ctx context.Context, db *gorm.DB, cutoff time.Time, batchSize int) error {
 	if batchSize <= 0 {
-		batchSize = eventHistoryCleanupBatchSize
+		return errHistoryCleanupBatchSize
 	}
 
 	for {
@@ -112,33 +116,24 @@ func CleanupEventHistory(ctx context.Context, db *gorm.DB, cutoff time.Time, bat
 			return err
 		}
 
-		var ids []uint
-		dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := db.WithContext(dbCtx).
-			Model(&models.Event{}).
+		dbCtx, cancel := context.WithTimeout(ctx, historyCleanupDBTimeout)
+		result := db.WithContext(dbCtx).
 			Unscoped().
 			Where("created_at < ?", cutoff).
 			Order("id ASC").
 			Limit(batchSize).
-			Pluck("id", &ids).Error
-		cancel()
-		if err != nil {
-			return err
-		}
-		if len(ids) == 0 {
-			return nil
-		}
-
-		dbCtx, cancel = context.WithTimeout(ctx, 10*time.Second)
-		result := db.WithContext(dbCtx).Unscoped().Where("id IN ?", ids).Delete(&models.Event{})
+			Delete(&models.Event{})
 		cancel()
 		if result.Error != nil {
 			return result.Error
 		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
 
 		log.Infof("event history cleanup: deleted %d events older than %s", result.RowsAffected, cutoff.UTC().Format(time.RFC3339))
 
-		if len(ids) < batchSize {
+		if result.RowsAffected < int64(batchSize) {
 			return nil
 		}
 	}
@@ -150,7 +145,7 @@ type historyCleanupTask struct {
 }
 
 func selectExpiredTerminalTasks(ctx context.Context, db *gorm.DB, cutoff time.Time, lastID uint, batchSize int) ([]historyCleanupTask, error) {
-	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	dbCtx, cancel := context.WithTimeout(ctx, historyCleanupDBTimeout)
 	defer cancel()
 
 	var tasks []historyCleanupTask
@@ -193,7 +188,7 @@ func blockedTaskCommitments(ctx context.Context, db *gorm.DB, commitments []stri
 		commitmentSet[commitment] = struct{}{}
 	}
 
-	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	dbCtx, cancel := context.WithTimeout(ctx, historyCleanupDBTimeout)
 	defer cancel()
 
 	var pendingSlashCommitments []string
@@ -211,7 +206,7 @@ func blockedTaskCommitments(ctx context.Context, db *gorm.DB, commitments []stri
 	var pendingEvents []models.RelayAccountEvent
 	if err := db.WithContext(dbCtx).
 		Model(&models.RelayAccountEvent{}).
-		Select("id, type, reason").
+		Select("type, reason").
 		Where("status = ?", models.RelayAccountEventStatusPending).
 		Where("type IN ?", pendingTaskLedgerEventTypes).
 		Find(&pendingEvents).Error; err != nil {

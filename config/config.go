@@ -223,6 +223,9 @@ func checkTaskConfig() error {
 	if appConfig.Task.PassiveSlashMode == nil {
 		return errors.New("task.passive_slash_mode is not set")
 	}
+	if appConfig.Task.HistoryCleanupBatchSize <= 0 {
+		return errors.New("task.history_cleanup_batch_size is not set")
+	}
 	return nil
 }
 

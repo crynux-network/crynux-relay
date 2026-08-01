@@ -24,6 +24,7 @@ func StartHistoryCleanup(ctx context.Context) {
 		}
 
 		cutoff := time.Now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+		batchSize := conf.Task.HistoryCleanupBatchSize
 		db := config.GetDB()
 
 		if err := service.CleanupTaskHistory(
@@ -32,13 +33,13 @@ func StartHistoryCleanup(ctx context.Context) {
 			cutoff,
 			conf.DataDir.InferenceTasks,
 			conf.DataDir.SlashedTasks,
-			0,
+			batchSize,
 		); err != nil {
 			log.Errorf("failed to cleanup task history: %v", err)
 			return
 		}
 
-		if err := service.CleanupEventHistory(ctx, db, cutoff, 0); err != nil {
+		if err := service.CleanupEventHistory(ctx, db, cutoff, batchSize); err != nil {
 			log.Errorf("failed to cleanup event history: %v", err)
 		}
 	}

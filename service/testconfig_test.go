@@ -28,6 +28,7 @@ func initServiceTestConfig(t *testing.T) {
 		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		"  history_cleanup_batch_size: 2000\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
 		"  tracing_max_task_events: 50\n"
