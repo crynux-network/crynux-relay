@@ -70,13 +70,23 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 	if err := db.WithContext(dbCtx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
 		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		var todayCount int64
+		maxPerDay := int64(appConfig.Withdraw.MaxWithdrawalsPerDay)
+		var todayAddressCount int64
 		if err := tx.Model(&models.WithdrawRecord{}).
 			Where("address = ? AND created_at >= ? AND status != ?", address, dayStart, models.WithdrawStatusFailed).
-			Count(&todayCount).Error; err != nil {
+			Count(&todayAddressCount).Error; err != nil {
 			return err
 		}
-		if todayCount >= int64(appConfig.Withdraw.MaxWithdrawalsPerDay) {
+		if todayAddressCount >= maxPerDay {
+			return ErrWithdrawDailyLimitExceeded
+		}
+		var todayBenefitCount int64
+		if err := tx.Model(&models.WithdrawRecord{}).
+			Where("benefit_address = ? AND created_at >= ? AND status != ?", benefitAddress, dayStart, models.WithdrawStatusFailed).
+			Count(&todayBenefitCount).Error; err != nil {
+			return err
+		}
+		if todayBenefitCount >= maxPerDay {
 			return ErrWithdrawDailyLimitExceeded
 		}
 		if err := tx.Create(record).Error; err != nil {
