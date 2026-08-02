@@ -63,6 +63,7 @@ blockchains:
         fee_ratio: 0.01
       - min_amount: 100000
         fee_ratio: 0.005
+    max_withdrawals_per_day: 10
   near:
     rps: 20
     rpc_endpoint: "https://json-rpc.testnet-near.crynux.io"
@@ -92,6 +93,7 @@ blockchains:
         fee_ratio: 0.01
       - min_amount: 100000
         fee_ratio: 0.005
+    max_withdrawals_per_day: 10
 deposit_withdraw_networks:
   base-sepolia:
     rps: 20
@@ -109,6 +111,7 @@ deposit_withdraw_networks:
         fee_ratio: 0.01
       - min_amount: 100000
         fee_ratio: 0.005
+    max_withdrawals_per_day: 10
 task:
   stake_amount: 0
   distance_threshold: 0
@@ -147,7 +150,6 @@ network_flops:
 withdraw:
   relay_wallet_address: ""
   withdrawal_fee_address: ""
-  max_withdrawals_per_day: 10
 credits:
   api_auth_address: ""
 dao:

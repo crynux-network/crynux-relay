@@ -94,9 +94,6 @@ func InitConfig(configPath string) error {
 	if err := checkDaoConfig(); err != nil {
 		return err
 	}
-	if err := checkWithdrawConfig(); err != nil {
-		return err
-	}
 	if err := checkMetricsConfig(); err != nil {
 		return err
 	}
@@ -166,11 +163,17 @@ func checkFundingNetworks() error {
 		}
 	}
 	for network, blockchain := range appConfig.Blockchains {
+		if blockchain.MaxWithdrawalsPerDay == 0 {
+			return fmt.Errorf("blockchain %s max_withdrawals_per_day is not set", network)
+		}
 		if err := checkWithdrawalFeeTiers(network, blockchain.WithdrawalFeeTiers); err != nil {
 			return err
 		}
 	}
 	for network, fundingNetwork := range appConfig.DepositWithdrawNetworks {
+		if fundingNetwork.MaxWithdrawalsPerDay == 0 {
+			return fmt.Errorf("deposit withdraw network %s max_withdrawals_per_day is not set", network)
+		}
 		if err := checkWithdrawalFeeTiers(network, fundingNetwork.WithdrawalFeeTiers); err != nil {
 			return err
 		}
@@ -331,13 +334,6 @@ func checkDaoConfig() error {
 		return fmt.Errorf("dao.apr_start_time must be RFC3339: %w", err)
 	}
 	appConfig.Dao.AprStartTime = rawAPRStartTime
-	return nil
-}
-
-func checkWithdrawConfig() error {
-	if appConfig.Withdraw.MaxWithdrawalsPerDay == 0 {
-		return errors.New("withdraw.max_withdrawals_per_day is not set")
-	}
 	return nil
 }
 

@@ -98,7 +98,7 @@ A withdrawal converts relay account balance to on-chain native tokens.
 On `POST /v1/client/:address/withdraw`, Relay MUST:
 
 1. Validate JWT, signature, amount, and benefit address.
-2. Enforce the daily withdrawal count limit `withdraw.max_withdrawals_per_day` for both the requester `address` and the destination `benefit_address`. The count for each key MUST include non-`Failed` `withdraw_records` created since the current UTC day start. Relay MUST reject the request when either count has already reached the limit.
+2. Enforce the daily withdrawal count limit `max_withdrawals_per_day` of the selected withdraw network for both the requester `address` and the destination `benefit_address`. The count for each key MUST include non-`Failed` `withdraw_records` of that network created since the current UTC day start. Relay MUST reject the request when either count has already reached the limit.
 3. Compute withdrawal fee for the withdraw network as `withdrawal_fee + amount * fee_ratio`, where `withdrawal_fee` is the fixed fee of the network and `fee_ratio` is taken from the highest `withdrawal_fee_tiers` entry whose `min_amount` is not greater than `amount`. When the network has no `withdrawal_fee_tiers`, the proportional part is zero. The proportional part is computed in wei and rounded down. Set `withdrawal_fee` to zero when requester address equals `dao.task_fee_share_address` or `withdraw.withdrawal_fee_address`.
 4. Create a `withdraw_records` row with `Status = Pending`.
 5. Create a `Withdraw` relay account event for `amount + withdrawal_fee`.
@@ -213,7 +213,7 @@ When Relay Wallet skips applying an event type, it MUST still:
 
 - Relay MUST validate sufficient relay account balance before task charge and withdrawal charge.
 - Relay MUST validate benefit address from on-chain source before withdrawal acceptance.
-- Relay MUST enforce `withdraw.max_withdrawals_per_day` against non-`Failed` withdrawals per UTC day for both requester `address` and destination `benefit_address`.
+- Relay MUST enforce the selected network `max_withdrawals_per_day` against non-`Failed` withdrawals of that network per UTC day for both requester `address` and destination `benefit_address`.
 - Relay MUST enforce idempotency on deposit events.
 
 ### Relay Wallet Controls
@@ -267,7 +267,6 @@ Serial withdrawal processing prevents multiple wallet-side withdrawal records fr
 |-----|------|-------------|
 | `relay_wallet_address` | string | Wallet service signer address |
 | `withdrawal_fee_address` | string | Relay operator fee income address |
-| `max_withdrawals_per_day` | uint64 | Maximum non-`Failed` withdrawals allowed per UTC day for each requester `address` and each destination `benefit_address` |
 
 ### Per-Network Withdraw Config
 
@@ -278,8 +277,11 @@ Each funding network entry under `blockchains` and `deposit_withdraw_networks` c
 | `withdrawal_fee` | uint64 | Fixed withdraw fee, in ether unit. The whole fee is waived for `dao.task_fee_share_address` and `withdraw.withdrawal_fee_address` |
 | `withdrawal_min` | uint64 | Minimum withdraw amount, in ether unit |
 | `withdrawal_fee_tiers` | list | Proportional fee tiers. Each entry has `min_amount` (tier lower bound of withdraw amount, in ether unit) and `fee_ratio` (proportional fee ratio applied to the whole withdraw amount in this tier) |
+| `max_withdrawals_per_day` | uint64 | Maximum non-`Failed` withdrawals allowed per UTC day on this network for each requester `address` and each destination `benefit_address` |
 
 `withdrawal_fee_tiers` MUST satisfy: the first entry has `min_amount` equal to `0`, `min_amount` values are strictly increasing, and every `fee_ratio` is in `[0, 1)`. Config loading MUST fail otherwise.
+
+`max_withdrawals_per_day` MUST be greater than `0`. Config loading MUST fail otherwise.
 
 ## API Endpoints
 
@@ -293,7 +295,7 @@ Each funding network entry under `blockchains` and `deposit_withdraw_networks` c
 | `GET` | `/v1/client/:address/task_fee` | Query task fee records |
 | `GET` | `/v2/relay_account/:address/vesting/locked` | Query locked vesting amount |
 | `GET` | `/v2/relay_account/:address/vesting/list` | Query vesting records with pagination |
-| `GET` | `/v1/network/withdraw_config` | Query withdraw fee and limit config of all funding networks: `network`, `token_type`, `withdrawal_fee`, `withdrawal_min`, and `withdrawal_fee_tiers` |
+| `GET` | `/v1/network/withdraw_config` | Query withdraw fee and limit config of all funding networks: `network`, `token_type`, `withdrawal_fee`, `withdrawal_min`, `withdrawal_fee_tiers`, and `max_withdrawals_per_day` |
 
 ### Wallet APIs
 

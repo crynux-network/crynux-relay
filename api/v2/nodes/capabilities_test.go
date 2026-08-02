@@ -62,9 +62,7 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 		"  max_nodes: 10\n" +
 		"  download_timeout_seconds: 1800\n" +
 		"qos:\n" +
-		"  tracing_max_task_events: 50\n" +
-		"withdraw:\n" +
-		"  max_withdrawals_per_day: 10\n"
+		"  tracing_max_task_events: 50\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}
