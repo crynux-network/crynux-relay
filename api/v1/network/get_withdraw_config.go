@@ -14,11 +14,12 @@ type WithdrawalFeeTier struct {
 }
 
 type NetworkWithdrawConfig struct {
-	Network            string              `json:"network"`
-	TokenType          string              `json:"token_type"`
-	WithdrawalFee      uint64              `json:"withdrawal_fee" description:"fixed withdrawal fee, in ether unit"`
-	WithdrawalMin      uint64              `json:"withdrawal_min" description:"minimum withdraw amount, in ether unit"`
-	WithdrawalFeeTiers []WithdrawalFeeTier `json:"withdrawal_fee_tiers"`
+	Network              string              `json:"network"`
+	TokenType            string              `json:"token_type"`
+	WithdrawalFee        uint64              `json:"withdrawal_fee" description:"fixed withdrawal fee, in ether unit"`
+	WithdrawalMin        uint64              `json:"withdrawal_min" description:"minimum withdraw amount, in ether unit"`
+	WithdrawalFeeTiers   []WithdrawalFeeTier `json:"withdrawal_fee_tiers"`
+	MaxWithdrawalsPerDay uint64              `json:"max_withdrawals_per_day" description:"maximum non-Failed withdrawals allowed per UTC day for each requester address and each destination benefit_address on this network"`
 }
 
 type GetWithdrawConfigResponse struct {
@@ -43,11 +44,12 @@ func GetWithdrawConfig(_ *gin.Context) (*GetWithdrawConfigResponse, error) {
 			})
 		}
 		data = append(data, NetworkWithdrawConfig{
-			Network:            networkConfig.Network,
-			TokenType:          networkConfig.TokenType,
-			WithdrawalFee:      networkConfig.WithdrawalFee,
-			WithdrawalMin:      networkConfig.WithdrawalMin,
-			WithdrawalFeeTiers: tiers,
+			Network:              networkConfig.Network,
+			TokenType:            networkConfig.TokenType,
+			WithdrawalFee:        networkConfig.WithdrawalFee,
+			WithdrawalMin:        networkConfig.WithdrawalMin,
+			WithdrawalFeeTiers:   tiers,
+			MaxWithdrawalsPerDay: networkConfig.MaxWithdrawalsPerDay,
 		})
 	}
 	sort.Slice(data, func(i, j int) bool {

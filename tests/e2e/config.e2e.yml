@@ -60,6 +60,7 @@ blockchains:
     withdrawal_fee_tiers:
       - min_amount: 0
         fee_ratio: 0
+    max_withdrawals_per_day: 10
   near:
     rps: 20
     rpc_endpoint: "https://json-rpc.testnet-near.crynux.io"
@@ -87,6 +88,7 @@ blockchains:
     withdrawal_fee_tiers:
       - min_amount: 0
         fee_ratio: 0
+    max_withdrawals_per_day: 10
 task:
   stake_amount: 0
   distance_threshold: 0
@@ -125,7 +127,6 @@ withdraw:
   min_withdrawal_amount: 5
   withdrawal_fee: 1
   withdrawal_fee_address: ""
-  max_withdrawals_per_day: 10
 credits:
   api_auth_address: ""
 dao:

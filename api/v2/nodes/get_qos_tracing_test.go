@@ -56,9 +56,7 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"staking_score:\n" +
 		"  locked_emission_coefficient: 1.0\n" +
 		"qos:\n" +
-		"  tracing_max_task_events: 3\n" +
-		"withdraw:\n" +
-		"  max_withdrawals_per_day: 10\n"
+		"  tracing_max_task_events: 3\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}

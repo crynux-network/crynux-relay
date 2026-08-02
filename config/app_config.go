@@ -48,6 +48,7 @@ type SystemBlockchainConfig struct {
 	WithdrawalFee                  uint64                          `mapstructure:"withdrawal_fee"`
 	WithdrawalMin                  uint64                          `mapstructure:"withdrawal_min"`
 	WithdrawalFeeTiers             []WithdrawalFeeTierConfig       `mapstructure:"withdrawal_fee_tiers"`
+	MaxWithdrawalsPerDay           uint64                          `mapstructure:"max_withdrawals_per_day"`
 }
 
 type DepositWithdrawNetworkContractsConfig struct {
@@ -56,30 +57,32 @@ type DepositWithdrawNetworkContractsConfig struct {
 }
 
 type DepositWithdrawNetworkConfig struct {
-	RPS                uint64                                `mapstructure:"rps"`
-	RpcEndpoint        string                                `mapstructure:"rpc_endpoint"`
-	StartBlockNum      uint64                                `mapstructure:"start_block_num"`
-	ChainID            uint64                                `mapstructure:"chain_id"`
-	Contracts          DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
-	LogBlockRange      uint64                                `mapstructure:"log_block_range"`
-	WithdrawalFee      uint64                                `mapstructure:"withdrawal_fee"`
-	WithdrawalMin      uint64                                `mapstructure:"withdrawal_min"`
-	WithdrawalFeeTiers []WithdrawalFeeTierConfig             `mapstructure:"withdrawal_fee_tiers"`
+	RPS                  uint64                                `mapstructure:"rps"`
+	RpcEndpoint          string                                `mapstructure:"rpc_endpoint"`
+	StartBlockNum        uint64                                `mapstructure:"start_block_num"`
+	ChainID              uint64                                `mapstructure:"chain_id"`
+	Contracts            DepositWithdrawNetworkContractsConfig `mapstructure:"contracts"`
+	LogBlockRange        uint64                                `mapstructure:"log_block_range"`
+	WithdrawalFee        uint64                                `mapstructure:"withdrawal_fee"`
+	WithdrawalMin        uint64                                `mapstructure:"withdrawal_min"`
+	WithdrawalFeeTiers   []WithdrawalFeeTierConfig             `mapstructure:"withdrawal_fee_tiers"`
+	MaxWithdrawalsPerDay uint64                                `mapstructure:"max_withdrawals_per_day"`
 }
 
 type EffectiveFundingNetworkConfig struct {
-	Network            string
-	TokenType          string
-	RPS                uint64
-	RpcEndpoint        string
-	StartBlockNum      uint64
-	ChainID            uint64
-	BenefitAddress     string
-	TokenAddress       string
-	LogBlockRange      uint64
-	WithdrawalFee      uint64
-	WithdrawalMin      uint64
-	WithdrawalFeeTiers []WithdrawalFeeTierConfig
+	Network              string
+	TokenType            string
+	RPS                  uint64
+	RpcEndpoint          string
+	StartBlockNum        uint64
+	ChainID              uint64
+	BenefitAddress       string
+	TokenAddress         string
+	LogBlockRange        uint64
+	WithdrawalFee        uint64
+	WithdrawalMin        uint64
+	WithdrawalFeeTiers   []WithdrawalFeeTierConfig
+	MaxWithdrawalsPerDay uint64
 }
 
 type AppConfig struct {
@@ -190,7 +193,6 @@ type AppConfig struct {
 		MinWithdrawalAmount  uint64 `mapstructure:"min_withdrawal_amount"`
 		WithdrawalFee        uint64 `mapstructure:"withdrawal_fee"`
 		WithdrawalFeeAddress string `mapstructure:"withdrawal_fee_address"`
-		MaxWithdrawalsPerDay uint64 `mapstructure:"max_withdrawals_per_day"`
 	} `mapstructure:"withdraw"`
 
 	Credits struct {

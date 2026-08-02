@@ -31,6 +31,7 @@ Each node network config MUST include the existing node contract fields, includi
 - `start_block_num`
 - `withdrawal_fee`
 - `withdrawal_min`
+- `max_withdrawals_per_day`
 
 Each deposit and withdraw only network config MUST include:
 
@@ -43,6 +44,7 @@ Each deposit and withdraw only network config MUST include:
 - `log_block_range`
 - `withdrawal_fee`
 - `withdrawal_min`
+- `max_withdrawals_per_day`
 
 `rps` limits the number of RPC requests Relay sends to the network per second. Relay MUST apply the network `rps` limiter to log queries, receipt reads, transaction reads, block reads, contract calls, and transaction submission for that network.
 
@@ -52,7 +54,7 @@ Base and other public EVM RPC providers enforce provider-specific `eth_getLogs` 
 
 `relay_account.deposit_address` remains a single global deposit address. `withdraw.withdrawal_fee_address` remains a single global withdrawal fee address.
 
-`withdrawal_fee` is network-specific and MUST be read from the effective deposit and withdraw network config selected by the withdrawal request.
+`withdrawal_fee` and `max_withdrawals_per_day` are network-specific and MUST be read from the effective deposit and withdraw network config selected by the withdrawal request.
 
 ## Network Processing Workers
 

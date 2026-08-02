@@ -68,6 +68,7 @@ blockchains:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
+    max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
   jwt:
@@ -102,8 +103,6 @@ qos:
   tracing_max_task_events: 50
 staking_score:
   locked_emission_coefficient: 1.0
-withdraw:
-  max_withdrawals_per_day: 10
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 
@@ -175,6 +174,7 @@ blockchains:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
+    max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
   jwt:
@@ -242,6 +242,7 @@ blockchains:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
+    max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
   jwt:
@@ -310,6 +311,7 @@ blockchains:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
       credits: "0x0000000000000000000000000000000000000003"
+    max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
   jwt:
@@ -341,8 +343,6 @@ qos:
   tracing_max_task_events: 50
 staking_score:
   locked_emission_coefficient: 1.0
-withdraw:
-  max_withdrawals_per_day: 10
 %s`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile), taskConfig)
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 	return dir
