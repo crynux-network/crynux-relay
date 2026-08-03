@@ -33,11 +33,29 @@ type WithdrawRecord struct {
 	Status              models.WithdrawStatus `json:"status"`
 	RelayAccountEventID uint                  `json:"relay_account_event_id"`
 	WithdrawalFee       string                `json:"withdrawal_fee"`
+	Timestamp           int64                 `json:"timestamp"`
+	Signature           string                `json:"signature"`
 }
 
 type GetWithdrawRequestsResponse struct {
 	response.Response
 	Data []WithdrawRecord `json:"data"`
+}
+
+func withdrawalRecordResponse(record models.WithdrawRecord) WithdrawRecord {
+	return WithdrawRecord{
+		ID:                  record.ID,
+		CreatedAt:           uint64(record.CreatedAt.Unix()),
+		Address:             record.Address,
+		BenefitAddress:      record.BenefitAddress,
+		Amount:              record.Amount.String(),
+		Network:             record.Network,
+		Status:              record.Status,
+		RelayAccountEventID: record.RelayAccountEventID,
+		WithdrawalFee:       record.WithdrawalFee.String(),
+		Timestamp:           record.Timestamp.Int64,
+		Signature:           record.Signature.String,
+	}
 }
 
 func GetWithdrawRequests(c *gin.Context, in *GetWithdrawRequestsInputWithSignature) (*GetWithdrawRequestsResponse, error) {
@@ -77,17 +95,7 @@ func GetWithdrawRequests(c *gin.Context, in *GetWithdrawRequestsInputWithSignatu
 					invalidIDs = append(invalidIDs, record.ID)
 					continue
 				}
-				results = append(results, WithdrawRecord{
-					ID:                  record.ID,
-					CreatedAt:           uint64(record.CreatedAt.Unix()),
-					Address:             record.Address,
-					BenefitAddress:      record.BenefitAddress,
-					Amount:              record.Amount.String(),
-					Network:             record.Network,
-					Status:              record.Status,
-					RelayAccountEventID: record.RelayAccountEventID,
-					WithdrawalFee:       record.WithdrawalFee.String(),
-				})
+				results = append(results, withdrawalRecordResponse(record))
 			}
 		}
 

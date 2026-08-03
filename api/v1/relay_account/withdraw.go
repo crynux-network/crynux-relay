@@ -77,7 +77,16 @@ func CreateWithdrawRequest(c *gin.Context, in *CreateWithdrawInput) (*CreateWith
 		return nil, validationErr
 	}
 
-	record, err := service.Withdraw(c.Request.Context(), config.GetDB(), in.Address, in.BenefitAddress, amount, in.Network)
+	record, err := service.Withdraw(
+		c.Request.Context(),
+		config.GetDB(),
+		in.Address,
+		in.BenefitAddress,
+		amount,
+		in.Network,
+		in.Timestamp,
+		in.Signature,
+	)
 	if err != nil {
 		log.Errorf("Error creating withdraw record: %v", err)
 		if errors.Is(err, service.ErrInsufficientRelayAccount) {

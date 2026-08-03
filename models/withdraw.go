@@ -18,6 +18,8 @@ type WithdrawRecord struct {
 	RelayAccountEventID uint                `json:"relay_account_event_id" gorm:"not null;default:0"`
 	TxHash              sql.NullString      `json:"tx_hash" gorm:"null;"`
 	WithdrawalFee       BigInt              `json:"withdrawal_fee" gorm:"not null"`
+	Timestamp           sql.NullInt64       `json:"timestamp" gorm:"null"`
+	Signature           sql.NullString      `json:"signature" gorm:"type:varchar(255);null"`
 	MAC                 string              `json:"mac" gorm:"not null"`
 }
 

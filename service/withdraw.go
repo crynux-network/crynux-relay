@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/utils"
+	"database/sql"
 	"errors"
 	"math/big"
 	"time"
@@ -40,7 +41,7 @@ func CalculateWithdrawalFee(networkConfig config.EffectiveFundingNetworkConfig, 
 	return fee
 }
 
-func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, amount *big.Int, network string) (*models.WithdrawRecord, error) {
+func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, amount *big.Int, network string, timestamp int64, signature string) (*models.WithdrawRecord, error) {
 	appConfig := config.GetConfig()
 	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -63,6 +64,8 @@ func Withdraw(ctx context.Context, db *gorm.DB, address, benefitAddress string, 
 		Status:         models.WithdrawStatusPending,
 		LocalStatus:    models.WithdrawLocalStatusPending,
 		WithdrawalFee:  models.BigInt{Int: *withdrawalFee},
+		Timestamp:      sql.NullInt64{Int64: timestamp, Valid: true},
+		Signature:      sql.NullString{String: signature, Valid: true},
 	}
 
 	totalAmount := big.NewInt(0).Add(amount, withdrawalFee)

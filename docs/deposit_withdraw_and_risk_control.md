@@ -100,7 +100,7 @@ On `POST /v1/client/:address/withdraw`, Relay MUST:
 1. Validate JWT, signature, amount, and benefit address.
 2. Enforce the daily withdrawal count limit `max_withdrawals_per_day` of the selected withdraw network for both the requester `address` and the destination `benefit_address`. The count for each key MUST include non-`Failed` `withdraw_records` of that network created since the current UTC day start. Relay MUST reject the request when either count has already reached the limit.
 3. Compute withdrawal fee for the withdraw network as `withdrawal_fee + amount * fee_ratio`, where `withdrawal_fee` is the fixed fee of the network and `fee_ratio` is taken from the highest `withdrawal_fee_tiers` entry whose `min_amount` is not greater than `amount`. When the network has no `withdrawal_fee_tiers`, the proportional part is zero. The proportional part is computed in wei and rounded down. Set `withdrawal_fee` to zero when requester address equals `dao.task_fee_share_address` or `withdraw.withdrawal_fee_address`.
-4. Create a `withdraw_records` row with `Status = Pending`.
+4. Create a `withdraw_records` row with `Status = Pending` and atomically persist the validated request `timestamp` and `signature` in that row. Historical rows MUST remain nullable and MUST NOT be backfilled.
 5. Create a `Withdraw` relay account event for `amount + withdrawal_fee`.
 6. Store the created relay account event ID into `withdraw_records.relay_account_event_id`.
 7. Decrease requester relay account balance by `amount + withdrawal_fee`.
@@ -143,6 +143,7 @@ Withdraw processing SHALL be interpreted as one continuous pipeline:
    - Meaning: Relay-side accounting and local readiness are done, and wallet execution is now allowed.
 
 3. Wallet executes and reports result.
+   - Wallet-facing withdrawal list responses MUST include the original user `timestamp` and `signature`.
    - Before fulfill/reject, Relay MUST require `withdraw_records.local_status = Processed`.
    - `withdraw_records.status` remains user-facing:
      - Fulfill sets `status = Success`.
@@ -186,6 +187,10 @@ Relay Wallet MUST synchronize in event-order:
 
 Relay Wallet MUST reject or halt on ordering or integrity violations.
 
+Relay Wallet MUST reconstruct the exact signed message `Crynux Relay\nAction: Withdraw <amount> from <address> to <benefit_address> on <network>\nAddress: <address>\nTimestamp: <timestamp>` and recover the signer with Ethereum personal-sign semantics. Processing delay MUST NOT invalidate an otherwise valid timestamp. The recovered address MUST equal the request address.
+
+Relay Wallet MUST enforce a unique authorization fingerprint for each canonical signed message. Missing, malformed, signer-mismatched, and replayed authorizations MUST be persisted locally as failed and reported through the idempotent Reject callback while withdrawal checkpoint synchronization advances. This authorization rule applies only before blockchain commitment. Any withdrawal with persisted `tx_hash`, `signed_raw_tx`, or equivalent committed broadcast state MUST remain bound to blockchain evidence and MUST NOT be rejected or refunded because authorization fields are absent or invalid.
+
 Relay account events MUST be retained as a complete ledger for audit, including `Withdraw` and `WithdrawRefund` events.
 
 Relay Wallet should skip applying `Withdraw` and `WithdrawRefund` to its local balance if withdrawal deduction and rollback are handled by withdrawal processing flow.
@@ -221,9 +226,10 @@ When Relay Wallet skips applying an event type, it MUST still:
 - Relay Wallet MUST enforce batch-level risk limits on synced relay account events.
 - Relay Wallet MUST treat each withdrawal request debit as `amount + withdrawal_fee`, matching the Relay-side `Withdraw` ledger event amount.
 - Relay Wallet MUST process withdrawal records serially. A withdrawal record MUST complete chain execution, Relay fulfill/reject callback, and local finalization before the next withdrawal record starts processing.
+- Relay Wallet MUST reload the local account balance immediately before creating a blockchain transaction and require coverage of `amount + withdrawal_fee`. Insufficient balance MUST produce no transaction, signature, or broadcast and MUST follow the safe Reject flow.
 - Relay Wallet MUST re-check local balance before marking a fulfilled withdrawal as deducted.
 
-Serial withdrawal processing prevents multiple wallet-side withdrawal records from queuing or monitoring chain transfers against the same local balance before any confirmed transfer has been deducted. This control preserves a single local balance value without introducing reserved-balance state.
+Synchronization-time balance validation is an intake risk control. The pre-transaction balance check is the execution gate that prevents requests accepted in different batches from reusing balance before earlier confirmed transfers are deducted. Serial processing preserves a single local balance value without introducing reserved-balance state.
 
 ## Data Models
 
@@ -240,6 +246,8 @@ Serial withdrawal processing prevents multiple wallet-side withdrawal records fr
 | `relay_account_event_id` | uint | Ledger ordering anchor |
 | `tx_hash` | string nullable | Fulfillment transaction hash |
 | `withdrawal_fee` | BigInt | Fee amount |
+| `timestamp` | int64 nullable | Original validated user authorization timestamp |
+| `signature` | string nullable | Original validated user authorization signature |
 | `mac` | string | Integrity tag |
 
 ### Relay `deposit_records`
