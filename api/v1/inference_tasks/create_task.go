@@ -33,7 +33,7 @@ type TaskInput struct {
 	TaskVersion      string          `form:"task_version" json:"task_version" description:"task version" validate:"required"`
 	TaskSize         *uint64         `form:"task_size" json:"task_size" description:"task size"`
 	TaskFee          models.BigInt   `form:"task_fee" json:"task_fee" description:"task fee, in unit wei" validate:"required"`
-	Timeout          uint64          `form:"timeout" json:"timeout" description:"timeout, in seconds"`
+	Timeout          uint64          `form:"timeout" json:"timeout,omitempty" description:"timeout, in seconds"`
 }
 
 type TaskInputWithSignature struct {
