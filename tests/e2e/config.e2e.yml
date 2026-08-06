@@ -101,11 +101,23 @@ task:
   history_cleanup_batch_size: 2000
 task_pricing:
   overhead_seconds: 30
-  initial_seconds_per_sd_unit: 10
-  initial_seconds_per_llm_token: 0.1
+  initial_seconds_per_sd_pixel_step: 0.00003814697265625
+  initial_llm_constant_seconds: 30
+  initial_llm_seconds_per_input_byte: 0.0001
+  initial_llm_seconds_per_output_token: 0.1
   calibration_alpha: 0.1
+  calibration_regularization: 0.000000001
+  calibration_max_positive_residual_multiple: 3
+  calibration_warmup_success_samples: 10
+  calibration_flush_interval_seconds: 3600
   default_llm_max_new_tokens: 256
   base_vram: 8
+  queue_timeout_seconds: 21600
+  app_validation_timeout_seconds: 600
+  result_upload_timeout_seconds: 600
+  timeout_multiplier: 2
+  min_execution_timeout_seconds: 60
+  max_execution_timeout_seconds: 7200
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2

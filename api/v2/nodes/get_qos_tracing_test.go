@@ -38,11 +38,23 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"  history_cleanup_batch_size: 2000\n" +
 		"task_pricing:\n" +
 		"  overhead_seconds: 30\n" +
-		"  initial_seconds_per_sd_unit: 10\n" +
-		"  initial_seconds_per_llm_token: 0.1\n" +
+		"  initial_seconds_per_sd_pixel_step: 0.00003814697265625\n" +
+		"  initial_llm_constant_seconds: 30\n" +
+		"  initial_llm_seconds_per_input_byte: 0.0001\n" +
+		"  initial_llm_seconds_per_output_token: 0.1\n" +
 		"  calibration_alpha: 0.1\n" +
+		"  calibration_regularization: 0.000000001\n" +
+		"  calibration_max_positive_residual_multiple: 3\n" +
+		"  calibration_warmup_success_samples: 10\n" +
+		"  calibration_flush_interval_seconds: 3600\n" +
 		"  default_llm_max_new_tokens: 256\n" +
 		"  base_vram: 8\n" +
+		"  queue_timeout_seconds: 21600\n" +
+		"  app_validation_timeout_seconds: 600\n" +
+		"  result_upload_timeout_seconds: 600\n" +
+		"  timeout_multiplier: 2\n" +
+		"  min_execution_timeout_seconds: 60\n" +
+		"  max_execution_timeout_seconds: 7200\n" +
 		"task_matching:\n" +
 		"  batch_size: 100\n" +
 		"  tick_interval_seconds: 2\n" +

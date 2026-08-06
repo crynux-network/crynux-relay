@@ -93,7 +93,7 @@ var (
 
 	NodesFailing30m = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "relay_nodes_failing_30m",
-		Help: "Number of distinct nodes with timeout-aborted tasks in the last 30 minutes.",
+		Help: "Number of distinct selected nodes with node-attributed execution or result-upload timeout aborts in the last 30 minutes.",
 	})
 
 	NodesAlive = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -101,21 +101,36 @@ var (
 		Help: "Number of nodes whose last task poll was within the last 2 minutes.",
 	})
 
-	TaskPricingSecondsPerSDUnit = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "relay_task_pricing_seconds_per_sd_unit",
-		Help: "Calibrated execution seconds per stable diffusion pricing unit.",
-	})
+	TaskPricingSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_seconds_per_sd_pixel_step",
+		Help: "Aggregated stable diffusion execution seconds per pixel-step.",
+	}, []string{"vram_demand"})
 
-	TaskPricingSecondsPerLLMToken = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "relay_task_pricing_seconds_per_llm_token",
-		Help: "Calibrated execution seconds per LLM output token.",
-	})
+	TaskPricingLLMCoefficient = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_llm_coefficient",
+		Help: "Aggregated LLM execution coefficient in its base unit.",
+	}, []string{"coefficient", "vram_demand"})
+
+	GPUExecutionSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_gpu_execution_seconds_per_sd_pixel_step",
+		Help: "Stable diffusion execution seconds per pixel-step for an exact GPU variant.",
+	}, []string{"gpu_name", "gpu_vram"})
+
+	GPUExecutionLLMCoefficient = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_gpu_execution_llm_coefficient",
+		Help: "LLM execution coefficient for an exact GPU variant in its base unit.",
+	}, []string{"coefficient", "gpu_name", "gpu_vram"})
+
+	GPUExecutionCalibrationSamples = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_gpu_execution_calibration_samples",
+		Help: "Cumulative valid calibration samples for an exact GPU variant and task type.",
+	}, []string{"task_type", "gpu_name", "gpu_vram"})
 
 	TaskPriority = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_task_priority",
 		Help:    "Distribution of computed task queue priority values at task creation, by task type.",
 		Buckets: prometheus.ExponentialBuckets(1e9, 10, 12),
-	}, []string{"task_type"})
+	}, []string{"task_type", "vram_demand"})
 
 	ModelDownloadsDispatched = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "relay_model_downloads_dispatched_total",
@@ -156,14 +171,48 @@ func init() {
 		Nodes,
 		NodesFailing30m,
 		NodesAlive,
-		TaskPricingSecondsPerSDUnit,
-		TaskPricingSecondsPerLLMToken,
+		TaskPricingSecondsPerSDPixelStep,
+		TaskPricingLLMCoefficient,
+		GPUExecutionSecondsPerSDPixelStep,
+		GPUExecutionLLMCoefficient,
+		GPUExecutionCalibrationSamples,
 		TaskPriority,
 		ModelDownloadsDispatched,
 		ModelDownloadsCompleted,
 		ModelDownloadsExpired,
 		ModelNodes,
 	)
+}
+
+func ResetTaskPricingCalibrationMetrics() {
+	TaskPricingSecondsPerSDPixelStep.Reset()
+	TaskPricingLLMCoefficient.Reset()
+	GPUExecutionSecondsPerSDPixelStep.Reset()
+	GPUExecutionLLMCoefficient.Reset()
+	GPUExecutionCalibrationSamples.Reset()
+}
+
+func SetTaskPricingCalibration(taskType string, vramDemand uint64, sdRate float64, llm [3]float64) {
+	vram := fmt.Sprint(vramDemand)
+	if taskType == "sd" {
+		TaskPricingSecondsPerSDPixelStep.WithLabelValues(vram).Set(sdRate)
+		return
+	}
+	if taskType == "llm" {
+		for i, name := range []string{"constant", "input", "output"} {
+			TaskPricingLLMCoefficient.WithLabelValues(name, vram).Set(llm[i])
+		}
+	}
+}
+
+func SetGPUExecutionCalibration(gpuName string, gpuVram uint64, sdRate float64, llm [3]float64, sdSamples, llmSamples uint64) {
+	vram := fmt.Sprint(gpuVram)
+	GPUExecutionSecondsPerSDPixelStep.WithLabelValues(gpuName, vram).Set(sdRate)
+	for i, name := range []string{"constant", "input", "output"} {
+		GPUExecutionLLMCoefficient.WithLabelValues(name, gpuName, vram).Set(llm[i])
+	}
+	GPUExecutionCalibrationSamples.WithLabelValues("sd", gpuName, vram).Set(float64(sdSamples))
+	GPUExecutionCalibrationSamples.WithLabelValues("llm", gpuName, vram).Set(float64(llmSamples))
 }
 
 // ModelNodeCount is one relay_model_nodes entry: the distinct node counts of
@@ -267,6 +316,14 @@ func AbortReasonLabel(reason models.TaskAbortReason) string {
 		return "group_timeout"
 	case models.TaskAbortErrorReported:
 		return "error_reported"
+	case models.TaskAbortCreatorCancelled:
+		return "creator_cancelled"
+	case models.TaskAbortCreatorValidationTimeout:
+		return "creator_validation_timeout"
+	case models.TaskAbortResultUploadTimeout:
+		return "result_upload_timeout"
+	case models.TaskAbortNodeSlashed:
+		return "node_slashed"
 	default:
 		return "unknown"
 	}

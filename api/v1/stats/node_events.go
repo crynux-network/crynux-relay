@@ -67,15 +67,30 @@ func GetNodeEventLogs(ctx *gin.Context) error {
 		timeString := task.StartTime.Time.UTC().Format(time.RFC3339)
 		fmt.Fprintf(&builder, "[%s] [%s] [%s.%d] [%s] [%s] [%s]\n", timeString, "Node selected", nodeData.CardModel, nodeData.VRam, task.SelectedNode, task.SelectedNode, task.TaskIDCommitment)
 		switch task.Status {
-		case models.TaskEndGroupRefund, models.TaskEndAborted, models.TaskEndInvalidated:
-			timeString = task.ValidatedTime.Time.UTC().Format(time.RFC3339)
-			fmt.Fprintf(&builder, "[%s] [%s] [%s.%d] [%s] [%s] [%s]\n", timeString, "Node released", nodeData.CardModel, nodeData.VRam, task.SelectedNode, task.SelectedNode, task.TaskIDCommitment)
-		case models.TaskEndSuccess:
-			timeString = task.ResultUploadedTime.Time.UTC().Format(time.RFC3339)
+		case models.TaskEndGroupRefund, models.TaskEndAborted, models.TaskEndInvalidated, models.TaskEndSuccess, models.TaskEndGroupSuccess:
+			timeString = nodeReleaseTime(task).UTC().Format(time.RFC3339)
 			fmt.Fprintf(&builder, "[%s] [%s] [%s.%d] [%s] [%s] [%s]\n", timeString, "Node released", nodeData.CardModel, nodeData.VRam, task.SelectedNode, task.SelectedNode, task.TaskIDCommitment)
 		}
 	}
 
 	ctx.String(http.StatusOK, builder.String())
 	return nil
+}
+
+// nodeReleaseTime returns when the selected node was released from the task.
+// TaskEndAborted uses UpdatedAt because ValidatedTime is unset for execution and
+// creator-validation timeouts, and holds the earlier validation time after a
+// result-upload timeout.
+func nodeReleaseTime(task models.InferenceTask) time.Time {
+	switch task.Status {
+	case models.TaskEndSuccess, models.TaskEndGroupSuccess:
+		if task.ResultUploadedTime.Valid {
+			return task.ResultUploadedTime.Time
+		}
+	case models.TaskEndGroupRefund, models.TaskEndInvalidated:
+		if task.ValidatedTime.Valid {
+			return task.ValidatedTime.Time
+		}
+	}
+	return task.UpdatedAt
 }

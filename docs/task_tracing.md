@@ -10,7 +10,11 @@ Target endpoint:
 
 The endpoint MUST assemble the trace from persisted task rows, persisted event rows, current node data, and the in-memory task trace store. Persisted task rows provide task creation, queue entry, task start, score or task error submission, validation completion, result upload completion, Relay result availability, and final task state. Persisted event rows provide ordered lifecycle event IDs and event timestamps. Current node data provides clearly labeled current selected-node context only; it MUST NOT replace a missing start-time node snapshot.
 
+The response MUST expose the task's current timeout phase, current waiting party, current deadline, and final timeout reason when present. Phase and deadline selection MUST follow [task_timeout.md](./task_timeout.md) and MUST use only the task's current status.
+
 The in-memory task trace store MUST retain only facts that Relay does not already persist. The store MUST be keyed by `task_id_commitment`, MUST add a group lookup by revealed `task_id`, and MUST store phase-specific fields for node selection, start-time node/model snapshot, validation request, validation result summary, upload availability, upload start, and app result fetches. Every record MUST include creation time, update time, and expiration time. The `task.task_tracing_duration_days` configuration controls volatile trace retention. A value of `0` disables volatile trace writes. A non-zero value keeps records in memory for that many days after the last update, and expired records MUST be removed by cleanup.
+
+The execution GPU snapshot defined in [task_execution_parameters.md](./task_execution_parameters.md) MUST remain independent from the trace store. Disabling or expiring trace data MUST NOT disable or delete an execution GPU snapshot before its calibration lifecycle ends.
 
 Relay MUST NOT store full validation proof values in the in-memory trace store. When full VRF proof or public key values are not stored, the response MUST identify the stored representation and MUST report the unavailable full values in `missing_data`.
 
@@ -18,11 +22,13 @@ Target trace data:
 
 - Task creation:
   - Timestamp: task create time.
-  - Details: task input parameters, including `task_args`, task type, task version, timeout, VRAM/GPU requirements, task fee, task size, model IDs, creator, nonce, sampling seed when available, and task pricing fields specified in [task-pricing.md](./task-pricing.md).
+  - Details: task input parameters, including `task_args`, task type, task version, VRAM/GPU requirements, task fee, task size, model IDs, creator, nonce, sampling seed when available, and task pricing fields specified in [task-pricing.md](./task-pricing.md).
+  - Details: normal SD and LLM tasks MUST identify execution Timeout as Relay-owned and not yet assigned. SDFT LoRA MUST expose its creator-supplied Timeout.
+  - Details: SD MUST expose stored `SDUnits`; LLM MUST expose stored `LLMInputBytes` and `LLMMaxNewTokens`.
   - Duration: none for the first trace step.
 - Queue entry and waiting:
   - Timestamp: time when the task enters the queue.
-  - Details: queued status, queue deadline inputs, and stored queue priority.
+  - Details: queued status, waiting party `relay`, current phase `queue`, queue deadline inputs, current queue deadline, and stored queue priority.
 - Node selected:
   - Timestamp: time when Relay selects a node for the task before task start.
   - Details: selected node address.
@@ -38,11 +44,13 @@ Target trace data:
   - Timestamp: task start time.
   - Details: selected node information, including address, card/GPU name, VRAM, version, operator staking, delegated staking summary, QoS score, health score inputs when available, status, delegator share/count, and all other persisted node base information useful for diagnosis.
   - Details: selected node model cache snapshot, including authoritative node-reported models present on disk and base models currently in memory or in use. Task start MUST NOT create missing model rows or emit model downloads.
+  - Details: exact execution `GPUName` and `GPUVram`, execution parameter cold-start state, predicted execution seconds, multiplier and clamp inputs, stored execution `Timeout`, waiting party `node`, current phase `execution`, and current execution deadline.
   - Duration: queue waiting time MUST also be present on this step for easy reading.
 - Score submission:
   - Timestamp: score submission time.
   - Details: submitted score and task error information if the node reported an execution error instead of a score.
   - Duration: execution duration, calculated as score submission time minus task start time.
+  - Details: after score or error submission, the trace MUST expose waiting party `creator`, current phase `app_validation`, and the creator-validation deadline.
 - Validation request and group reveal:
   - Timestamp: time when Relay receives the validation API request from the app.
   - Details: submitted validation parameters, including task ID, task ID commitments, VRF proof, and public key when the trace persistence policy stores full request data.
@@ -57,10 +65,12 @@ Target trace data:
   - Details: validation result summary, whether validation passed, number of pass tasks, number of refund tasks, number of invalid tasks, number of aborted tasks, final status of every task in the validation group, each task's selected node, score, QoS score, and abort reason when applicable.
   - Details: each task in the validation group MUST also expose its own validation or terminal status timestamp when available.
   - Duration: validation duration, calculated as group-level validation completion time minus validation request time when validation request time is recorded.
+  - Details: if any group member has `TaskAbortCreatorValidationTimeout`, the trace MUST identify that group validation is permanently rejected and MUST NOT report a partial validation result for the remaining members.
 - Result upload availability:
   - Timestamp: time when the result becomes uploadable by the node.
   - Details: upload eligibility status and whether the task is a normal successful task, group validated task, invalidated task with slash evidence, or refund task.
   - Duration: not applicable when upload availability is the same state transition as validation completion.
+  - Details: waiting party `node`, current phase `result_upload`, and the result-upload deadline.
 - Result upload:
   - Timestamp: result upload start time and result upload completion time.
   - Details: uploaded result status, result file metadata when available, checkpoint upload status for fine-tune tasks, and slash evidence result artifact status when applicable.
@@ -72,7 +82,17 @@ Target trace data:
   - Duration: time from upload completion to app fetch when app fetch time is recorded; otherwise unavailable with a reason.
 - Abort:
   - Timestamp: explicit task aborted time whenever any intermediate step ends with `TaskEndAborted`.
-  - Details: abort reason, abort issuer, last status before abort when available, selected node when available, and whether the abort happened while queued, running, waiting for validation, or waiting for upload.
+  - Details: exact abort reason, abort issuer, last status before abort, selected node when available, timeout phase, waiting party, expired deadline, refund or income event classification, node health effect, and `nodeFinishTask` time when applicable.
+  - Details: `TaskAbortCreatorValidationTimeout` MUST be labeled as creator protocol failure and node-occupancy compensation. It MUST NOT be labeled as validated, correct, or successful.
+  - Details: `TaskAbortResultUploadTimeout` MUST be labeled as creator refund and node-attributed health penalty.
   - Duration: time from the previous lifecycle step to abort, plus total task lifetime from create time to abort.
+
+## Task Lifecycle API Constraints
+
+The trace MUST represent public and internal abort paths separately.
+
+`POST /v1/inference_tasks/:task_id_commitment/abort_reason` MUST be represented as a public creator cancellation only when the signed creator submits `TaskAbortCreatorCancelled` for a task that is still `TaskQueued`. The API MUST reject all other reasons and every task in `TaskStarted` or a later state.
+
+Relay-internal queue, execution, creator-validation, and result-upload expiration MUST NOT be represented as calls to the public abort API. Their trace source MUST identify the internal timeout processor and their exact abort reason.
 
 Relay MUST NOT backfill historical tasks and MUST NOT derive fallback timestamps or fallback durations from unrelated lifecycle fields. The trace implementation only records new task data after task tracing is enabled. Fields that are unavailable because the task predates tracing, tracing is disabled, the in-memory record expired, or the lifecycle step has not occurred MUST be empty in the response and MUST appear in a structured `missing_data` section with the missing field name, affected trace step, and reason.

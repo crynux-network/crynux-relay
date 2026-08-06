@@ -28,8 +28,8 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 | `hf_model_id` | The huggingface base model ID of a `node_models` row. Cardinality is bounded because the `relay_model_nodes` gauge exports only the top 50 models by on-disk node count. |
 | `state` | Model holding state on a node: `on_disk` or `in_memory`. |
 | `gpu` | The exact `RequiredGPU` name for GPU-pinned tasks, `any` otherwise. |
-| `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, `task_fee_too_low`, `group_timeout`, or `error_reported`. |
-| `status` (aborted task) | The task status enum name at the moment of the abort: `TaskQueued`, `TaskParametersUploaded`, `TaskErrorReported`, `TaskScoreReady`, `TaskValidated`, or `TaskGroupValidated`. `TaskStarted` is split by `delivered_time` into `TaskStartedDelivered` and `TaskStartedUndelivered`. |
+| `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, `task_fee_too_low`, `group_timeout`, `error_reported`, `creator_cancelled`, `creator_validation_timeout`, or `result_upload_timeout`. |
+| `status` (aborted task) | The task status enum name at the moment of the abort: `TaskQueued`, `TaskParametersUploaded`, `TaskErrorReported`, `TaskScoreReady`, `TaskValidated`, or `TaskGroupValidated`. `TaskStarted` is split by `delivered_time` into `TaskStartedDelivered` and `TaskStartedUndelivered`. The status and reason together MUST identify queue, execution, creator-validation, and result-upload expiration. |
 | `status` (terminal task) | Terminal status: `success`, `group_success`, `group_refund`, or `invalidated`. |
 | `status` (node) | Node status: `quit`, `available`, `busy`, `pending_pause`, `pending_quit`, or `paused`. |
 | `event` | Node lifecycle event: `join`, `quit`, `kickout`, or `slash`. |
@@ -48,12 +48,33 @@ Counters and histograms MUST be incremented at the task and node state transitio
 | `relay_tasks_aborted_total` | counter | `reason`, `status`, `task_type`, `vram_tier` | `SetTaskStatusEndAborted` succeeds. The `status` label carries the task status before the abort. |
 | `relay_task_queue_wait_seconds` | histogram | `task_type`, `vram_tier` | Observes `StartTime - CreateTime` on dispatch. Buckets: 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800. |
 | `relay_task_execution_seconds` | histogram | `task_type`, `vram_tier` | Observes `ScoreReadyTime - StartTime` on score submission. Buckets: 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600. |
+| `relay_task_priority` | histogram | `task_type`, `vram_demand` | Observes immutable task priority when task creation succeeds. |
 | `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size on every node selection attempt in the matching round, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |
 | `relay_node_health_penalties_total` | counter | none | `ApplyHealthPenalty` succeeds. |
 | `relay_node_events_total` | counter | `event` | Node join, quit, kickout, or slash completes. |
 | `relay_model_downloads_dispatched_total` | counter | `task_type`, `vram_tier` | The model distribution controller commits a download selection record together with its `DownloadModel` event. The `task_type` label carries the latest demanding task type of the demand group. |
 | `relay_model_downloads_completed_total` | counter | `vram_tier` | A pending download selection transitions to `completed` because the node's on-disk model set contains the model. The transition is detected on the controller round following the node's model report, so completion observations lag the report by at most one controller interval. |
 | `relay_model_downloads_expired_total` | counter | `vram_tier` | A pending download selection transitions to `expired` at the download deadline without completion. |
+
+`relay_tasks_aborted_total` MUST preserve the exact timeout reason. `TaskAbortTimeout`, `TaskAbortCreatorValidationTimeout`, and `TaskAbortResultUploadTimeout` MUST NOT be combined into one generic timeout series. Fee and QoS dashboards MUST use both `reason` and prior `status` to distinguish responsibility.
+
+## Execution Parameter Metrics
+
+Relay MUST expose these in-memory execution parameter metrics:
+
+| Metric | Labels | Base-unit value |
+|---|---|---|
+| `relay_task_pricing_seconds_per_sd_pixel_step` | `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
+| `relay_task_pricing_llm_coefficient` | `coefficient`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `input`, or `output` |
+| `relay_gpu_execution_seconds_per_sd_pixel_step` | `gpu_name`, `gpu_vram` | Exact GPU variant SD seconds per pixel-step |
+| `relay_gpu_execution_llm_coefficient` | `coefficient`, `gpu_name`, `gpu_vram` | Exact GPU variant LLM coefficient |
+| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram` | Cumulative successful samples for the exact GPU variant and task type |
+
+The LLM `constant` coefficient MUST use seconds, `input` MUST use seconds per input byte, and `output` MUST use seconds per output token. Sample count MUST NOT be used as a cross-GPU aggregation weight.
+
+Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST multiply the SD coefficient by `512 * 512` and label it seconds per 512×512 image-step.
+
+GPU parameter grouping MUST use exact `(GPUName, GPUVram)` only. Model ID, architecture, dtype, quantization, and scheduler MUST NOT be metric dimensions. Estimation error from ignored model differences MUST affect only queue priority and execution Timeout and MUST NOT be interpreted as validation, consensus, fee, or slashing data.
 
 The average candidate pool size for a task class is the PromQL expression `rate(relay_node_selection_candidates_sum[5m]) / rate(relay_node_selection_candidates_count[5m])` grouped by labels; Relay MUST NOT compute averages itself.
 
@@ -65,7 +86,7 @@ When metrics are enabled, Relay MUST run a gauge collector goroutine on a 30-sec
 |--------|--------|-------|
 | `relay_task_queue_depth` | none | Count of tasks in `TaskQueued` status. |
 | `relay_nodes` | `status` | Count of nodes per node status. Every status label MUST be set on every tick, including zero values. |
-| `relay_nodes_failing_30m` | none | Count of distinct `selected_node` values on tasks with `TaskEndAborted` status, `TaskAbortTimeout` reason, and an update time within the last 30 minutes. This gauge discriminates systemic node failure from individual node failure. |
+| `relay_nodes_failing_30m` | none | Count of distinct `selected_node` values on tasks with `TaskEndAborted`, a node-attributed `TaskAbortTimeout` or `TaskAbortResultUploadTimeout`, and an update time within the last 30 minutes. `TaskAbortCreatorValidationTimeout` MUST NOT contribute. |
 | `relay_nodes_alive` | none | Count of nodes with `last_seen_time` within the last 2 minutes. |
 | `relay_model_nodes` | `hf_model_id`, `state` | Distinct node counts per huggingface base model from `node_models`: `on_disk` counts nodes with any row of the model, `in_memory` counts nodes with an `in_use` row of the model. On every tick, all series of this gauge MUST be replaced with the top 50 models ranked by on-disk node count descending, breaking ties by in-memory node count descending and then by model ID ascending; models outside the top 50 MUST be removed. |
 

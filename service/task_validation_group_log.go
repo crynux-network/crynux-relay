@@ -53,6 +53,14 @@ func validationGroupStatusLabel(task *models.InferenceTask) string {
 			return "AbortedGroupTimeout"
 		case models.TaskAbortErrorReported:
 			return "AbortedErrorReported"
+		case models.TaskAbortCreatorCancelled:
+			return "AbortedCreatorCancelled"
+		case models.TaskAbortCreatorValidationTimeout:
+			return "AbortedCreatorValidationTimeout"
+		case models.TaskAbortResultUploadTimeout:
+			return "AbortedResultUploadTimeout"
+		case models.TaskAbortNodeSlashed:
+			return "AbortedNodeSlashed"
 		default:
 			return "Aborted"
 		}

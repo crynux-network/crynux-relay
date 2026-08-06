@@ -83,6 +83,10 @@ type TaskTraceData struct {
 	AvailableFromExistingData []string                          `json:"available_from_existing_data"`
 	AvailableFromMemory       []string                          `json:"available_from_memory"`
 	MissingData               []TaskTraceMissingData            `json:"missing_data"`
+	CurrentWaitingFor         string                            `json:"current_waiting_for,omitempty"`
+	CurrentTimeoutPhase       service.TaskTimeoutPhase          `json:"current_timeout_phase,omitempty"`
+	CurrentDeadline           *int64                            `json:"current_deadline,omitempty"`
+	FinalTimeoutReason        models.TaskAbortReason            `json:"final_timeout_reason,omitempty"`
 }
 
 type GetTaskTraceResponse struct {
@@ -218,6 +222,18 @@ func (b *taskTraceBuilder) build(ctx context.Context, db *gorm.DB) (TaskTraceDat
 		AvailableFromMemory:       sortedSetValues(b.availableMemory),
 		MissingData:               b.missingData,
 	}
+	if deadline, phase, waitingFor, _, ok := service.GetTaskDeadline(b.task); ok {
+		deadlineUnix := deadline.Unix()
+		data.CurrentWaitingFor = waitingFor
+		data.CurrentTimeoutPhase = phase
+		data.CurrentDeadline = &deadlineUnix
+	}
+	if b.task.Status == models.TaskEndAborted {
+		switch b.task.AbortReason {
+		case models.TaskAbortTimeout, models.TaskAbortCreatorValidationTimeout, models.TaskAbortResultUploadTimeout:
+			data.FinalTimeoutReason = b.task.AbortReason
+		}
+	}
 	if b.task.SelectedNode != "" {
 		node, err := models.GetNodeByAddress(ctx, db, b.task.SelectedNode)
 		if err == nil {
@@ -238,40 +254,64 @@ func (b *taskTraceBuilder) addTaskCreated() {
 	if timestamp != nil {
 		b.markStored("task_created.timestamp")
 	}
+	details := map[string]interface{}{
+		"task_args":              b.task.TaskArgs,
+		"task_type":              b.task.TaskType,
+		"task_version":           b.task.TaskVersion,
+		"timeout":                b.task.Timeout,
+		"min_vram":               b.task.MinVRAM,
+		"required_gpu":           b.task.RequiredGPU,
+		"required_gpu_vram":      b.task.RequiredGPUVRAM,
+		"task_fee":               b.task.TaskFee.String(),
+		"priority":               b.task.Priority.String(),
+		"estimated_node_seconds": b.task.EstimatedNodeSeconds,
+		"vram_weight":            b.task.VRAMWeight,
+		"pricing_units":          b.task.PricingUnits,
+		"task_size":              b.task.TaskSize,
+		"model_ids":              []string(b.task.ModelIDs),
+		"creator":                b.task.Creator,
+		"nonce":                  b.task.Nonce,
+		"sampling_seed":          b.task.SamplingSeed,
+	}
+	if b.task.SDUnits != nil {
+		details["sd_units"] = *b.task.SDUnits
+	}
+	if b.task.LLMInputBytes != nil {
+		details["llm_input_bytes"] = *b.task.LLMInputBytes
+	}
+	if b.task.LLMMaxNewTokens != nil {
+		details["llm_max_new_tokens"] = *b.task.LLMMaxNewTokens
+	}
+	if service.UsesRelayOwnedTimeouts(b.task) {
+		details["timeout_ownership"] = "relay"
+		details["timeout_assigned"] = false
+	} else {
+		details["timeout_ownership"] = "creator"
+	}
 	b.trace = append(b.trace, TaskTraceStep{
 		Name:      "task_created",
 		Timestamp: timestamp,
-		Details: map[string]interface{}{
-			"task_args":         b.task.TaskArgs,
-			"task_type":         b.task.TaskType,
-			"task_version":      b.task.TaskVersion,
-			"timeout":           b.task.Timeout,
-			"min_vram":          b.task.MinVRAM,
-			"required_gpu":      b.task.RequiredGPU,
-			"required_gpu_vram": b.task.RequiredGPUVRAM,
-			"task_fee":          b.task.TaskFee.String(),
-			"priority":          b.task.Priority.String(),
-			"estimated_node_seconds": b.task.EstimatedNodeSeconds,
-			"vram_weight":            b.task.VRAMWeight,
-			"pricing_units":          b.task.PricingUnits,
-			"task_size":         b.task.TaskSize,
-			"model_ids":         []string(b.task.ModelIDs),
-			"creator":           b.task.Creator,
-			"nonce":             b.task.Nonce,
-			"sampling_seed":     b.task.SamplingSeed,
-		},
+		Details:   details,
 	})
 }
 
 func (b *taskTraceBuilder) addTaskQueued() {
 	timestamp := unixFromNullTime(b.task.CreateTime)
 	details := map[string]interface{}{
-		"status": b.task.Status,
+		"status":      b.task.Status,
+		"waiting_for": "relay",
+		"phase":       service.TaskTimeoutPhaseQueue,
+		"priority":    b.task.Priority.String(),
 	}
-	if b.task.CreateTime.Valid {
-		deadline := b.task.CreateTime.Time.Add(3*time.Minute + time.Duration(b.task.Timeout)*time.Second).Unix()
-		details["queue_deadline"] = deadline
+	if deadline, ok := service.GetQueueDeadline(b.task); ok {
+		details["queue_deadline"] = deadline.Unix()
 		b.markStored("task_queued.queue_deadline")
+		if service.UsesRelayOwnedTimeouts(b.task) {
+			details["queue_timeout_seconds"] = config.GetConfig().TaskPricing.QueueTimeoutSeconds
+		} else {
+			details["timeout"] = b.task.Timeout
+			details["queue_buffer_seconds"] = int64((3 * time.Minute).Seconds())
+		}
 	}
 	b.trace = append(b.trace, TaskTraceStep{
 		Name:      "task_queued",
@@ -345,15 +385,51 @@ func (b *taskTraceBuilder) addTaskStarted() {
 		"model_switched":  b.task.ModelSwtiched,
 		"node_current":    "current_selected_node",
 		"node_start_time": "memory_trace.start_node_snapshot",
+		"waiting_for":     "node",
+		"phase":           service.TaskTimeoutPhaseExecution,
+		"timeout":         b.task.Timeout,
 	}
 	if timestamp != nil {
 		b.markStored("task_started.timestamp")
 	}
+	if b.task.StartTime.Valid {
+		deadline := b.task.StartTime.Time.Add(time.Duration(b.task.Timeout) * time.Second).Unix()
+		details["execution_deadline"] = deadline
+		b.markStored("task_started.execution_deadline")
+	}
+	var gpuName string
+	var gpuVram uint64
+	hasGPU := false
 	if b.memoryTrace != nil && b.memoryTrace.StartNodeSnapshot != nil {
 		details["start_node_snapshot"] = b.memoryTrace.StartNodeSnapshot
+		gpuName = b.memoryTrace.StartNodeSnapshot.GPUName
+		gpuVram = b.memoryTrace.StartNodeSnapshot.GPUVram
+		details["gpu_name"] = gpuName
+		details["gpu_vram"] = gpuVram
+		hasGPU = true
 		b.markMemory("task_started.start_node_snapshot")
+		b.markMemory("task_started.gpu_name")
+		b.markMemory("task_started.gpu_vram")
 	} else {
 		b.addMissingMemory("task_started", "start_node_snapshot")
+		b.addMissingMemory("task_started", "gpu_name")
+		b.addMissingMemory("task_started", "gpu_vram")
+	}
+	if service.UsesRelayOwnedTimeouts(b.task) {
+		if hasGPU {
+			description, err := service.DescribeExecutionTimeout(b.task, gpuName, gpuVram)
+			if err != nil {
+				b.addMissing("task_started", "predicted_execution_seconds", missingReasonNotPersisted)
+			} else {
+				details["cold_start"] = description.ColdStart
+				details["predicted_execution_seconds"] = description.PredictedExecutionSeconds
+				details["timeout_multiplier"] = description.TimeoutMultiplier
+				details["min_execution_timeout_seconds"] = description.MinExecutionTimeoutSeconds
+				details["max_execution_timeout_seconds"] = description.MaxExecutionTimeoutSeconds
+				b.markStored("task_started.cold_start")
+				b.markStored("task_started.predicted_execution_seconds")
+			}
+		}
 	}
 	b.trace = append(b.trace, TaskTraceStep{
 		Name:      "task_started",
@@ -369,10 +445,26 @@ func (b *taskTraceBuilder) addScoreSubmitted() {
 		b.markStored("score_submitted.timestamp")
 	}
 	name := "score_submitted"
-	details := map[string]interface{}{"score": b.task.Score}
+	details := map[string]interface{}{
+		"score":       b.task.Score,
+		"waiting_for": "creator",
+		"phase":       service.TaskTimeoutPhaseAppValidation,
+	}
 	if b.task.TaskError != models.TaskErrorNone {
 		name = "task_error_reported"
-		details = map[string]interface{}{"task_error": b.task.TaskError}
+		details = map[string]interface{}{
+			"task_error":  b.task.TaskError,
+			"waiting_for": "creator",
+			"phase":       service.TaskTimeoutPhaseAppValidation,
+		}
+	}
+	if service.UsesRelayOwnedTimeouts(b.task) && b.task.ScoreReadyTime.Valid {
+		deadline := b.task.ScoreReadyTime.Time.Add(
+			time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second,
+		).Unix()
+		details["app_validation_deadline"] = deadline
+		details["app_validation_timeout_seconds"] = config.GetConfig().TaskPricing.AppValidationTimeoutSeconds
+		b.markStored("score_submitted.app_validation_deadline")
 	}
 	b.trace = append(b.trace, TaskTraceStep{
 		Name:      name,
@@ -434,7 +526,10 @@ func (b *taskTraceBuilder) addValidationResult() {
 
 func (b *taskTraceBuilder) addResultUploadAvailable() {
 	var timestamp *int64
-	details := map[string]interface{}{}
+	details := map[string]interface{}{
+		"waiting_for": "node",
+		"phase":       service.TaskTimeoutPhaseResultUpload,
+	}
 	if b.memoryTrace != nil && b.memoryTrace.ResultUploadAvailableTime != nil {
 		value := b.memoryTrace.ResultUploadAvailableTime.Unix()
 		timestamp = &value
@@ -445,6 +540,14 @@ func (b *taskTraceBuilder) addResultUploadAvailable() {
 		b.markMemory("result_upload_available.timestamp")
 	} else {
 		b.addMissingMemory("result_upload_available", "relay_result_upload_available_time")
+	}
+	if service.UsesRelayOwnedTimeouts(b.task) && b.task.ValidatedTime.Valid {
+		deadline := b.task.ValidatedTime.Time.Add(
+			time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second,
+		).Unix()
+		details["result_upload_deadline"] = deadline
+		details["result_upload_timeout_seconds"] = config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds
+		b.markStored("result_upload_available.result_upload_deadline")
 	}
 	b.trace = append(b.trace, TaskTraceStep{
 		Name:      "result_upload_available",
@@ -533,9 +636,41 @@ func (b *taskTraceBuilder) addTaskAborted() {
 		"abort_reason":  b.task.AbortReason,
 		"selected_node": b.task.SelectedNode,
 	}
+	var lastStatus models.TaskStatus
+	hasLastStatus := false
 	if args, ok := parseAbortEvent(event); ok {
 		details["abort_issuer"] = args.AbortIssuer
 		details["last_status"] = args.LastStatus
+		lastStatus = args.LastStatus
+		hasLastStatus = true
+	}
+	if hasLastStatus {
+		deadlineTask := *b.task
+		deadlineTask.Status = lastStatus
+		if deadline, phase, waitingFor, _, ok := service.GetTaskDeadline(&deadlineTask); ok {
+			details["phase"] = phase
+			details["waiting_for"] = waitingFor
+			details["expired_deadline"] = deadline.Unix()
+			b.markStored("task_aborted.expired_deadline")
+		}
+	}
+	switch b.task.AbortReason {
+	case models.TaskAbortCreatorValidationTimeout:
+		details["fee_handling"] = "income_occupancy_compensation"
+		details["node_health_effect"] = "none"
+	case models.TaskAbortResultUploadTimeout:
+		details["fee_handling"] = "refund"
+		details["node_health_effect"] = "result_upload_penalty"
+	case models.TaskAbortTimeout:
+		details["fee_handling"] = "refund"
+		if hasLastStatus && lastStatus == models.TaskQueued {
+			details["node_health_effect"] = "none"
+		} else {
+			details["node_health_effect"] = "execution_penalty"
+		}
+	default:
+		details["fee_handling"] = "refund"
+		details["node_health_effect"] = "none"
 	}
 	b.markStored("task_aborted.timestamp")
 	b.trace = append(b.trace, TaskTraceStep{

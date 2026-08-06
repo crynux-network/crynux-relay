@@ -3,13 +3,14 @@
 | Document | Description |
 |----------|-------------|
 | [architecture.md](./architecture.md) | Single Relay service boundary, configured blockchain networks, node current blockchain network, and terminology rules |
-| [task-pricing.md](./task-pricing.md) | Task priority calculation, VRAM weighting, execution-time estimation, calibration, and queue dispatch ordering |
+| [task_execution_parameters.md](./task_execution_parameters.md) | SD and LLM workload fields, exact GPU execution parameter calibration, cold start, persistence, and base-unit metrics |
+| [task-pricing.md](./task-pricing.md) | Queue execution-time estimate, VRAM weighting, immutable task priority, parameter aggregation, and dispatch ordering |
 | [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, base-model readiness handling, in-round reservation, and dispatch consistency |
 | [node_selection.md](./node_selection.md) | Qualification filters, base-model gate, staking and QoS weight, in-memory locality, and weighted sampling |
 | [qos.md](./qos.md) | Long-term performance score (`Q_long`) and short-term reliability factor (`H`) that compose the runtime QoS |
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
-| [task_timeout.md](./task_timeout.md) | Queue timeout, running timeout, abort completion, node health penalty, and timeout race handling |
+| [task_timeout.md](./task_timeout.md) | Queue, execution, creator-validation, and result-upload deadlines with abort, fee, Node Busy, health, and API behavior |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
 | [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, base-ready candidate snapshots, validation, upload, and missing-data reporting |
 | [task_error_reporting.md](./task_error_reporting.md) | Node task diagnostic signature authorization, protocol isolation, idempotent storage, and Admin exact-query contract |

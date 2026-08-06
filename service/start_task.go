@@ -4,7 +4,6 @@ import (
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -20,31 +19,121 @@ func getDefaultAbortIssuer() string {
 	return ""
 }
 
+type TaskTimeoutPhase string
+
+const (
+	TaskTimeoutPhaseQueue         TaskTimeoutPhase = "queue"
+	TaskTimeoutPhaseExecution     TaskTimeoutPhase = "execution"
+	TaskTimeoutPhaseAppValidation TaskTimeoutPhase = "app_validation"
+	TaskTimeoutPhaseResultUpload  TaskTimeoutPhase = "result_upload"
+	TaskTimeoutPhaseLegacy        TaskTimeoutPhase = "legacy"
+)
+
+func UsesRelayOwnedTimeouts(task *models.InferenceTask) bool {
+	return (task.TaskType == models.TaskTypeSD && task.SDUnits != nil) ||
+		(task.TaskType == models.TaskTypeLLM && task.LLMInputBytes != nil && task.LLMMaxNewTokens != nil)
+}
+
+// GetQueueDeadline returns CreateTime plus the queue timeout for the task type.
+// The result does not depend on the task's current status.
+func GetQueueDeadline(task *models.InferenceTask) (time.Time, bool) {
+	if !task.CreateTime.Valid {
+		return time.Time{}, false
+	}
+	if UsesRelayOwnedTimeouts(task) {
+		seconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
+		return task.CreateTime.Time.Add(time.Duration(seconds) * time.Second), true
+	}
+	return task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second), true
+}
+
+func GetTaskDeadline(task *models.InferenceTask) (time.Time, TaskTimeoutPhase, string, models.TaskAbortReason, bool) {
+	pricing := config.GetConfig().TaskPricing
+	if task.Status == models.TaskQueued {
+		if deadline, ok := GetQueueDeadline(task); ok {
+			if UsesRelayOwnedTimeouts(task) {
+				return deadline, TaskTimeoutPhaseQueue, "relay", models.TaskAbortTimeout, true
+			}
+			return deadline, TaskTimeoutPhaseLegacy, "relay", models.TaskAbortTimeout, true
+		}
+		return time.Time{}, "", "", models.TaskAbortReasonNone, false
+	}
+	if !UsesRelayOwnedTimeouts(task) {
+		switch task.Status {
+		case models.TaskStarted, models.TaskParametersUploaded, models.TaskErrorReported,
+			models.TaskScoreReady, models.TaskValidated, models.TaskGroupValidated:
+			if task.StartTime.Valid {
+				return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second),
+					TaskTimeoutPhaseLegacy, "node_or_creator", models.TaskAbortTimeout, true
+			}
+		}
+		return time.Time{}, "", "", models.TaskAbortReasonNone, false
+	}
+
+	switch task.Status {
+	case models.TaskStarted, models.TaskParametersUploaded:
+		if task.StartTime.Valid {
+			return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second),
+				TaskTimeoutPhaseExecution, "node", models.TaskAbortTimeout, true
+		}
+	case models.TaskScoreReady, models.TaskErrorReported:
+		if task.ScoreReadyTime.Valid {
+			return task.ScoreReadyTime.Time.Add(time.Duration(pricing.AppValidationTimeoutSeconds) * time.Second),
+				TaskTimeoutPhaseAppValidation, "app", models.TaskAbortCreatorValidationTimeout, true
+		}
+	case models.TaskValidated, models.TaskGroupValidated:
+		if task.ValidatedTime.Valid {
+			return task.ValidatedTime.Time.Add(time.Duration(pricing.ResultUploadTimeoutSeconds) * time.Second),
+				TaskTimeoutPhaseResultUpload, "node", models.TaskAbortResultUploadTimeout, true
+		}
+	}
+	return time.Time{}, "", "", models.TaskAbortReasonNone, false
+}
+
 func getQueuedTaskDeadline(task *models.InferenceTask) time.Time {
-	return task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second)
+	deadline, _, _, _, _ := GetTaskDeadline(task)
+	return deadline
 }
 
 func isQueuedTaskTimedOut(task *models.InferenceTask, now time.Time) bool {
-	return task.CreateTime.Valid && !getQueuedTaskDeadline(task).After(now)
+	deadline, _, _, _, ok := GetTaskDeadline(task)
+	return task.Status == models.TaskQueued && ok && !deadline.After(now)
 }
 
 func getRunningTaskDeadline(task *models.InferenceTask) time.Time {
-	return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second)
+	deadline, _, _, _, _ := GetTaskDeadline(task)
+	return deadline
 }
 
 func isRunningTaskTimedOut(task *models.InferenceTask, now time.Time) bool {
-	return task.StartTime.Valid && !getRunningTaskDeadline(task).After(now)
+	deadline, _, _, _, ok := GetTaskDeadline(task)
+	return task.Status != models.TaskQueued && ok && !deadline.After(now)
 }
 
 func getTimedOutQueuedTasks(ctx context.Context, db *gorm.DB, now time.Time) ([]*models.InferenceTask, error) {
 	const pageSize = 100
 	tasks := make([]*models.InferenceTask, 0)
+	queueTimeoutSeconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
+	relayOwnedCutoff := now.Add(-time.Duration(queueTimeoutSeconds) * time.Second)
+	// Legacy and SDFT deadlines are CreateTime + 3 minutes + Timeout. Timeout is
+	// at least 0, so CreateTime older than 3 minutes is the earliest possible
+	// candidate; exact Timeout filtering happens in isQueuedTaskTimedOut.
+	legacyEarliestCutoff := now.Add(-3 * time.Minute)
 
 	for offset := 0; ; offset += pageSize {
 		page := make([]*models.InferenceTask, 0)
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		relayOwnedCandidate := db.Where(
+			db.Where("task_type = ? AND sd_units IS NOT NULL", models.TaskTypeSD).
+				Or("task_type = ? AND llm_input_bytes IS NOT NULL AND llm_max_new_tokens IS NOT NULL", models.TaskTypeLLM),
+		).Where("create_time <= ?", relayOwnedCutoff)
+		legacyCandidate := db.Where("task_type <> ? OR sd_units IS NULL", models.TaskTypeSD).
+			Where("task_type <> ? OR llm_input_bytes IS NULL OR llm_max_new_tokens IS NULL", models.TaskTypeLLM).
+			Where("create_time <= ?", legacyEarliestCutoff)
 		err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
 			Where("status = ?", models.TaskQueued).
+			Where("create_time IS NOT NULL").
+			Where(db.Where(relayOwnedCandidate).Or(legacyCandidate)).
 			Order("id").
 			Offset(offset).
 			Limit(pageSize).
@@ -108,11 +197,13 @@ func getTimedOutRunningTasks(ctx context.Context, db *gorm.DB, now time.Time) ([
 }
 
 func abortTimedOutTask(ctx context.Context, task *models.InferenceTask, abortIssuer string) error {
-	task.AbortReason = models.TaskAbortTimeout
-	task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
-
 	var err error
 	for range 3 {
+		deadline, _, _, abortReason, ok := GetTaskDeadline(task)
+		if !ok || deadline.After(time.Now()) {
+			return nil
+		}
+		task.AbortReason = abortReason
 		err = ExecuteNodeStateUpdate(ctx, config.GetDB(), []string{task.SelectedNode}, func() error {
 			ctx1, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
@@ -122,9 +213,11 @@ func abortTimedOutTask(ctx context.Context, task *models.InferenceTask, abortIss
 			return nil
 		}
 		if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {
-			if syncErr := task.SyncStatus(ctx, config.GetDB()); syncErr != nil {
+			currentTask, syncErr := models.GetTaskByIDCommitment(ctx, config.GetDB(), task.TaskIDCommitment)
+			if syncErr != nil {
 				return syncErr
 			}
+			*task = *currentTask
 			continue
 		}
 		return err

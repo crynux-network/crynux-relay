@@ -12,11 +12,17 @@ import (
 	"crynux_relay/tasks"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	if err := config.InitConfig(""); err != nil {
 		print("Error reading config file")
 		print(err.Error())
@@ -64,7 +70,9 @@ func main() {
 	if err := service.InitSelectingProb(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
-	service.InitTaskPricing()
+	if err := service.InitTaskPricing(ctx, config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
 	if err := service.InitNodeIndex(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
@@ -78,6 +86,7 @@ func main() {
 	service.StartBlockchainProcessors(context.Background())
 	service.StartDelegatedSlashRecovery(context.Background(), config.GetDB())
 	go service.StartLoadedModelFlush(context.Background(), config.GetDB())
+	go service.StartTaskPricingCalibrationFlush(ctx, config.GetDB())
 	go service.StartModelDistribution(context.Background(), config.GetDB())
 	go service.StartTaskProcesser(context.Background())
 	go service.StartRelayAccountSync(context.Background(), config.GetDB())
@@ -102,7 +111,13 @@ func main() {
 		go metrics.StartGaugeCollector(context.Background(), config.GetDB())
 	}
 
-	startServer()
+	go startServer()
+	<-ctx.Done()
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelFlush()
+	if err := service.FlushTaskPricingCalibration(flushCtx, config.GetDB()); err != nil {
+		log.Errorf("TaskPricing: shutdown calibration flush failed: %v", err)
+	}
 }
 
 func startServer() {

@@ -16,6 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/vechain/go-ecvrf"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func validateTaskID(taskID, nonce, taskIDCommitment string) error {
@@ -199,6 +200,96 @@ type prebuiltSlashEvidence struct {
 	evidenceComplete bool
 }
 
+func groupHasCreatorValidationTimeout(tasks []*models.InferenceTask) bool {
+	for _, task := range tasks {
+		if task.Status == models.TaskEndAborted &&
+			task.AbortReason == models.TaskAbortCreatorValidationTimeout {
+			return true
+		}
+	}
+	return false
+}
+
+func lockValidationGroupTasks(ctx context.Context, tx *gorm.DB, tasks []*models.InferenceTask) ([]*models.InferenceTask, error) {
+	if len(tasks) != 3 {
+		return nil, errors.New("task group size is not 3")
+	}
+
+	taskIDs := make([]uint, len(tasks))
+	for i, task := range tasks {
+		taskIDs[i] = task.ID
+	}
+
+	var records []models.InferenceTask
+	if err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", taskIDs).
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	if len(records) != len(tasks) {
+		return nil, errors.New("task group records are incomplete")
+	}
+
+	recordsByID := make(map[uint]*models.InferenceTask, len(records))
+	for i := range records {
+		recordsByID[records[i].ID] = &records[i]
+	}
+	refreshedTasks := make([]*models.InferenceTask, len(tasks))
+	for i, task := range tasks {
+		refreshedTask, ok := recordsByID[task.ID]
+		if !ok {
+			return nil, errors.New("task group records are incomplete")
+		}
+		refreshedTasks[i] = refreshedTask
+	}
+	return refreshedTasks, nil
+}
+
+func refreshValidationGroupTasksForFinalUpdate(ctx context.Context, tx *gorm.DB, tasks []*models.InferenceTask) ([]*models.InferenceTask, error) {
+	refreshedTasks, err := lockValidationGroupTasks(ctx, tx, tasks)
+	if err != nil {
+		return nil, err
+	}
+	if groupHasCreatorValidationTimeout(refreshedTasks) {
+		return nil, errors.New("task group validation expired")
+	}
+	return refreshedTasks, nil
+}
+
+func setValidationGroupTaskID(ctx context.Context, db *gorm.DB, tasks []*models.InferenceTask, taskID string) ([]*models.InferenceTask, error) {
+	refreshedTasks := make([]*models.InferenceTask, len(tasks))
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		lockedTasks, err := lockValidationGroupTasks(ctx, tx, tasks)
+		if err != nil {
+			return err
+		}
+		if groupHasCreatorValidationTimeout(lockedTasks) {
+			return errors.New("task group validation expired")
+		}
+		for _, task := range lockedTasks {
+			if !(task.Status == models.TaskScoreReady || task.Status == models.TaskErrorReported || task.Status == models.TaskEndAborted) {
+				return errors.New("illegal task state")
+			}
+			if err := validateTaskID(taskID, task.Nonce, task.TaskIDCommitment); err != nil {
+				return err
+			}
+		}
+		for _, task := range lockedTasks {
+			if err := task.Update(ctx, tx, map[string]interface{}{"task_id": taskID}); err != nil {
+				return err
+			}
+			task.TaskID = taskID
+		}
+		copy(refreshedTasks, lockedTasks)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return refreshedTasks, nil
+}
+
 func buildInvalidatedTaskSlashEvidence(ctx context.Context, db *gorm.DB, tasks []*models.InferenceTask, nextStatusMap map[string]models.TaskStatus) (map[string]prebuiltSlashEvidence, error) {
 	evidenceByTaskIDCommitment := make(map[string]prebuiltSlashEvidence)
 	for _, task := range tasks {
@@ -232,25 +323,8 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 		return errors.New("task group size is not 3")
 	}
 
-	for _, task := range tasks {
-		if !(task.Status == models.TaskScoreReady || task.Status == models.TaskErrorReported || task.Status == models.TaskEndAborted) {
-			return errors.New("illegal task state")
-		}
-	}
-
-	for _, task := range tasks {
-		if err := validateTaskID(taskID, task.Nonce, task.TaskIDCommitment); err != nil {
-			return err
-		}
-	}
-	if err := config.GetDB().Transaction(func(tx *gorm.DB) error {
-		for _, task := range tasks {
-			if err := task.Update(ctx, tx, map[string]interface{}{"task_id": taskID}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	tasks, err := setValidationGroupTaskID(ctx, config.GetDB(), tasks, taskID)
+	if err != nil {
 		return err
 	}
 
@@ -266,87 +340,11 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 		}
 	}
 
-	// sort tasks by time cost
-	sort.Slice(tasks, func(i, j int) bool {
-		ti := tasks[i].ExecutionTime()
-		tj := tasks[j].ExecutionTime()
-		if ti == tj {
-			return tasks[i].ID < tasks[j].ID
-		}
-		return ti < tj
-	})
-	// set task qos score
-	assignValidationGroupQosScores(tasks)
-
 	shouldLogValidationGroup := config.GetTaskValidationGroupLogger() != nil
 	var validationGroupStatusLabels []string
 	validationGroupNodeMetricsBefore := make(map[string]validationGroupNodeMetrics)
 	validationGroupNodeOrder := make([]string, 0, len(tasks))
-	if shouldLogValidationGroup {
-		validationGroupStatusLabels = collectValidationGroupStatusLabels(tasks)
-		nodeMetricsBefore, orderedNodeAddresses, err := collectValidationGroupNodeMetricsBefore(ctx, tasks)
-		if err != nil {
-			log.Errorf("TaskValidationGroup: collect pre-update node metrics error: %v", err)
-		} else {
-			validationGroupNodeMetricsBefore = nodeMetricsBefore
-			validationGroupNodeOrder = orderedNodeAddresses
-		}
-	}
-
-	// validate tasks' score
 	appConfig := config.GetConfig()
-
-	nextStatusMap := make(map[string]models.TaskStatus)
-	finishedTasks := make([]*models.InferenceTask, 0)
-	for _, task := range tasks {
-		nextStatusMap[task.TaskIDCommitment] = models.TaskEndAborted
-		if task.Status != models.TaskEndAborted {
-			finishedTasks = append(finishedTasks, task)
-		}
-	}
-
-	if len(finishedTasks) == 2 {
-		if compareTaskScore(finishedTasks[0], finishedTasks[1], appConfig.Task.DistanceThreshold) && finishedTasks[0].Status == models.TaskScoreReady {
-			nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskGroupValidated
-			nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskEndGroupRefund
-		}
-	} else if len(finishedTasks) == 3 {
-		same1 := compareTaskScore(finishedTasks[0], finishedTasks[1], appConfig.Task.DistanceThreshold)
-		same2 := compareTaskScore(finishedTasks[0], finishedTasks[2], appConfig.Task.DistanceThreshold)
-		same3 := compareTaskScore(finishedTasks[1], finishedTasks[2], appConfig.Task.DistanceThreshold)
-		if same1 {
-			if finishedTasks[0].Status == models.TaskScoreReady {
-				nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskGroupValidated
-				nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskEndGroupRefund
-			}
-			if same2 {
-				nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndGroupRefund
-			} else {
-				nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndInvalidated
-			}
-		} else if same2 {
-			if finishedTasks[0].Status == models.TaskScoreReady {
-				nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskGroupValidated
-				nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndGroupRefund
-			}
-			nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskEndInvalidated
-		} else if same3 {
-			if finishedTasks[1].Status == models.TaskScoreReady {
-				nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskGroupValidated
-				nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndGroupRefund
-			}
-			nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskEndInvalidated
-		}
-	}
-	if shouldLogValidationGroup {
-		markValidationGroupSlashedNodes(tasks, nextStatusMap, validationGroupNodeMetricsBefore)
-		markValidationGroupKickoutCheckNodes(tasks, nextStatusMap, validationGroupNodeMetricsBefore)
-	}
-
-	slashEvidenceByTaskIDCommitment, err := buildInvalidatedTaskSlashEvidence(ctx, config.GetDB(), tasks, nextStatusMap)
-	if err != nil {
-		return err
-	}
 
 	groupNodeAddresses := make([]string, 0, len(tasks))
 	for _, task := range tasks {
@@ -354,6 +352,84 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 	}
 	if err := ExecuteNodeStateUpdate(ctx, config.GetDB(), groupNodeAddresses, func() error {
 		return config.GetDB().Transaction(func(tx *gorm.DB) error {
+			refreshedTasks, err := refreshValidationGroupTasksForFinalUpdate(ctx, tx, tasks)
+			if err != nil {
+				return err
+			}
+			tasks = refreshedTasks
+
+			// sort tasks by time cost
+			sort.Slice(tasks, func(i, j int) bool {
+				ti := tasks[i].ExecutionTime()
+				tj := tasks[j].ExecutionTime()
+				if ti == tj {
+					return tasks[i].ID < tasks[j].ID
+				}
+				return ti < tj
+			})
+			assignValidationGroupQosScores(tasks)
+
+			nextStatusMap := make(map[string]models.TaskStatus)
+			finishedTasks := make([]*models.InferenceTask, 0)
+			for _, task := range tasks {
+				nextStatusMap[task.TaskIDCommitment] = models.TaskEndAborted
+				if task.Status != models.TaskEndAborted {
+					finishedTasks = append(finishedTasks, task)
+				}
+			}
+
+			if len(finishedTasks) == 2 {
+				if compareTaskScore(finishedTasks[0], finishedTasks[1], appConfig.Task.DistanceThreshold) && finishedTasks[0].Status == models.TaskScoreReady {
+					nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskGroupValidated
+					nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskEndGroupRefund
+				}
+			} else if len(finishedTasks) == 3 {
+				same1 := compareTaskScore(finishedTasks[0], finishedTasks[1], appConfig.Task.DistanceThreshold)
+				same2 := compareTaskScore(finishedTasks[0], finishedTasks[2], appConfig.Task.DistanceThreshold)
+				same3 := compareTaskScore(finishedTasks[1], finishedTasks[2], appConfig.Task.DistanceThreshold)
+				if same1 {
+					if finishedTasks[0].Status == models.TaskScoreReady {
+						nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskGroupValidated
+						nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskEndGroupRefund
+					}
+					if same2 {
+						nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndGroupRefund
+					} else {
+						nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndInvalidated
+					}
+				} else if same2 {
+					if finishedTasks[0].Status == models.TaskScoreReady {
+						nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskGroupValidated
+						nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndGroupRefund
+					}
+					nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskEndInvalidated
+				} else if same3 {
+					if finishedTasks[1].Status == models.TaskScoreReady {
+						nextStatusMap[finishedTasks[1].TaskIDCommitment] = models.TaskGroupValidated
+						nextStatusMap[finishedTasks[2].TaskIDCommitment] = models.TaskEndGroupRefund
+					}
+					nextStatusMap[finishedTasks[0].TaskIDCommitment] = models.TaskEndInvalidated
+				}
+			}
+
+			if shouldLogValidationGroup {
+				validationGroupStatusLabels = collectValidationGroupStatusLabels(tasks)
+				nodeMetricsBefore, orderedNodeAddresses, metricsErr := collectValidationGroupNodeMetricsBefore(ctx, tasks)
+				if metricsErr != nil {
+					log.Errorf("TaskValidationGroup: collect pre-update node metrics error: %v", metricsErr)
+				} else {
+					validationGroupNodeMetricsBefore = nodeMetricsBefore
+					validationGroupNodeOrder = orderedNodeAddresses
+					markValidationGroupSlashedNodes(tasks, nextStatusMap, validationGroupNodeMetricsBefore)
+					markValidationGroupKickoutCheckNodes(tasks, nextStatusMap, validationGroupNodeMetricsBefore)
+				}
+			}
+
+			slashEvidenceByTaskIDCommitment, err := buildInvalidatedTaskSlashEvidence(ctx, tx, tasks, nextStatusMap)
+			if err != nil {
+				return err
+			}
+
 			for _, task := range tasks {
 				nextStatus := nextStatusMap[task.TaskIDCommitment]
 
@@ -401,6 +477,15 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 		})
 	}); err != nil {
 		return err
+	}
+	for _, task := range tasks {
+		if task.TaskType == models.TaskTypeSD &&
+			(task.Status == models.TaskGroupValidated || task.Status == models.TaskEndGroupRefund) {
+			if err := CalibrateValidatedSDTask(task); err != nil {
+				log.Errorf("ValidateTaskGroup: failed to calibrate SD task %s: %v", task.TaskIDCommitment, err)
+			}
+			DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+		}
 	}
 	for i, task := range tasks {
 		*originTasks[i] = *task

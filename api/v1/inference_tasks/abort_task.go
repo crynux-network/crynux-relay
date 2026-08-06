@@ -6,9 +6,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
-	"database/sql"
 	"errors"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -49,27 +47,28 @@ func AbortTask(c *gin.Context, in *AbortTaskInputWithSignature) (*response.Respo
 		}
 	}
 
-	if !(address == task.Creator || address == task.SelectedNode) {
+	if address != task.Creator {
 		return nil, response.NewValidationErrorResponse("signature", "Signer not allowed")
 	}
 
-	if task.StartTime.Valid && task.StartTime.Time.Add(time.Duration(task.Timeout)*time.Second).Compare(time.Now()) > 0 {
-		return nil, response.NewValidationErrorResponse("task_id_commitment", "Timeout not reached")
+	if in.AbortReason != models.TaskAbortCreatorCancelled {
+		return nil, response.NewValidationErrorResponse("abort_reason", "Abort reason not allowed")
+	}
+	if task.Status != models.TaskQueued {
+		return nil, response.NewValidationErrorResponse("task_id_commitment", "Task can no longer be cancelled")
 	}
 
-	task.AbortReason = in.AbortReason
-	if !task.ValidatedTime.Valid {
-		task.ValidatedTime = sql.NullTime{Time: time.Now(), Valid: true}
-	}
 	for range 3 {
-		err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{task.SelectedNode}, func() error {
-			return service.SetTaskStatusEndAborted(c.Request.Context(), config.GetDB(), task, address)
-		})
+		task.AbortReason = in.AbortReason
+		err = service.SetTaskStatusEndAborted(c.Request.Context(), config.GetDB(), task, address)
 		if err == nil {
 			break
-		} else if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {
+		} else if errors.Is(err, models.ErrTaskStatusChanged) {
 			if err := task.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {
 				return nil, response.NewExceptionResponse(err)
+			}
+			if task.Status != models.TaskQueued {
+				return nil, response.NewValidationErrorResponse("task_id_commitment", "Task can no longer be cancelled")
 			}
 		} else {
 			return nil, response.NewExceptionResponse(err)

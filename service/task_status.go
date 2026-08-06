@@ -7,6 +7,7 @@ import (
 	"crynux_relay/models"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -43,7 +44,7 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 	}
 	metrics.TasksCreated.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), task.Creator, metrics.VramTierLabel(task.MinVRAM)).Inc()
 	priorityValue, _ := new(big.Float).SetInt(&task.Priority.Int).Float64()
-	metrics.TaskPriority.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Observe(priorityValue)
+	metrics.TaskPriority.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), fmt.Sprint(taskVRAMDemand(task))).Observe(priorityValue)
 	return nil
 }
 
@@ -99,10 +100,20 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 
 	// start inference task
 	startTime := time.Now()
+	timeout := task.Timeout
+	captureExecutionGPU := UsesRelayOwnedTimeouts(&task)
+	if captureExecutionGPU {
+		var err error
+		timeout, err = ComputeExecutionTimeout(&task, node.GPUName, node.GPUVram)
+		if err != nil {
+			return err
+		}
+	}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := task.Update(ctx, tx, map[string]interface{}{
 			"selected_node":  node.Address,
 			"start_time":     sql.NullTime{Time: startTime, Valid: true},
+			"timeout":        timeout,
 			"status":         models.TaskStarted,
 			"model_swtiched": !isSameModels(inUseModelIDs, models.BaseModelIDs(task.ModelIDs)),
 		}); err != nil {
@@ -119,6 +130,10 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	})
 	if err != nil {
 		return err
+	}
+	task.Timeout = timeout
+	if captureExecutionGPU {
+		CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, node.GPUName, node.GPUVram)
 	}
 	metrics.TasksDispatched.WithLabelValues(metrics.TaskTypeLabel(task.TaskType)).Inc()
 	if task.CreateTime.Valid {
@@ -178,7 +193,6 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 	if task.StartTime.Valid {
 		metrics.TaskExecutionSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Observe(scoreReadyTime.Sub(task.StartTime.Time).Seconds())
 	}
-	UpdateTaskPricingCalibration(&task)
 	*originTask = task
 	return nil
 }
@@ -236,6 +250,13 @@ func SetTaskStatusValidated(ctx context.Context, db *gorm.DB, originTask *models
 	}); err != nil {
 		return err
 	}
+	task.Status = models.TaskValidated
+	if task.TaskType == models.TaskTypeSD {
+		if err := CalibrateValidatedSDTask(&task); err != nil {
+			log.Errorf("SetTaskStatusValidated: failed to calibrate SD task %s: %v", task.TaskIDCommitment, err)
+		}
+		DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+	}
 	*originTask = task
 	return nil
 }
@@ -283,6 +304,7 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 	}); err != nil {
 		return err
 	}
+	task.Status = models.TaskGroupValidated
 	for _, event := range qosTraceEvents {
 		RecordNodeQosTrace(event)
 	}
@@ -352,8 +374,10 @@ func setTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, o
 	}); err != nil {
 		return err
 	}
+	task.Status = models.TaskEndInvalidated
 	metrics.TasksTerminal.WithLabelValues("invalidated", metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
+	DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
 }
@@ -432,6 +456,7 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	}); err != nil {
 		return err
 	}
+	task.Status = models.TaskEndGroupRefund
 	metrics.TasksTerminal.WithLabelValues("group_refund", metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	updateLoadedModels(&task, node)
 	if logHealthBoost {
@@ -443,6 +468,12 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
 	*originTask = task
 	return nil
+}
+
+func shouldUpdateNodeQosScoreOnAbort(task *models.InferenceTask) bool {
+	return task.QOSScore.Valid &&
+		task.AbortReason != models.TaskAbortCreatorValidationTimeout &&
+		task.AbortReason != models.TaskAbortResultUploadTimeout
 }
 
 func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *models.InferenceTask, aboutIssuer string) error {
@@ -466,7 +497,35 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	var timeoutPenaltyNode *models.Node
 	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		commitFunc, err := refundTaskPaymentToRelayAccount(ctx, tx, task.TaskIDCommitment, task.Creator, &task.TaskFee.Int)
+		var commitFunc func() error
+		var node *models.Node
+		var err error
+		if len(task.SelectedNode) > 0 {
+			node, err = checkTaskSelectedNode(ctx, db, &task)
+			if errors.Is(err, ErrWrongNodeCurrentTask) {
+				// A non-terminal timeout task cannot reach this branch under the
+				// existing code paths: any path that clears a node's current task
+				// also ends that task in the same transaction.
+				if task.AbortReason == models.TaskAbortTimeout ||
+					task.AbortReason == models.TaskAbortCreatorValidationTimeout ||
+					task.AbortReason == models.TaskAbortResultUploadTimeout {
+					return err
+				}
+				log.Errorf("TaskEndAborted: node current task is wrong, task: %s, node: %s", task.TaskIDCommitment, task.SelectedNode)
+				node = nil
+			} else if err != nil {
+				return err
+			}
+		}
+
+		if task.AbortReason == models.TaskAbortCreatorValidationTimeout {
+			if node == nil {
+				return errors.New("creator validation timeout task has no active selected node")
+			}
+			commitFunc, err = sendTaskIncome(ctx, tx, task.TaskIDCommitment, node.Address, &task.TaskFee.Int, task.TaskType, node.Network)
+		} else {
+			commitFunc, err = refundTaskPaymentToRelayAccount(ctx, tx, task.TaskIDCommitment, task.Creator, &task.TaskFee.Int)
+		}
 		if err != nil {
 			return err
 		}
@@ -475,52 +534,47 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 			return err
 		}
 
-		if len(task.SelectedNode) > 0 {
-			node, err := checkTaskSelectedNode(ctx, db, &task)
-			if errors.Is(err, ErrWrongNodeCurrentTask) {
-				log.Errorf("TaskEndAborted: node current task is wrong, task: %s, node: %s", task.TaskIDCommitment, task.SelectedNode)
-			} else if err != nil {
-				return err
-			} else {
-				if task.QOSScore.Valid {
-					before := CaptureNodeQosTraceValues(node)
-					if err := updateNodeQosScore(ctx, tx, node, uint64(task.QOSScore.Int64)); err != nil {
-						return err
-					}
-					eventType, validationRank := BuildValidationGroupQosTraceMetadata(&task)
-					if eventType != "" {
-						taskQosScore := uint64(task.QOSScore.Int64)
-						qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
-							NodeAddress:      node.Address,
-							TaskIDCommitment: task.TaskIDCommitment,
-							EventType:        eventType,
-							TaskQosScore:     &taskQosScore,
-							ValidationRank:   validationRank,
-							Before:           before,
-							After:            CaptureNodeQosTraceValues(node),
-						})
-					}
+		if node != nil {
+			if shouldUpdateNodeQosScoreOnAbort(&task) {
+				before := CaptureNodeQosTraceValues(node)
+				if err := updateNodeQosScore(ctx, tx, node, uint64(task.QOSScore.Int64)); err != nil {
+					return err
 				}
-				// Apply health penalty on timeout when the node never submitted a result
-				if task.AbortReason == models.TaskAbortTimeout && !task.ScoreReadyTime.Valid {
-					timeoutPenaltyMetrics = calculatePenaltyNodeHealthMetrics(node)
-					before := CaptureNodeQosTraceValues(node)
-					if err := ApplyHealthPenalty(ctx, tx, node); err != nil {
-						return err
-					}
+				eventType, validationRank := BuildValidationGroupQosTraceMetadata(&task)
+				if eventType != "" {
+					taskQosScore := uint64(task.QOSScore.Int64)
 					qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
 						NodeAddress:      node.Address,
 						TaskIDCommitment: task.TaskIDCommitment,
-						EventType:        QosTraceEventTaskTimeoutPenalty,
+						EventType:        eventType,
+						TaskQosScore:     &taskQosScore,
+						ValidationRank:   validationRank,
 						Before:           before,
 						After:            CaptureNodeQosTraceValues(node),
 					})
-					timeoutPenaltyNode = node
-					logTimeoutPenalty = true
 				}
-				if err := nodeFinishTask(ctx, tx, node); err != nil {
+			}
+			penalizeExecutionTimeout := task.AbortReason == models.TaskAbortTimeout &&
+				(lastStatus == models.TaskStarted || lastStatus == models.TaskParametersUploaded)
+			penalizeResultUploadTimeout := task.AbortReason == models.TaskAbortResultUploadTimeout
+			if penalizeExecutionTimeout || penalizeResultUploadTimeout {
+				timeoutPenaltyMetrics = calculatePenaltyNodeHealthMetrics(node)
+				before := CaptureNodeQosTraceValues(node)
+				if err := ApplyHealthPenalty(ctx, tx, node); err != nil {
 					return err
 				}
+				qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
+					NodeAddress:      node.Address,
+					TaskIDCommitment: task.TaskIDCommitment,
+					EventType:        QosTraceEventTaskTimeoutPenalty,
+					Before:           before,
+					After:            CaptureNodeQosTraceValues(node),
+				})
+				timeoutPenaltyNode = node
+				logTimeoutPenalty = true
+			}
+			if err := nodeFinishTask(ctx, tx, node); err != nil {
+				return err
 			}
 		}
 
@@ -540,6 +594,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
+	task.Status = models.TaskEndAborted
 	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortStatusLabel(lastStatus, &task), metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
@@ -548,6 +603,10 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 		RecordNodeQosTrace(event)
 	}
 	deleteRunningTaskSnapshot(task.TaskIDCommitment)
+	DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+	if lastStatus == models.TaskGroupValidated {
+		DeleteGroupRefundExecutionGPUSnapshots(ctx, db, task.TaskID)
+	}
 	*originTask = task
 	return nil
 }
@@ -674,6 +733,8 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 	}); err != nil {
 		return err
 	}
+	task.Status = status
+	// Subsequent LLM calibration after result upload depends on this in-memory terminal status.
 	terminalStatusLabel := "success"
 	if status == models.TaskEndGroupSuccess {
 		terminalStatusLabel = "group_success"

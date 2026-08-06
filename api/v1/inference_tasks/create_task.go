@@ -33,7 +33,7 @@ type TaskInput struct {
 	TaskVersion      string          `form:"task_version" json:"task_version" description:"task version" validate:"required"`
 	TaskSize         *uint64         `form:"task_size" json:"task_size" description:"task size"`
 	TaskFee          models.BigInt   `form:"task_fee" json:"task_fee" description:"task fee, in unit wei" validate:"required"`
-	Timeout          uint64          `form:"timeout" json:"timeout" description:"timeout, in minutes" validate:"required"`
+	Timeout          uint64          `form:"timeout" json:"timeout" description:"timeout, in seconds"`
 }
 
 type TaskInputWithSignature struct {
@@ -80,6 +80,9 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 	if validationErr != nil {
 		return nil, response.NewValidationErrorResponse("task_args", validationErr.Error())
+	}
+	if in.TaskType == models.TaskTypeSDFTLora && in.Timeout == 0 {
+		return nil, response.NewValidationErrorResponse("timeout", "Timeout is required for fine-tune tasks")
 	}
 
 	normalizedTaskArgs, err := models.NormalizeTaskArgsModelNames(in.TaskArgs, in.TaskType)
@@ -155,7 +158,9 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 			Time:  time.Now(),
 			Valid: true,
 		},
-		Timeout: in.Timeout,
+	}
+	if task.TaskType == models.TaskTypeSDFTLora {
+		task.Timeout = in.Timeout
 	}
 
 	if err := service.CreateTask(c.Request.Context(), config.GetDB(), task); err != nil {

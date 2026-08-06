@@ -70,7 +70,7 @@ When task is created, Relay MUST:
 2. Create one `TaskPayment` event for creator address.
 3. Decrease creator relay account balance by `task_fee`.
 
-If balance is insufficient, task creation MUST fail and no task fee event may be persisted.
+If balance is insufficient, task creation MUST fail and Relay MUST NOT persist a task fee event.
 
 ## Refund Rules
 
@@ -80,6 +80,29 @@ When task reaches a refunding terminal state, Relay MUST:
 2. Increase creator relay account balance by refund amount.
 
 Refund amount MUST equal the task fee amount for the corresponding task commitment.
+
+## Terminal-State Ledger Contract
+
+Relay MUST enforce the following ledger-event contract by terminal task state:
+
+| Terminal state | `TaskRefund` | `TaskIncome`, `DaoTaskShare`, `UserDelegation` |
+|---|---|---|
+| `TaskEndSuccess` | MUST NOT exist | MUST represent the successful-task payment split |
+| `TaskEndGroupSuccess` | MUST NOT exist for the representative task fee | MUST represent the validation-group QoS-weighted payment split |
+| `TaskEndGroupRefund` | MUST refund the duplicate task's own fee | MUST represent that node's QoS-weighted execution income when the group representative later uploads successfully |
+| `TaskEndInvalidated` | MUST NOT exist | MUST NOT exist for the invalidated task |
+| `TaskEndAborted` with `TaskAbortCreatorValidationTimeout` | MUST NOT exist | MUST represent the aborted task's full fee split |
+| `TaskEndAborted` with any other abort reason | MUST refund the full task fee | MUST NOT exist |
+
+The permitted `TaskIncome`, `DaoTaskShare`, and `UserDelegation` rows MUST follow the split and rounding rules in this document. Relay account event consistency validation MUST reject every event combination prohibited by this table.
+
+`TaskAbortCreatorValidationTimeout` MUST apply when a task expires in either `TaskScoreReady` or `TaskErrorReported`. The fee split compensates the node for execution and creator-validation waiting time after the creator failed to complete the protocol. It MUST NOT indicate that Relay verified the result or error report as correct. The task MUST remain `TaskEndAborted`.
+
+For `TaskAbortCreatorValidationTimeout`, Relay MUST settle only that task's own fee and MUST NOT use validation-group QoS-weighted allocation. Relay MUST NOT assign a validation rank, update group `Q_long`, apply a result-upload health boost, or apply a node health penalty.
+
+`TaskAbortTimeout`, `TaskAbortResultUploadTimeout`, `TaskAbortCreatorCancelled`, `TaskAbortModelDownloadFailed`, `TaskAbortIncorrectResult`, `TaskAbortTaskFeeTooLow`, `TaskAbortGroupTimeout`, and `TaskAbortErrorReported` MUST use the `TaskEndAborted` full-refund rule and MUST NOT create task income.
+
+Task statistics MUST classify `TaskAbortCreatorValidationTimeout` as aborted. Income statistics MUST include its actual ledger income events and MUST NOT infer income eligibility only from a success terminal state.
 
 ## Settlement and Distribution Rules
 
@@ -100,7 +123,7 @@ For each settled payment unit `payment`:
 7. When delegated staking distribution is active, create one `UserDelegation` event per participating delegator by proportional split over non-slashed delegation amounts on the selected node's current blockchain network.
 8. Increase balances for all recipient addresses by their event amounts.
 
-If delegated staking distribution is inactive, `delegator_pool` MUST be `0` and no `UserDelegation` event may be created.
+If delegated staking distribution is inactive, `delegator_pool` MUST be `0` and Relay MUST NOT create a `UserDelegation` event.
 
 ## Group Settlement and Rounding
 
@@ -111,6 +134,8 @@ For grouped task validation settlement:
 3. Add total remainder to the last valid task payment.
 
 This policy MUST preserve total distributed amount equal to the total payable amount.
+
+If any group member reaches `TaskEndAborted` with `TaskAbortCreatorValidationTimeout`, Relay MUST permanently reject group validation. Every remaining group member MUST retain its independent creator-validation deadline and MUST settle independently if that deadline expires.
 
 ## Consistency Guarantees
 
