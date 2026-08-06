@@ -446,9 +446,17 @@ func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
 	if len(dirty) == 0 {
 		return nil
 	}
+	// The upsert resolves rows only by the (gpu_name, gpu_vram) unique key.
+	// Primary keys and timestamps are stripped before the insert, and database
+	// IDs are never copied back into the cache: batch-upsert ID reporting is
+	// unreliable on MySQL, and a wrong cached ID would make a later flush
+	// rewrite an unrelated row through a primary-key conflict.
 	records := make([]models.GPUExecutionCalibration, len(dirty))
 	for i := range dirty {
 		records[i] = dirty[i].record
+		records[i].ID = 0
+		records[i].CreatedAt = time.Time{}
+		records[i].UpdatedAt = time.Time{}
 	}
 	err := db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "gpu_name"}, {Name: "gpu_vram"}},
@@ -462,9 +470,6 @@ func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
 	for i := range dirty {
 		key := gpuCalibrationKey{name: dirty[i].record.GPUName, vram: dirty[i].record.GPUVram}
 		if cached, ok := globalTaskPricing.records[key]; ok && cached.dirtyVersion == dirty[i].version {
-			cached.record.ID = records[i].ID
-			cached.record.CreatedAt = records[i].CreatedAt
-			cached.record.UpdatedAt = records[i].UpdatedAt
 			cached.dirtyVersion = 0
 		}
 	}

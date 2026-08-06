@@ -48,6 +48,8 @@ This endpoint MUST return events with `id > start` in ascending `id` order. It S
 | `task_id_commitment` | Optional task ID commitment filter. |
 | `limit` | Optional maximum row count. |
 
+For `TaskEndAborted` rows, the response `args` MUST deliver every `abort_reason` value later than `TaskAbortTaskFeeTooLow` as `TaskAbortTimeout`. The node event watcher parses `abort_reason` as an enum that ends at `TaskAbortTaskFeeTooLow`, and an unparsable value blocks its polling cursor. The stored event row MUST keep the actual abort reason; only the delivered payload is rewritten.
+
 ## Crynux Node Watcher
 
 A node MUST initialize its local cursor with `GET /v1/events/current_id?node_address=<node-address>`, then poll `GET /v1/events?start=<last-event-id>&node_address=<node-address>`.

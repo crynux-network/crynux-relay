@@ -5,9 +5,11 @@ import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"encoding/json"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 type GetEventsInput struct {
@@ -29,6 +31,31 @@ type Event struct {
 type GetEventsResponse struct {
 	response.Response
 	Data []Event `json:"data"`
+}
+
+// compatibleEventArgs returns the event args delivered to node watchers. The
+// node parses TaskEndAborted abort_reason as an enum that ends at
+// TaskAbortTaskFeeTooLow, so later abort reasons are delivered as
+// TaskAbortTimeout.
+func compatibleEventArgs(event *models.Event) string {
+	if event.Type != "TaskEndAborted" {
+		return event.Args
+	}
+	var args models.TaskEndAbortedEvent
+	if err := json.Unmarshal([]byte(event.Args), &args); err != nil {
+		log.Errorf("GetEvents: failed to parse TaskEndAborted event args, event: %d, error: %v", event.ID, err)
+		return event.Args
+	}
+	if args.AbortReason <= models.TaskAbortTaskFeeTooLow {
+		return event.Args
+	}
+	args.AbortReason = models.TaskAbortTimeout
+	bs, err := json.Marshal(&args)
+	if err != nil {
+		log.Errorf("GetEvents: failed to serialize TaskEndAborted event args, event: %d, error: %v", event.ID, err)
+		return event.Args
+	}
+	return string(bs)
 }
 
 func GetEvents(c *gin.Context, in *GetEventsInput) (*GetEventsResponse, error) {
@@ -62,7 +89,7 @@ func GetEvents(c *gin.Context, in *GetEventsInput) (*GetEventsResponse, error) {
 			Type:             event.Type,
 			NodeAddress:      event.NodeAddress,
 			TaskIDCommitment: event.TaskIDCommitment,
-			Args:             event.Args,
+			Args:             compatibleEventArgs(event),
 		}
 	}
 	return &GetEventsResponse{
