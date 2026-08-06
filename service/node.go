@@ -396,12 +396,18 @@ func SlashNode(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommit
 	}
 	var blockchainTransactionID uint
 	var wasActiveBeforeQuit bool
+	var postCommit func() error
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var err error
-		wasActiveBeforeQuit, blockchainTransactionID, err = slashNodeTx(ctx, tx, node, taskIDCommitment, evidence)
+		wasActiveBeforeQuit, blockchainTransactionID, postCommit, err = slashNodeTx(ctx, tx, node, taskIDCommitment, evidence)
 		return err
 	}); err != nil {
 		return 0, err
+	}
+	if postCommit != nil {
+		if err := postCommit(); err != nil {
+			return 0, err
+		}
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
 	metrics.NodeEvents.WithLabelValues("slash").Inc()
@@ -425,6 +431,7 @@ func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (ui
 	var blockchainTransactionID uint
 	var wasActiveBeforeQuit bool
 	var node *models.Node
+	var postCommit func() error
 	if err := ExecuteNodeStateUpdate(ctx, db, []string{pendingSlashForAddress.NodeAddress}, func() error {
 		return db.Transaction(func(tx *gorm.DB) error {
 			var pendingSlash models.PendingSlash
@@ -447,7 +454,7 @@ func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (ui
 			if node.Status == models.NodeStatusQuit {
 				return errors.New("node has already quit")
 			}
-			wasActiveBeforeQuit, blockchainTransactionID, err = slashNodeTx(ctx, tx, node, pendingSlash.TaskIDCommitment, evidence)
+			wasActiveBeforeQuit, blockchainTransactionID, postCommit, err = slashNodeTx(ctx, tx, node, pendingSlash.TaskIDCommitment, evidence)
 			if err != nil {
 				return err
 			}
@@ -456,6 +463,11 @@ func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (ui
 		})
 	}); err != nil {
 		return 0, err
+	}
+	if postCommit != nil {
+		if err := postCommit(); err != nil {
+			return 0, err
+		}
 	}
 	applyNodeQuitPostCommit(node, wasActiveBeforeQuit)
 	metrics.NodeEvents.WithLabelValues("slash").Inc()
@@ -466,19 +478,94 @@ func SlashPendingNode(ctx context.Context, db *gorm.DB, pendingSlashID uint) (ui
 	return blockchainTransactionID, nil
 }
 
-func slashNodeTx(ctx context.Context, tx *gorm.DB, node *models.Node, taskIDCommitment string, evidence *models.SlashEvidence) (bool, uint, error) {
+func slashNodeTx(ctx context.Context, tx *gorm.DB, node *models.Node, taskIDCommitment string, evidence *models.SlashEvidence) (bool, uint, func() error, error) {
 	if taskIDCommitment == "" {
 		taskIDCommitment = "0x"
+	}
+	postCommit, err := abortNodeCurrentTaskForSlash(ctx, tx, node)
+	if err != nil {
+		return false, 0, nil, err
 	}
 	slashedAmount := node.StakeAmount
 	wasActiveBeforeQuit, blockchainTransactionID, err := setNodeStatusQuitTx(ctx, tx, node, true)
 	if err != nil {
-		return false, 0, err
+		return false, 0, nil, err
 	}
 	if err := emitEvent(ctx, tx, &models.NodeSlashedEvent{NodeAddress: node.Address, TaskIDCommitment: taskIDCommitment, Amount: slashedAmount, Network: node.Network, Evidence: evidence}); err != nil {
-		return false, 0, err
+		return false, 0, nil, err
 	}
-	return wasActiveBeforeQuit, blockchainTransactionID, nil
+	return wasActiveBeforeQuit, blockchainTransactionID, postCommit, nil
+}
+
+func abortNodeCurrentTaskForSlash(ctx context.Context, tx *gorm.DB, node *models.Node) (func() error, error) {
+	if !node.CurrentTaskIDCommitment.Valid {
+		return nil, nil
+	}
+	task, err := models.GetTaskByIDCommitment(ctx, tx, node.CurrentTaskIDCommitment.String)
+	if err != nil {
+		return nil, err
+	}
+	if task.SelectedNode != node.Address {
+		return nil, ErrWrongNodeCurrentTask
+	}
+	switch task.Status {
+	case models.TaskEndInvalidated, models.TaskEndSuccess, models.TaskEndAborted,
+		models.TaskEndGroupRefund, models.TaskEndGroupSuccess:
+		return nil, nil
+	}
+
+	lastStatus := task.Status
+	task.AbortReason = models.TaskAbortNodeSlashed
+	commitFunc, err := refundTaskPaymentToRelayAccount(ctx, tx, task.TaskIDCommitment, task.Creator, &task.TaskFee.Int)
+	if err != nil {
+		return nil, err
+	}
+	if err := task.Update(ctx, tx, map[string]interface{}{
+		"status":       models.TaskEndAborted,
+		"abort_reason": task.AbortReason,
+	}); err != nil {
+		return nil, err
+	}
+	if err := emitEvent(ctx, tx, &models.TaskEndAbortedEvent{
+		TaskIDCommitment: task.TaskIDCommitment,
+		AbortIssuer:      getDefaultAbortIssuer(),
+		AbortReason:      task.AbortReason,
+		LastStatus:       lastStatus,
+	}); err != nil {
+		return nil, err
+	}
+
+	groupRefundSnapshotIDs := make([]string, 0)
+	if lastStatus == models.TaskGroupValidated && task.TaskID != "" {
+		groupTasks, err := models.GetTaskGroupByTaskID(ctx, tx, task.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range groupTasks {
+			if groupTasks[i].Status == models.TaskEndGroupRefund {
+				groupRefundSnapshotIDs = append(groupRefundSnapshotIDs, groupTasks[i].TaskIDCommitment)
+			}
+		}
+	}
+
+	task.Status = models.TaskEndAborted
+	return func() error {
+		if err := commitFunc(); err != nil {
+			return err
+		}
+		metrics.TasksAborted.WithLabelValues(
+			metrics.AbortReasonLabel(task.AbortReason),
+			metrics.AbortStatusLabel(lastStatus, task),
+			metrics.TaskTypeLabel(task.TaskType),
+			metrics.VramTierLabel(task.MinVRAM),
+		).Inc()
+		deleteRunningTaskSnapshot(task.TaskIDCommitment)
+		DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+		for _, taskIDCommitment := range groupRefundSnapshotIDs {
+			DeleteTaskExecutionGPUSnapshot(taskIDCommitment)
+		}
+		return nil
+	}, nil
 }
 
 func updateNodeQosScore(ctx context.Context, db *gorm.DB, node *models.Node, qos uint64) error {

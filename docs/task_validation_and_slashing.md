@@ -65,7 +65,7 @@ TaskQueued
   → TaskStarted              (node selected, task dispatched)
     → TaskScoreReady          (node submitted result hash)
     → TaskErrorReported       (node reported execution error)
-  → TaskEndAborted            (timeout before node selection)
+  → TaskEndAborted            (queue or execution timeout)
 
 TaskScoreReady / TaskErrorReported
   → TaskValidated             (single task, VRF confirms no validation needed)
@@ -73,10 +73,12 @@ TaskScoreReady / TaskErrorReported
   → TaskEndInvalidated        (group task, result does not match majority → SLASH)
   → TaskEndGroupRefund        (group task, result matches but task fee refunded)
   → TaskEndAborted            (group task, no majority found)
+  → TaskEndAborted            (creator validation timeout)
 
 TaskValidated / TaskGroupValidated
   → TaskEndSuccess            (single task, result uploaded to client)
   → TaskEndGroupSuccess       (group task, result uploaded to client)
+  → TaskEndAborted            (result upload timeout)
 ```
 
 ### Key Timestamps
@@ -109,6 +111,8 @@ For tasks where the VRF confirms no validation is needed (single task):
 3. If the task status is `TaskScoreReady` → transition to `TaskValidated`.
 4. If the task status is `TaskErrorReported` → abort with reason `TaskAbortErrorReported`.
 
+An SD task that enters `TaskValidated` MUST provide a calibration sample when its execution GPU snapshot exists. An LLM task MUST wait for verified result upload before it can provide a sample. The complete sample rules are specified in [task_execution_parameters.md](./task_execution_parameters.md).
+
 ### Group Task Validation (`ValidateTaskGroup`)
 
 For tasks selected for validation (group of 3 tasks sharing the same real `TaskID`):
@@ -117,6 +121,10 @@ For tasks selected for validation (group of 3 tasks sharing the same real `TaskI
 2. Verify the VRF proof to confirm the task was correctly classified as grouped.
 3. Sort non-aborted tasks by execution time (fastest first) and assign QoS scores: 1st = 10, 2nd = 5, 3rd = 2. Tasks already in `TaskEndAborted` receive 0.
 4. Compare results pairwise to determine the majority.
+
+Before these operations, Relay MUST load all three group tasks. If any member has reached `TaskEndAborted` with `TaskAbortCreatorValidationTimeout`, Relay MUST permanently reject validation of the entire group. This check MUST occur before writing `TaskID`, assigning validation ranks, comparing scores, changing statuses, processing fees, updating QoS, or processing slash effects. Relay MUST NOT exclude the expired task and continue with the other members.
+
+Each remaining `TaskScoreReady` or `TaskErrorReported` member MUST keep its own creator-validation deadline and MUST expire independently if validation is not completed.
 
 ### Result Comparison
 
@@ -166,6 +174,8 @@ Where `total_qos_score` is the sum of QoS scores across all valid tasks in the g
 
 Tasks in `GroupRefund` status have their task fee refunded to the creator since the task was a duplicate used purely for validation.
 
+SD tasks entering `TaskGroupValidated` or `TaskEndGroupRefund` MUST provide validation-confirmed calibration samples when their execution GPU snapshots exist. LLM group samples MUST wait for a verified successful group result upload. A same-score `TaskEndGroupRefund` task MUST reuse only the verified completion-token count and MUST use its own workload, execution duration, and GPU snapshot. These execution parameter rules MUST NOT alter result comparison, payment, or slashing.
+
 ## Node Slashing
 
 ### When Slashing Occurs
@@ -206,18 +216,21 @@ Tasks can be aborted for several reasons:
 
 | Abort Reason | Description |
 |-------------|-------------|
-| `TaskAbortTimeout` | Task exceeded its deadline (creation time + 3 minutes + configured timeout) |
+| `TaskAbortTimeout` | The task exceeded its queue deadline or node execution deadline. |
+| `TaskAbortCreatorCancelled` | The creator cancelled a task while it was still `TaskQueued`. |
+| `TaskAbortCreatorValidationTimeout` | The creator did not complete validation while the task was `TaskScoreReady` or `TaskErrorReported`. |
+| `TaskAbortResultUploadTimeout` | The selected node did not upload the validated result before the result-upload deadline. |
 | `TaskAbortModelDownloadFailed` | Model download failed on the node |
 | `TaskAbortIncorrectResult` | Result failed validation: the group comparison ran and no majority was found |
 | `TaskAbortTaskFeeTooLow` | Task fee was too low to attract eligible nodes |
 | `TaskAbortGroupTimeout` | The task finished but fewer than 2 tasks in its validation group finished, so the result could not be validated |
 | `TaskAbortErrorReported` | A single (non-grouped) task ended in `TaskErrorReported` during validation |
 
-`TaskAbortTaskFeeTooLow` is not assigned by any automatic relay task processing path in current implementation. It appears only when a caller explicitly submits `POST /v1/inference_tasks/:task_id_commitment/abort_reason` with `abort_reason = TaskAbortTaskFeeTooLow`.
+The public `POST /v1/inference_tasks/:task_id_commitment/abort_reason` API MUST accept only `TaskAbortCreatorCancelled`, only from the creator, and only while the task is `TaskQueued`. It MUST reject all other reasons and every task in `TaskStarted` or a later status. Relay-internal protocol and deadline aborts MUST NOT use this API.
 
-When a task is aborted:
-- The task fee is refunded to the creator.
-- If the abort reason is `TaskAbortTimeout` and the node never submitted a score, a **health penalty** is applied to the node's short-term reliability factor. If the updated health is below `qos.health_kickout_threshold`, the relay MUST kick the node out when the current task finishes.
+`TaskAbortCreatorValidationTimeout` MUST keep the task aborted and MUST distribute its fee by the successful-task split because the creator failed to complete the protocol while the node remained occupied. The payment compensates node occupancy and MUST NOT indicate that Relay verified the score or error report as correct. This rule MUST apply to both `TaskScoreReady` and `TaskErrorReported`. Relay MUST NOT assign validation rank, update group `Q_long`, apply a node penalty, apply a result-upload success boost, or slash a node for this timeout.
+
+Every other aborted reason MUST refund the task fee. A node execution `TaskAbortTimeout` and `TaskAbortResultUploadTimeout` MUST apply the corresponding node health penalty. Queue timeout and creator cancellation MUST NOT penalize a node. Complete deadline, fee, Node Busy, and finish behavior is specified in [task_timeout.md](./task_timeout.md).
 
 ## Error Reporting
 

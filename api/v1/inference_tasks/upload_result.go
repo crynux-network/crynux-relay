@@ -1,13 +1,16 @@
 package inference_tasks
 
 import (
+	"bytes"
 	"crynux_relay/api/v1/response"
 	"crynux_relay/api/v1/validate"
 	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -27,6 +30,35 @@ type ResultInputWithSignature struct {
 	ResultInput
 	Timestamp int64  `form:"timestamp" description:"Signature timestamp" validate:"required"`
 	Signature string `form:"signature" description:"Signature" validate:"required"`
+}
+
+func readLLMCompletionTokens(file *multipart.FileHeader) (uint64, error) {
+	fileObj, err := file.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer fileObj.Close()
+	var result struct {
+		Usage *struct {
+			CompletionTokens json.RawMessage `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	decoder := json.NewDecoder(fileObj)
+	if err := decoder.Decode(&result); err != nil {
+		return 0, err
+	}
+	if result.Usage == nil || len(result.Usage.CompletionTokens) == 0 {
+		return 0, errors.New("usage.completion_tokens is missing")
+	}
+	raw := bytes.TrimSpace(result.Usage.CompletionTokens)
+	if len(raw) == 0 || raw[0] < '0' || raw[0] > '9' {
+		return 0, errors.New("usage.completion_tokens must be a non-negative integer")
+	}
+	completionTokens, err := strconv.ParseUint(string(raw), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("usage.completion_tokens must be a non-negative integer: %w", err)
+	}
+	return completionTokens, nil
 }
 
 func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Response, error) {
@@ -107,6 +139,19 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	if task.Score != uploadedScore {
 		validationErr := response.NewValidationErrorResponse("files", "Wrong result files uploaded")
 		return nil, validationErr
+	}
+
+	var completionTokens uint64
+	var completionTokensValid bool
+	if task.TaskType == models.TaskTypeLLM {
+		if len(files) != 1 {
+			log.Errorf("UploadResult: skip LLM calibration because result file count is invalid, task: %s, file_count: %d", task.TaskIDCommitment, len(files))
+		} else if tokens, parseErr := readLLMCompletionTokens(files[0]); parseErr != nil {
+			log.Errorf("UploadResult: skip LLM calibration because usage is invalid, task: %s, error: %v", task.TaskIDCommitment, parseErr)
+		} else {
+			completionTokens = tokens
+			completionTokensValid = true
+		}
 	}
 
 	taskGroup, err := models.GetTaskGroupByTaskID(c.Request.Context(), config.GetDB(), task.TaskID)
@@ -220,6 +265,61 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 		if err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
+		if task.TaskType == models.TaskTypeLLM {
+			calibrateLLMGroupAfterUploadSuccess(c, task, completionTokens, completionTokensValid)
+		}
 	}
 	return &response.Response{}, nil
+}
+
+// selectLLMGroupRefundCalibrationTasks returns same-score TaskEndGroupRefund
+// members that share calibration with a TaskEndGroupSuccess upload.
+func selectLLMGroupRefundCalibrationTasks(uploaded *models.InferenceTask, group []models.InferenceTask) []*models.InferenceTask {
+	if uploaded.Status != models.TaskEndGroupSuccess {
+		return nil
+	}
+	selected := make([]*models.InferenceTask, 0)
+	for i := range group {
+		groupTask := &group[i]
+		if groupTask.Status == models.TaskEndGroupRefund && groupTask.Score == uploaded.Score {
+			selected = append(selected, groupTask)
+		}
+	}
+	return selected
+}
+
+// calibrateLLMGroupAfterUploadSuccess updates LLM execution parameters after a
+// successful result upload. It MUST re-query the group after SetTaskStatusEndSuccess
+// commits and MUST NOT reuse the taskGroup loaded before that terminal update,
+// because that earlier view still reflects pre-success member statuses.
+//
+// If the post-success group re-query fails, this function deletes only the
+// uploaded task snapshot and skips refund calibration. It MUST NOT delete
+// TaskEndGroupRefund snapshots from the earlier group view; those snapshots
+// remain until background cleanup removes them after the maximum remaining
+// lifecycle.
+func calibrateLLMGroupAfterUploadSuccess(c *gin.Context, task *models.InferenceTask, completionTokens uint64, completionTokensValid bool) {
+	refreshedGroup, err := models.GetTaskGroupByTaskID(c.Request.Context(), config.GetDB(), task.TaskID)
+	if err != nil {
+		log.Errorf("UploadResult: skip LLM group refund calibration after successful upload because group re-query failed, task: %s, error: %v", task.TaskIDCommitment, err)
+		service.DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+		return
+	}
+
+	if completionTokensValid {
+		if err := service.CalibrateUploadedLLMTask(task, completionTokens); err != nil {
+			log.Errorf("UploadResult: failed to calibrate uploaded LLM task, task: %s, error: %v", task.TaskIDCommitment, err)
+		}
+		for _, groupTask := range selectLLMGroupRefundCalibrationTasks(task, refreshedGroup) {
+			if err := service.CalibrateUploadedLLMTask(groupTask, completionTokens); err != nil {
+				log.Errorf("UploadResult: failed to calibrate group-refund LLM task, task: %s, error: %v", groupTask.TaskIDCommitment, err)
+			}
+		}
+	}
+	service.DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+	for i := range refreshedGroup {
+		if refreshedGroup[i].Status == models.TaskEndGroupRefund {
+			service.DeleteTaskExecutionGPUSnapshot(refreshedGroup[i].TaskIDCommitment)
+		}
+	}
 }

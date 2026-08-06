@@ -237,20 +237,56 @@ func checkTaskPricingConfig() error {
 	if pricing.OverheadSeconds <= 0 {
 		return errors.New("task_pricing.overhead_seconds is not set")
 	}
-	if pricing.InitialSecondsPerSDUnit <= 0 {
-		return errors.New("task_pricing.initial_seconds_per_sd_unit is not set")
+	if pricing.InitialSecondsPerSDPixelStep <= 0 {
+		return errors.New("task_pricing.initial_seconds_per_sd_pixel_step is not set")
 	}
-	if pricing.InitialSecondsPerLLMToken <= 0 {
-		return errors.New("task_pricing.initial_seconds_per_llm_token is not set")
+	if pricing.InitialLLMConstantSeconds <= 0 {
+		return errors.New("task_pricing.initial_llm_constant_seconds is not set")
 	}
-	if pricing.CalibrationAlpha <= 0 || pricing.CalibrationAlpha > 1 {
-		return errors.New("task_pricing.calibration_alpha must be in (0, 1]")
+	if pricing.InitialLLMSecondsPerInputByte <= 0 {
+		return errors.New("task_pricing.initial_llm_seconds_per_input_byte is not set")
+	}
+	if pricing.InitialLLMSecondsPerOutputToken <= 0 {
+		return errors.New("task_pricing.initial_llm_seconds_per_output_token is not set")
+	}
+	if pricing.CalibrationAlpha <= 0 || pricing.CalibrationAlpha >= 1 {
+		return errors.New("task_pricing.calibration_alpha must be in (0, 1)")
+	}
+	if pricing.CalibrationRegularization <= 0 {
+		return errors.New("task_pricing.calibration_regularization is not set")
+	}
+	if pricing.CalibrationMaxPositiveResidualMultiple <= 0 {
+		return errors.New("task_pricing.calibration_max_positive_residual_multiple is not set")
+	}
+	if pricing.CalibrationWarmupSuccessSamples < 3 {
+		return errors.New("task_pricing.calibration_warmup_success_samples must be at least 3")
+	}
+	if pricing.CalibrationFlushIntervalSeconds == 0 {
+		return errors.New("task_pricing.calibration_flush_interval_seconds is not set")
 	}
 	if pricing.DefaultLLMMaxNewTokens == 0 {
 		return errors.New("task_pricing.default_llm_max_new_tokens is not set")
 	}
 	if pricing.BaseVRAM == 0 {
 		return errors.New("task_pricing.base_vram is not set")
+	}
+	if pricing.QueueTimeoutSeconds == 0 {
+		return errors.New("task_pricing.queue_timeout_seconds is not set")
+	}
+	if pricing.AppValidationTimeoutSeconds == 0 {
+		return errors.New("task_pricing.app_validation_timeout_seconds is not set")
+	}
+	if pricing.ResultUploadTimeoutSeconds == 0 {
+		return errors.New("task_pricing.result_upload_timeout_seconds is not set")
+	}
+	if pricing.TimeoutMultiplier <= 0 {
+		return errors.New("task_pricing.timeout_multiplier is not set")
+	}
+	if pricing.MinExecutionTimeoutSeconds == 0 {
+		return errors.New("task_pricing.min_execution_timeout_seconds is not set")
+	}
+	if pricing.MaxExecutionTimeoutSeconds < pricing.MinExecutionTimeoutSeconds {
+		return errors.New("task_pricing.max_execution_timeout_seconds must be at least min_execution_timeout_seconds")
 	}
 	return nil
 }

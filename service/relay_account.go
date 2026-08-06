@@ -397,7 +397,12 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 				invalidEvents = append(invalidEvents, event)
 				continue
 			}
-			if task.Status != models.TaskEndSuccess && task.Status != models.TaskEndGroupSuccess && task.Status != models.TaskEndGroupRefund {
+			creatorValidationTimeoutIncome := task.Status == models.TaskEndAborted &&
+				task.AbortReason == models.TaskAbortCreatorValidationTimeout
+			if task.Status != models.TaskEndSuccess &&
+				task.Status != models.TaskEndGroupSuccess &&
+				task.Status != models.TaskEndGroupRefund &&
+				!creatorValidationTimeoutIncome {
 				invalidEvents = append(invalidEvents, event)
 				continue
 			}
@@ -412,7 +417,8 @@ func validatePendingRelayAccountEvents(ctx context.Context, db *gorm.DB, events 
 				invalidEvents = append(invalidEvents, event)
 				continue
 			}
-			if task.Status != models.TaskEndGroupRefund && task.Status != models.TaskEndAborted {
+			if task.Status != models.TaskEndGroupRefund &&
+				(task.Status != models.TaskEndAborted || task.AbortReason == models.TaskAbortCreatorValidationTimeout) {
 				invalidEvents = append(invalidEvents, event)
 				continue
 			}

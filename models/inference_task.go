@@ -54,6 +54,10 @@ const (
 	TaskAbortTaskFeeTooLow
 	TaskAbortGroupTimeout
 	TaskAbortErrorReported
+	TaskAbortCreatorCancelled
+	TaskAbortCreatorValidationTimeout
+	TaskAbortResultUploadTimeout
+	TaskAbortNodeSlashed
 )
 
 type TaskError uint8
@@ -96,34 +100,37 @@ func (arr *StringArray) UnmarshalJSON(b []byte) error {
 
 type InferenceTask struct {
 	gorm.Model
-	TaskArgs         string          `json:"task_args"`
-	TaskIDCommitment string          `json:"task_id_commitment" gorm:"index"`
-	Creator          string          `json:"creator"`
-	SamplingSeed     string          `json:"sampling_seed"`
-	Nonce            string          `json:"nonce"`
-	Status           TaskStatus      `json:"status"`
-	TaskType         TaskType        `json:"task_type" gorm:"index"`
-	TaskVersion      string          `json:"task_version"`
-	Timeout          uint64          `json:"timeout"`
-	MinVRAM          uint64          `json:"min_vram"`
-	RequiredGPU      string          `json:"required_gpu"`
-	RequiredGPUVRAM  uint64          `json:"required_gpu_vram"`
-	TaskFee          BigInt          `json:"task_fee"`
+	TaskArgs         string     `json:"task_args"`
+	TaskIDCommitment string     `json:"task_id_commitment" gorm:"index"`
+	Creator          string     `json:"creator"`
+	SamplingSeed     string     `json:"sampling_seed"`
+	Nonce            string     `json:"nonce"`
+	Status           TaskStatus `json:"status"`
+	TaskType         TaskType   `json:"task_type" gorm:"index"`
+	TaskVersion      string     `json:"task_version"`
+	Timeout          uint64     `json:"timeout"`
+	MinVRAM          uint64     `json:"min_vram"`
+	RequiredGPU      string     `json:"required_gpu"`
+	RequiredGPUVRAM  uint64     `json:"required_gpu_vram"`
+	TaskFee          BigInt     `json:"task_fee"`
 	// Priority orders queued tasks for dispatch: task_fee divided by the
 	// VRAM-weighted estimated node seconds, floored to an integer.
-	Priority             BigInt  `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`
-	EstimatedNodeSeconds float64 `json:"estimated_node_seconds" gorm:"not null;default:0"`
-	VRAMWeight           float64 `json:"vram_weight" gorm:"column:vram_weight;not null;default:0"`
-	PricingUnits         float64 `json:"pricing_units" gorm:"not null;default:0"`
-	TaskSize             uint64  `json:"task_size"`
-	ModelIDs         StringArray     `json:"model_ids" gorm:"type:text"`
-	AbortReason      TaskAbortReason `json:"abort_reason"`
-	TaskError        TaskError       `json:"task_error"`
-	Score            string          `json:"score" gorm:"type:text"`
-	QOSScore         sql.NullInt64   `json:"qos_score"`
-	SelectedNode     string          `json:"selected_node"`
-	TaskID           string          `json:"task_id"`
-	ModelSwtiched    bool            `json:"model_swtiched"`
+	Priority             BigInt          `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`
+	EstimatedNodeSeconds float64         `json:"estimated_node_seconds" gorm:"not null;default:0"`
+	VRAMWeight           float64         `json:"vram_weight" gorm:"column:vram_weight;not null;default:0"`
+	PricingUnits         float64         `json:"pricing_units" gorm:"not null;default:0"`
+	SDUnits              *uint64         `json:"sd_units" gorm:"type:bigint unsigned;null;default:null"`
+	LLMInputBytes        *uint64         `json:"llm_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
+	LLMMaxNewTokens      *uint64         `json:"llm_max_new_tokens" gorm:"type:bigint unsigned;null;default:null"`
+	TaskSize             uint64          `json:"task_size"`
+	ModelIDs             StringArray     `json:"model_ids" gorm:"type:text"`
+	AbortReason          TaskAbortReason `json:"abort_reason"`
+	TaskError            TaskError       `json:"task_error"`
+	Score                string          `json:"score" gorm:"type:text"`
+	QOSScore             sql.NullInt64   `json:"qos_score"`
+	SelectedNode         string          `json:"selected_node"`
+	TaskID               string          `json:"task_id"`
+	ModelSwtiched        bool            `json:"model_swtiched"`
 	// time when task is created (get from blockchain)
 	CreateTime sql.NullTime `json:"create_time" gorm:"index;null;default:null"`
 	// time when task is started (get from blockchain)
@@ -165,10 +172,11 @@ func (task *InferenceTask) SyncStatus(ctx context.Context, db *gorm.DB) error {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var res InferenceTask
-	if err := db.WithContext(dbCtx).Model(task).Select("status").First(&res, task.ID).Error; err != nil {
+	if err := db.WithContext(dbCtx).Model(task).Select("status", "abort_reason").First(&res, task.ID).Error; err != nil {
 		return err
 	}
 	task.Status = res.Status
+	task.AbortReason = res.AbortReason
 	return nil
 }
 
@@ -277,7 +285,8 @@ func GetTimeoutAbortedNodeCount(ctx context.Context, db *gorm.DB, since time.Tim
 	if err := db.WithContext(dbCtx).Model(&InferenceTask{}).
 		Select("count(distinct selected_node)").
 		Where("status = ?", TaskEndAborted).
-		Where("abort_reason = ?", TaskAbortTimeout).
+		Where("abort_reason IN ?", []TaskAbortReason{TaskAbortTimeout, TaskAbortResultUploadTimeout}).
+		Where("selected_node <> ?", "").
 		Where("updated_at >= ?", since).
 		Find(&res).Error; err != nil {
 		return 0, err

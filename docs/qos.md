@@ -66,9 +66,10 @@ Tasks within a group are sorted by execution time (fastest first). The fixed sco
 | 3rd (slowest)   | 2          |
 
 Special cases:
-- A task in a validation group that reached `TaskEndAborted` before group validation receives a score of **0**.
+- A task already in `TaskEndAborted` when an otherwise permitted group validation begins MUST receive a score of **0**.
 - A validation-group task aborted due to `TaskAbortTimeout` MUST contribute that **0** score to the selected node's rolling long-term QoS average when the same group contains at least one non-aborted task.
 - If **all 3 tasks** in a group are aborted, QoS scores are set to NULL (not valid) and are **not included** in any node's rolling average.
+- If any group member has `TaskAbortCreatorValidationTimeout`, Relay MUST permanently reject validation of the group. No member of that group MUST receive a validation rank, task QoS score, or `Q_long` update.
 
 #### Rolling Pool Mechanism
 
@@ -89,9 +90,11 @@ The short-term factor (`H`) addresses the need to immediately penalize nodes tha
 
 Each node carries a **health multiplier** `H` (range 0.0 to 1.0, default 1.0).
 
-#### Penalty on Timeout
+#### Penalty on Node-Attributed Timeout
 
-When a task assigned to the node ends with a timeout, the health multiplier is penalized by a two-stage rule based on current effective health:
+Relay MUST apply the health penalty when an assigned task expires during node execution with `TaskAbortTimeout` or during result upload with `TaskAbortResultUploadTimeout`. Relay MUST NOT apply it for a queued `TaskAbortTimeout` or `TaskAbortCreatorValidationTimeout`.
+
+For each node-attributed timeout, Relay MUST update the health multiplier by this two-stage rule based on current effective health:
 
 ```
 if H_effective >= FirstTimeoutHealthThreshold:
@@ -122,6 +125,8 @@ The penalty is temporary. Health recovers via two mechanisms:
    H(t) = H_base + (1 - H_base) * (1 - exp(-elapsed / 30min))
    ```
 2. **Active success-based recovery**: Every successfully completed task adds a boost of `0.15` to H.
+
+Relay MUST apply the active success boost only after validated result upload succeeds. `TaskAbortCreatorValidationTimeout` MUST NOT apply this boost even though its fee uses the successful-task distribution function.
 
 ## QoS Tracing
 
@@ -155,11 +160,13 @@ Relay MUST use the following `event_type` values:
 | `validation_group_rank_2` | A validation-group task receives rank 2 and task QoS score 5, then updates `Q_long`. |
 | `validation_group_rank_3` | A validation-group task receives rank 3 and task QoS score 2, then updates `Q_long`. |
 | `validation_group_aborted` | A validation-group task receives the special abort task QoS score 0, then updates `Q_long`. |
-| `task_timeout_penalty` | A task timeout abort applies the short-term health penalty. |
+| `task_timeout_penalty` | `TaskAbortTimeout` during node execution or `TaskAbortResultUploadTimeout` applies the short-term health penalty. |
 | `task_result_upload_success_boost` | A validated task result upload succeeds and applies the short-term health boost. |
 | `validation_group_matched_boost` | A validation-group comparison accepts the node result and applies the short-term health boost. |
 | `node_join_health_reset` | Node join or rejoin resets short-term health to full health. |
 | `node_rejoin_qos_floor` | Existing node rejoin raises `Q_long` to the configured rejoin floor. |
+
+`TaskAbortCreatorValidationTimeout` MUST NOT produce `validation_group_aborted`, a rank event, `task_timeout_penalty`, or `task_result_upload_success_boost`.
 
 ### Trace API
 

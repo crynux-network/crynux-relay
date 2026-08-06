@@ -144,6 +144,14 @@ func taskStatusLabel(status models.TaskStatus, abortReason models.TaskAbortReaso
 			return "Group Timeout"
 		case models.TaskAbortErrorReported:
 			return "Error Reported"
+		case models.TaskAbortCreatorCancelled:
+			return "Creator Cancelled"
+		case models.TaskAbortCreatorValidationTimeout:
+			return "Creator Validation Timeout"
+		case models.TaskAbortResultUploadTimeout:
+			return "Result Upload Timeout"
+		case models.TaskAbortNodeSlashed:
+			return "Node Slashed"
 		default:
 			return "Aborted"
 		}

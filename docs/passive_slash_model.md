@@ -92,6 +92,8 @@ Relay MUST allow `POST /v2/admin/nodes/slash` to accept `pending_slash_id`. When
 
 Admin-triggered slash without `pending_slash_id` MUST keep using the existing node-address flow. When no task ID commitment is available, `NodeSlashed` MUST use `0x`.
 
+When an admin-triggered slash targets a Node with a non-terminal current task, Relay MUST set that task to `TaskEndAborted` with `TaskAbortNodeSlashed`, refund its full task fee, emit `TaskEndAborted`, and slash the Node in the same database transaction. Relay MUST NOT apply a timeout health penalty to that task. A current task that is already terminal, including the `TaskEndInvalidated` task that produced a pending slash, MUST NOT be aborted again.
+
 ## Final Slash Evidence
 
 `NodeSlashedEvent` MUST include an optional `evidence` field in the serialized `events.args` JSON. Historical `NodeSlashed` rows without evidence MUST remain readable.

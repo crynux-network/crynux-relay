@@ -152,12 +152,24 @@ type AppConfig struct {
 	} `mapstructure:"task"`
 
 	TaskPricing struct {
-		OverheadSeconds           float64 `mapstructure:"overhead_seconds"`
-		InitialSecondsPerSDUnit   float64 `mapstructure:"initial_seconds_per_sd_unit"`
-		InitialSecondsPerLLMToken float64 `mapstructure:"initial_seconds_per_llm_token"`
-		CalibrationAlpha          float64 `mapstructure:"calibration_alpha"`
-		DefaultLLMMaxNewTokens    uint64  `mapstructure:"default_llm_max_new_tokens"`
-		BaseVRAM                  uint64  `mapstructure:"base_vram"`
+		OverheadSeconds                        float64 `mapstructure:"overhead_seconds"`
+		InitialSecondsPerSDPixelStep           float64 `mapstructure:"initial_seconds_per_sd_pixel_step"`
+		InitialLLMConstantSeconds              float64 `mapstructure:"initial_llm_constant_seconds"`
+		InitialLLMSecondsPerInputByte          float64 `mapstructure:"initial_llm_seconds_per_input_byte"`
+		InitialLLMSecondsPerOutputToken        float64 `mapstructure:"initial_llm_seconds_per_output_token"`
+		CalibrationAlpha                       float64 `mapstructure:"calibration_alpha"`
+		CalibrationRegularization              float64 `mapstructure:"calibration_regularization"`
+		CalibrationMaxPositiveResidualMultiple float64 `mapstructure:"calibration_max_positive_residual_multiple"`
+		CalibrationWarmupSuccessSamples        uint64  `mapstructure:"calibration_warmup_success_samples"`
+		CalibrationFlushIntervalSeconds        uint64  `mapstructure:"calibration_flush_interval_seconds"`
+		DefaultLLMMaxNewTokens                 uint64  `mapstructure:"default_llm_max_new_tokens"`
+		BaseVRAM                               uint64  `mapstructure:"base_vram"`
+		QueueTimeoutSeconds                    uint64  `mapstructure:"queue_timeout_seconds"`
+		AppValidationTimeoutSeconds            uint64  `mapstructure:"app_validation_timeout_seconds"`
+		ResultUploadTimeoutSeconds             uint64  `mapstructure:"result_upload_timeout_seconds"`
+		TimeoutMultiplier                      float64 `mapstructure:"timeout_multiplier"`
+		MinExecutionTimeoutSeconds             uint64  `mapstructure:"min_execution_timeout_seconds"`
+		MaxExecutionTimeoutSeconds             uint64  `mapstructure:"max_execution_timeout_seconds"`
 	} `mapstructure:"task_pricing"`
 
 	TaskMatching struct {
