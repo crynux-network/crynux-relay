@@ -383,6 +383,9 @@ func checkMetricsConfig() error {
 	if len(appConfig.Metrics.VramTiers) == 0 {
 		return errors.New("metrics.vram_tiers is not set")
 	}
+	if len(appConfig.Metrics.TaskExecutionTimeoutBuckets) == 0 {
+		return errors.New("metrics.task_execution_timeout_buckets is not set")
+	}
 	return nil
 }
 

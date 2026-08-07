@@ -154,6 +154,7 @@ metrics:
   enabled: true
   port: "9090"
   vram_tiers: [8, 16, 24, 32, 48]
+  task_execution_timeout_buckets: [30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600, 7200]
 staking_score:
   locked_emission_coefficient: 1.0
 qos:

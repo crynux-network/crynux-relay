@@ -228,9 +228,10 @@ type AppConfig struct {
 	} `mapstructure:"mac"`
 
 	Metrics struct {
-		Enabled   bool     `mapstructure:"enabled"`
-		Port      string   `mapstructure:"port"`
-		VramTiers []uint64 `mapstructure:"vram_tiers"`
+		Enabled                     bool     `mapstructure:"enabled"`
+		Port                        string   `mapstructure:"port"`
+		VramTiers                   []uint64 `mapstructure:"vram_tiers"`
+		TaskExecutionTimeoutBuckets []uint64 `mapstructure:"task_execution_timeout_buckets"`
 	} `mapstructure:"metrics"`
 
 	StakingScore struct {

@@ -139,10 +139,12 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	if task.CreateTime.Valid {
 		metrics.TaskQueueWaitSeconds.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Observe(startTime.Sub(task.CreateTime.Time).Seconds())
 	}
-	metrics.TaskExecutionTimeoutSeconds.WithLabelValues(
-		metrics.TaskTypeLabel(task.TaskType),
-		metrics.VramTierLabel(task.MinVRAM),
-	).Observe(float64(timeout))
+	if metrics.TaskExecutionTimeoutSeconds != nil {
+		metrics.TaskExecutionTimeoutSeconds.WithLabelValues(
+			metrics.TaskTypeLabel(task.TaskType),
+			metrics.VramTierLabel(task.MinVRAM),
+		).Observe(float64(timeout))
+	}
 	if err := captureRunningTaskSnapshot(ctx, db, &task, &node); err != nil {
 		log.Errorf("SetTaskStatusStarted: failed to capture running task snapshot, task: %s, node: %s, error: %v", task.TaskIDCommitment, node.Address, err)
 	}
