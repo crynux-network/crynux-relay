@@ -153,6 +153,10 @@ var (
 	}, []string{"hf_model_id", "state"})
 )
 
+// TaskExecutionTimeoutSeconds is created by InitTaskExecutionTimeoutBuckets from
+// configured bucket upper bounds. It is nil until that init runs.
+var TaskExecutionTimeoutSeconds *prometheus.HistogramVec
+
 func init() {
 	Registry.MustRegister(
 		TasksCreated,
@@ -259,6 +263,26 @@ var vramTiers []uint64
 func InitVramTiers(tiers []uint64) {
 	vramTiers = append([]uint64(nil), tiers...)
 	sort.Slice(vramTiers, func(i, j int) bool { return vramTiers[i] < vramTiers[j] })
+}
+
+// InitTaskExecutionTimeoutBuckets creates and registers
+// relay_task_execution_timeout_seconds with the given ascending bucket upper
+// bounds in seconds. A previous registration of the same metric is replaced.
+func InitTaskExecutionTimeoutBuckets(buckets []uint64) {
+	floatBuckets := make([]float64, len(buckets))
+	for i, b := range buckets {
+		floatBuckets[i] = float64(b)
+	}
+	m := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "relay_task_execution_timeout_seconds",
+		Help:    "Execution-stage Timeout written on the task at dispatch (TaskStarted).",
+		Buckets: floatBuckets,
+	}, []string{"task_type", "vram_tier"})
+	if TaskExecutionTimeoutSeconds != nil {
+		Registry.Unregister(TaskExecutionTimeoutSeconds)
+	}
+	TaskExecutionTimeoutSeconds = m
+	Registry.MustRegister(TaskExecutionTimeoutSeconds)
 }
 
 // VramTierLabel maps a task's minimum VRAM requirement (in GB) to a tier label

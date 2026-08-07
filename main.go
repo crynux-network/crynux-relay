@@ -107,6 +107,7 @@ func main() {
 
 	if conf.Metrics.Enabled {
 		metrics.InitVramTiers(conf.Metrics.VramTiers)
+		metrics.InitTaskExecutionTimeoutBuckets(conf.Metrics.TaskExecutionTimeoutBuckets)
 		go metrics.StartMetricsServer(context.Background(), conf.Metrics.Port)
 		go metrics.StartGaugeCollector(context.Background(), config.GetDB())
 	}

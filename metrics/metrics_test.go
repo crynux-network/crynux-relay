@@ -50,7 +50,51 @@ func TestGPULabel(t *testing.T) {
 	}
 }
 
+func TestInitTaskExecutionTimeoutBuckets(t *testing.T) {
+	InitTaskExecutionTimeoutBuckets([]uint64{60, 300, 7200})
+	if TaskExecutionTimeoutSeconds == nil {
+		t.Fatal("TaskExecutionTimeoutSeconds is nil after init")
+	}
+	TaskExecutionTimeoutSeconds.WithLabelValues("llm", "16-24").Observe(300)
+
+	families, err := Registry.Gather()
+	if err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+	found := false
+	for _, family := range families {
+		if family.GetName() != "relay_task_execution_timeout_seconds" {
+			continue
+		}
+		found = true
+		for _, metric := range family.GetMetric() {
+			hist := metric.GetHistogram()
+			if hist == nil {
+				t.Fatal("expected histogram metric")
+			}
+			bounds := make([]float64, 0, len(hist.GetBucket()))
+			for _, bucket := range hist.GetBucket() {
+				bounds = append(bounds, bucket.GetUpperBound())
+			}
+			want := []float64{60, 300, 7200}
+			if len(bounds) != len(want) {
+				t.Fatalf("bucket count = %d, want %d (%v)", len(bounds), len(want), bounds)
+			}
+			for i := range want {
+				if bounds[i] != want[i] {
+					t.Fatalf("bucket[%d] = %v, want %v", i, bounds[i], want[i])
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("relay_task_execution_timeout_seconds not found in registry")
+	}
+}
+
 func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
+	InitTaskExecutionTimeoutBuckets([]uint64{30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600, 7200})
+
 	TasksCreated.WithLabelValues("sd", "0xabc", "8-16").Inc()
 	TasksDispatched.WithLabelValues("sd").Inc()
 	TasksDelivered.Inc()
@@ -59,6 +103,7 @@ func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
 	TasksAborted.WithLabelValues("timeout", "TaskStartedUndelivered", "sd", "8-16").Inc()
 	TaskQueueWaitSeconds.WithLabelValues("sd", "8-16").Observe(1.5)
 	TaskExecutionSeconds.WithLabelValues("sd", "8-16").Observe(60)
+	TaskExecutionTimeoutSeconds.WithLabelValues("sd", "8-16").Observe(300)
 	NodeSelectionCandidates.WithLabelValues("sd", "8-16", "any").Observe(10)
 	SetNodeSelectionEmptyPoolTasks(map[SelectionLabels]int{
 		{TaskType: "sd", VramTier: "8-16", GPU: "any"}: 1,
@@ -93,6 +138,7 @@ func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
 		"relay_tasks_aborted_total",
 		"relay_task_queue_wait_seconds",
 		"relay_task_execution_seconds",
+		"relay_task_execution_timeout_seconds",
 		"relay_node_selection_candidates",
 		"relay_node_selection_empty_pool_tasks",
 		"relay_node_health_penalties_total",
