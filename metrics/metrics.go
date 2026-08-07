@@ -60,6 +60,12 @@ var (
 		Buckets: []float64{5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600},
 	}, []string{"task_type", "vram_tier"})
 
+	TaskExecutionTimeoutSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "relay_task_execution_timeout_seconds",
+		Help:    "Execution-stage Timeout written on the task at dispatch (TaskStarted).",
+		Buckets: []float64{30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600, 7200},
+	}, []string{"task_type", "vram_tier"})
+
 	NodeSelectionCandidates = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_node_selection_candidates",
 		Help:    "Size of the final candidate node pool observed during node selection for inference tasks.",
@@ -163,6 +169,7 @@ func init() {
 		TasksAborted,
 		TaskQueueWaitSeconds,
 		TaskExecutionSeconds,
+		TaskExecutionTimeoutSeconds,
 		NodeSelectionCandidates,
 		NodeSelectionEmptyPoolTasks,
 		NodeHealthPenalties,

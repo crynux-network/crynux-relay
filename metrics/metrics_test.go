@@ -59,6 +59,7 @@ func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
 	TasksAborted.WithLabelValues("timeout", "TaskStartedUndelivered", "sd", "8-16").Inc()
 	TaskQueueWaitSeconds.WithLabelValues("sd", "8-16").Observe(1.5)
 	TaskExecutionSeconds.WithLabelValues("sd", "8-16").Observe(60)
+	TaskExecutionTimeoutSeconds.WithLabelValues("sd", "8-16").Observe(300)
 	NodeSelectionCandidates.WithLabelValues("sd", "8-16", "any").Observe(10)
 	SetNodeSelectionEmptyPoolTasks(map[SelectionLabels]int{
 		{TaskType: "sd", VramTier: "8-16", GPU: "any"}: 1,
@@ -93,6 +94,7 @@ func TestMetricsEndpointServesRegisteredMetrics(t *testing.T) {
 		"relay_tasks_aborted_total",
 		"relay_task_queue_wait_seconds",
 		"relay_task_execution_seconds",
+		"relay_task_execution_timeout_seconds",
 		"relay_node_selection_candidates",
 		"relay_node_selection_empty_pool_tasks",
 		"relay_node_health_penalties_total",
