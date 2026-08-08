@@ -33,7 +33,7 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 | `status` (aborted task) | The task status enum name at the moment of the abort: `TaskQueued`, `TaskParametersUploaded`, `TaskErrorReported`, `TaskScoreReady`, `TaskValidated`, or `TaskGroupValidated`. `TaskStarted` is split by `delivered_time` into `TaskStartedDelivered` and `TaskStartedUndelivered`. The status and reason together MUST identify queue, execution, creator-validation, and result-upload expiration. |
 | `status` (terminal task) | Terminal status: `success`, `group_success`, `group_refund`, or `invalidated`. |
 | `status` (node) | Node status: `quit`, `available`, `busy`, `pending_pause`, `pending_quit`, or `paused`. |
-| `event` | Node lifecycle event: `join`, `quit`, `kickout`, or `slash`. |
+| `event` | Node lifecycle event: `join`, `quit`, `kickout`, `slash`, `health_excluded`, or `health_recovered`. |
 
 ## Counters and Histograms
 
@@ -53,7 +53,7 @@ Counters and histograms MUST be incremented at the task and node state transitio
 | `relay_task_priority` | histogram | `task_type`, `vram_demand` | Observes immutable task priority when task creation succeeds. |
 | `relay_node_selection_candidates` | histogram | `task_type`, `vram_tier`, `gpu` | Observes the final candidate pool size on every node selection attempt in the matching round, including 0 for the empty-pool branch. Buckets: 0, 1, 2, 5, 10, 20, 50, 100, 200. |
 | `relay_node_health_penalties_total` | counter | none | `ApplyHealthPenalty` succeeds. |
-| `relay_node_events_total` | counter | `event` | Node join, quit, kickout, or slash completes. |
+| `relay_node_events_total` | counter | `event` | Node join, quit, kickout, or slash completes. `health_excluded` increments when a timeout abort commits and newly sets `health_excluded`. `health_recovered` increments when task start commits and clears `health_excluded`. Join reset of exclusion MUST NOT increment `health_recovered`. |
 | `relay_model_downloads_dispatched_total` | counter | `task_type`, `vram_tier` | The model distribution controller commits a download selection record together with its `DownloadModel` event. The `task_type` label carries the latest demanding task type of the demand group. |
 | `relay_model_downloads_completed_total` | counter | `vram_tier` | A pending download selection transitions to `completed` because the node's on-disk model set contains the model. The transition is detected on the controller round following the node's model report, so completion observations lag the report by at most one controller interval. |
 | `relay_model_downloads_expired_total` | counter | `vram_tier` | A pending download selection transitions to `expired` at the download deadline without completion. |
@@ -118,10 +118,10 @@ The `nodes` table carries a nullable `last_seen_time` column recording the last 
 |------|----------------|
 | `metrics/metrics.go` | Metric definitions, dedicated registry, label derivation helpers, metrics HTTP server |
 | `metrics/collector.go` | 30-second gauge collector |
-| `service/task_status.go` | Task transition counters and histograms, `MarkTaskDelivered` |
+| `service/task_status.go` | Task transition counters and histograms, `MarkTaskDelivered`, `health_excluded` and `health_recovered` node event counters |
 | `service/select_nodes.go` | Node selection candidate pool metrics |
 | `service/qos.go` | Health penalty counter |
-| `service/node.go` | Node lifecycle event counters |
+| `service/node.go` | Node join, quit, kickout, and slash event counters |
 | `service/model_distribution.go` | Model download dispatch, completion, and expiration counters |
 | `service/node_last_seen.go` | Throttled node `last_seen_time` refresh |
 | `api/v1/inference_tasks/get_task_by_id.go` | Task delivery recording on node fetch |

@@ -137,6 +137,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	}
 	if clearHealthExclusion {
 		logHealthExclusionClearedEvent(&node, &task)
+		metrics.NodeEvents.WithLabelValues("health_recovered").Inc()
 	}
 	task.Timeout = timeout
 	if captureExecutionGPU {
@@ -515,7 +516,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 		var node *models.Node
 		var err error
 		if len(task.SelectedNode) > 0 {
-			node, err = checkTaskSelectedNode(ctx, db, &task)
+			node, err = checkTaskSelectedNode(ctx, tx, &task)
 			if errors.Is(err, ErrWrongNodeCurrentTask) {
 				// A non-terminal timeout task cannot reach this branch under the
 				// existing code paths: any path that clears a node's current task
@@ -616,6 +617,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
 		if logHealthExcluded {
 			logHealthExcludedEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
+			metrics.NodeEvents.WithLabelValues("health_excluded").Inc()
 		}
 	}
 	for _, event := range qosTraceEvents {
