@@ -112,21 +112,37 @@ Default behavior example:
 - 1 timeout from full health: `1.00 -> 0.95` (light penalty)
 - 2nd consecutive timeout: `0.95 -> 0.285` (heavy penalty begins)
 
-#### Health-Based Kickout
+#### Health Exclusion
 
-When a node's effective health drops below the **health kickout threshold** (`0.1`), the relay MUST kick the node out when the current task finishes. The node leaves the candidate set because its status becomes `Quit`, not because runtime QoS is clamped to zero. Under default penalty settings, this occurs after the heavy-penalty stage drives health below the threshold.
+When a node-attributed timeout produces `H_new < qos.health_exclude_enter_threshold`, Relay MUST set `health_excluded = true` in the same node update that writes `HealthBase` and `HealthUpdatedAt`. Equality with the enter threshold MUST NOT set the flag.
+
+A node with `health_excluded = true` and effective health below `qos.health_exclude_exit_threshold` MUST remain `Available` but MUST be removed from inference-task candidate sets by a hard filter. Relay MUST NOT rely on zero selection weight because zero-weight sampling can still select a node when every candidate has zero weight. This exclusion MUST NOT prevent model download selection.
+
+When effective health reaches or exceeds the exit threshold, the node is eligible for inference matching. Before task start, Relay MUST reload the node and recompute effective health. If health remains below the exit threshold, task start MUST fail and leave the task `Queued` and the node `Available`. If health has reached the exit threshold, the task-start transaction MUST set the node `Busy`, set its current task, and clear `health_excluded` in one node update. Join and rejoin MUST reset `HealthBase` to `1.0` and `health_excluded` to `false`.
+
+Short-term health MUST NOT cause permanent kickout. Permanent kickout MUST use only the long-term `Q_long` threshold after the configured rolling pool contains enough samples.
 
 #### Recovery
 
 The penalty is temporary. Health recovers via two mechanisms:
 
-1. **Passive time-based recovery**: Exponential decay toward 1.0 with a 30-minute time constant.
+1. **Passive time-based recovery**: Exponential decay toward 1.0 with the configured time constant.
    ```
-   H(t) = H_base + (1 - H_base) * (1 - exp(-elapsed / 30min))
+   H(t) = H_base + (1 - H_base) * (1 - exp(-elapsed / recovery_tau_minutes))
    ```
 2. **Active success-based recovery**: Every successfully completed task adds a boost of `0.15` to H.
 
 Relay MUST apply the active success boost only after validated result upload succeeds. `TaskAbortCreatorValidationTimeout` MUST NOT apply this boost even though its fee uses the successful-task distribution function.
+
+An excluded node cannot complete inference tasks and therefore cannot receive a success boost while exclusion is active. For an exclusion entered at `H_new`, passive recovery reaches the exit threshold after:
+
+```
+duration_minutes =
+    recovery_tau_minutes
+    * ln((1 - H_new) / (1 - health_exclude_exit_threshold))
+```
+
+Relay MUST NOT use a cooldown field, timer, or background cleanup to end exclusion. `qos.recovery_tau_minutes` MUST be positive, and code MUST NOT substitute a fallback value.
 
 ## QoS Tracing
 
@@ -196,7 +212,19 @@ The API response `data` object MUST contain `node_address`, `max_task_events`, a
 | `qos.first_timeout_health_threshold` | 0.99 | Health threshold that determines whether timeout uses light or heavy penalty |
 | `qos.success_boost` | 0.15 | Additive boost to H on success |
 | `qos.recovery_tau_minutes` | 30 | Time constant used for passive health recovery |
-| `qos.health_kickout_threshold` | 0.1 | H value below which the node is kicked out when the current task finishes |
+| `qos.health_exclude_enter_threshold` | 0.2 | Strict H threshold below which a timeout sets persistent health exclusion |
+| `qos.health_exclude_exit_threshold` | 0.8 | H threshold at or above which an excluded node becomes eligible for task start |
+
+Relay configuration MUST satisfy:
+
+- `0 < health_exclude_enter_threshold < health_exclude_exit_threshold <= 1`
+- `0 < penalty_factor <= 1`
+- `0 < first_timeout_penalty_factor <= 1`
+- `0 < first_timeout_health_threshold <= 1`
+- `0 <= success_boost <= 1`
+- `recovery_tau_minutes > 0`
+
+The Admin node QoS CSV MUST include `health_excluded` from persistent node state and `health_exclusion_active`, calculated as `health_excluded && effective_H < health_exclude_exit_threshold` at export time.
 
 ## Relevant Source Files
 
@@ -205,4 +233,4 @@ The API response `data` object MUST contain `node_address`, `max_task_events`, a
 | `service/qos.go` | Core QoS logic: long-term pool, short-term health (H), combined score calculation (`CalculateQosScore`) |
 | `service/qos_tracing.go` | In-memory QoS tracing event store, trace event types, retention, and API read helpers |
 | `service/task_status.go` | Task state transitions, QoS updates, health penalty/boost triggers |
-| `models/node.go` | Node model with `QOSScore` (long-term), `HealthBase`, `HealthUpdatedAt` |
+| `models/node.go` | Node model with `QOSScore` (long-term), `HealthBase`, `HealthUpdatedAt`, and `HealthExcluded` |

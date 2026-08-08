@@ -113,6 +113,13 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+  penalty_factor: 0.3
+  first_timeout_penalty_factor: 0.95
+  first_timeout_health_threshold: 0.99
+  success_boost: 0.15
+  recovery_tau_minutes: 30
+  health_exclude_enter_threshold: 0.2
+  health_exclude_exit_threshold: 0.8
 staking_score:
   locked_emission_coefficient: 1.0
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
@@ -239,6 +246,56 @@ staking_score:
 	}
 }
 
+func TestCheckQosConfigHealthParameters(t *testing.T) {
+	original := appConfig
+	t.Cleanup(func() {
+		appConfig = original
+	})
+
+	validConfig := func() *AppConfig {
+		cfg := &AppConfig{}
+		cfg.QoS.TracingMaxTaskEvents = 50
+		cfg.QoS.PenaltyFactor = 0.3
+		cfg.QoS.FirstTimeoutPenaltyFactor = 0.95
+		cfg.QoS.FirstTimeoutHealthThreshold = 0.99
+		cfg.QoS.SuccessBoost = 0.15
+		cfg.QoS.RecoveryTauMinutes = 30
+		cfg.QoS.HealthExcludeEnterThreshold = 0.2
+		cfg.QoS.HealthExcludeExitThreshold = 0.8
+		return cfg
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*AppConfig)
+	}{
+		{name: "valid", mutate: func(*AppConfig) {}},
+		{name: "enter zero", mutate: func(cfg *AppConfig) { cfg.QoS.HealthExcludeEnterThreshold = 0 }},
+		{name: "enter equals exit", mutate: func(cfg *AppConfig) { cfg.QoS.HealthExcludeEnterThreshold = cfg.QoS.HealthExcludeExitThreshold }},
+		{name: "exit above one", mutate: func(cfg *AppConfig) { cfg.QoS.HealthExcludeExitThreshold = 1.1 }},
+		{name: "penalty zero", mutate: func(cfg *AppConfig) { cfg.QoS.PenaltyFactor = 0 }},
+		{name: "first penalty above one", mutate: func(cfg *AppConfig) { cfg.QoS.FirstTimeoutPenaltyFactor = 1.1 }},
+		{name: "first threshold zero", mutate: func(cfg *AppConfig) { cfg.QoS.FirstTimeoutHealthThreshold = 0 }},
+		{name: "success boost negative", mutate: func(cfg *AppConfig) { cfg.QoS.SuccessBoost = -0.1 }},
+		{name: "success boost above one", mutate: func(cfg *AppConfig) { cfg.QoS.SuccessBoost = 1.1 }},
+		{name: "recovery tau zero", mutate: func(cfg *AppConfig) { cfg.QoS.RecoveryTauMinutes = 0 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appConfig = validConfig()
+			tt.mutate(appConfig)
+			err := checkQosConfig()
+			if tt.name == "valid" && err != nil {
+				t.Fatalf("expected valid config, got %v", err)
+			}
+			if tt.name != "valid" && err == nil {
+				t.Fatal("expected invalid config")
+			}
+		})
+	}
+}
+
 func TestInitConfigRequiresNetworkFLOPSFile(t *testing.T) {
 	t.Cleanup(func() {
 		appConfig = nil
@@ -309,6 +366,13 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+  penalty_factor: 0.3
+  first_timeout_penalty_factor: 0.95
+  first_timeout_health_threshold: 0.99
+  success_boost: 0.15
+  recovery_tau_minutes: 30
+  health_exclude_enter_threshold: 0.2
+  health_exclude_exit_threshold: 0.8
 staking_score:
   locked_emission_coefficient: 1.0
 `, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile))
@@ -389,6 +453,13 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+  penalty_factor: 0.3
+  first_timeout_penalty_factor: 0.95
+  first_timeout_health_threshold: 0.99
+  success_boost: 0.15
+  recovery_tau_minutes: 30
+  health_exclude_enter_threshold: 0.2
+  health_exclude_exit_threshold: 0.8
 staking_score:
   locked_emission_coefficient: 1.0
 %s`, addressFromPrivateKey(t, privateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), filepath.ToSlash(macKeyFile), taskConfig)

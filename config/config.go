@@ -358,6 +358,26 @@ func checkQosConfig() error {
 	if appConfig.QoS.TracingMaxTaskEvents == 0 {
 		return errors.New("qos.tracing_max_task_events is not set")
 	}
+	if appConfig.QoS.HealthExcludeEnterThreshold <= 0 ||
+		appConfig.QoS.HealthExcludeEnterThreshold >= appConfig.QoS.HealthExcludeExitThreshold ||
+		appConfig.QoS.HealthExcludeExitThreshold > 1 {
+		return errors.New("qos health exclusion thresholds must satisfy 0 < health_exclude_enter_threshold < health_exclude_exit_threshold <= 1")
+	}
+	if appConfig.QoS.PenaltyFactor <= 0 || appConfig.QoS.PenaltyFactor > 1 {
+		return errors.New("qos.penalty_factor must be in (0, 1]")
+	}
+	if appConfig.QoS.FirstTimeoutPenaltyFactor <= 0 || appConfig.QoS.FirstTimeoutPenaltyFactor > 1 {
+		return errors.New("qos.first_timeout_penalty_factor must be in (0, 1]")
+	}
+	if appConfig.QoS.FirstTimeoutHealthThreshold <= 0 || appConfig.QoS.FirstTimeoutHealthThreshold > 1 {
+		return errors.New("qos.first_timeout_health_threshold must be in (0, 1]")
+	}
+	if appConfig.QoS.SuccessBoost < 0 || appConfig.QoS.SuccessBoost > 1 {
+		return errors.New("qos.success_boost must be in [0, 1]")
+	}
+	if appConfig.QoS.RecoveryTauMinutes <= 0 {
+		return errors.New("qos.recovery_tau_minutes must be greater than 0")
+	}
 	return nil
 }
 

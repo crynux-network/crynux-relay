@@ -31,7 +31,8 @@ func initServiceTestConfig(t *testing.T) {
 		"  history_cleanup_batch_size: 2000\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
-		"  tracing_max_task_events: 50\n"
+		"  tracing_max_task_events: 50\n" +
+		qosHealthTestConfigYAML
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
@@ -77,3 +78,11 @@ const taskPricingMatchingTestConfigYAML = "staking_score:\n" +
 	"  min_nodes: 1\n" +
 	"  max_nodes: 10\n" +
 	"  download_timeout_seconds: 1800\n"
+
+const qosHealthTestConfigYAML = "  penalty_factor: 0.3\n" +
+	"  first_timeout_penalty_factor: 0.95\n" +
+	"  first_timeout_health_threshold: 0.99\n" +
+	"  success_boost: 0.15\n" +
+	"  recovery_tau_minutes: 30\n" +
+	"  health_exclude_enter_threshold: 0.2\n" +
+	"  health_exclude_exit_threshold: 0.8\n"

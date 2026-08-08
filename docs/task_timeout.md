@@ -76,6 +76,10 @@ Other `TaskScoreReady` or `TaskErrorReported` members of that group MUST retain 
 
 `TaskAbortResultUploadTimeout` attributes expiration to the selected node after validation made result upload available. Relay MUST refund the creator in full, MUST NOT create task income, MUST apply the result-upload timeout health penalty, and MUST call `nodeFinishTask`.
 
+For execution timeout and result-upload timeout, Relay MUST write the penalized health and set `health_excluded = true` when the new health is below the configured enter threshold. Health mutation, exclusion mutation, task abort, payment refund, and `nodeFinishTask` MUST commit in the same timeout transaction. `nodeFinishTask` MUST restore a `Busy` node to `Available` when only short-term health exclusion applies. It MUST set the node to `Quit` only when the independent long-term QoS permanent-kickout condition is satisfied.
+
+Queue timeout and creator-validation timeout MUST NOT change node health or `health_excluded`.
+
 ## Timeout Processor
 
 Relay MUST run one internal timeout processor and MUST check tasks every two seconds. For each non-terminal task, it MUST evaluate only the deadline associated with the current status.

@@ -12,6 +12,8 @@ const (
 	nodeHealthEventTaskTimeout = "Task Timeout"
 	nodeHealthEventHealthBoost = "Health Boost"
 	nodeHealthEventNodeKickout = "Node Kickout"
+	nodeHealthEventExcluded    = "Health Excluded"
+	nodeHealthEventReincluded  = "Health Exclusion Cleared"
 )
 
 type nodeHealthMetrics struct {
@@ -78,6 +80,14 @@ func logHealthBoostNodeHealthEvent(node *models.Node, task *models.InferenceTask
 
 func logNodeKickoutHealthEvent(node *models.Node, task *models.InferenceTask, metrics nodeHealthMetrics) {
 	logNodeHealthEvent(nodeHealthEventNodeKickout, node, task, metrics)
+}
+
+func logHealthExcludedEvent(node *models.Node, task *models.InferenceTask, metrics nodeHealthMetrics) {
+	logNodeHealthEvent(nodeHealthEventExcluded, node, task, metrics)
+}
+
+func logHealthExclusionClearedEvent(node *models.Node, task *models.InferenceTask) {
+	logNodeHealthEvent(nodeHealthEventReincluded, node, task, calculateCurrentNodeHealthMetrics(node))
 }
 
 func logNodeHealthEvent(eventName string, node *models.Node, task *models.InferenceTask, metrics nodeHealthMetrics) {

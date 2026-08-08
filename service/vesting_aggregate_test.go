@@ -105,6 +105,13 @@ model_distribution:
   download_timeout_seconds: 1800
 qos:
   tracing_max_task_events: 50
+  penalty_factor: 0.3
+  first_timeout_penalty_factor: 0.95
+  first_timeout_health_threshold: 0.99
+  success_boost: 0.15
+  recovery_tau_minutes: 30
+  health_exclude_enter_threshold: 0.2
+  health_exclude_exit_threshold: 0.8
 staking_score:
   locked_emission_coefficient: 1.0
 `, vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(privateKeyFile), filepath.ToSlash(jwtKeyFile), vestingAggregateTestAddressFromPrivateKey(t, vestingAggregateTestPrivateKey), filepath.ToSlash(macKeyFile))

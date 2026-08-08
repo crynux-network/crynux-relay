@@ -87,6 +87,10 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	if err := node.Sync(ctx, db); err != nil {
 		return err
 	}
+	if IsHealthExcluded(&node, time.Now().UTC()) {
+		return ErrNodeHealthExcluded
+	}
+	clearHealthExclusion := node.HealthExcluded
 	if !isNodeVersionValidForTask(&node, &task) {
 		return errors.New("node version is not compatible with task")
 	}
@@ -130,6 +134,9 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	})
 	if err != nil {
 		return err
+	}
+	if clearHealthExclusion {
+		logHealthExclusionClearedEvent(&node, &task)
 	}
 	task.Timeout = timeout
 	if captureExecutionGPU {
@@ -500,6 +507,7 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	}
 	timeoutPenaltyMetrics := nodeHealthMetrics{}
 	logTimeoutPenalty := false
+	logHealthExcluded := false
 	var timeoutPenaltyNode *models.Node
 	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -565,10 +573,12 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 			penalizeResultUploadTimeout := task.AbortReason == models.TaskAbortResultUploadTimeout
 			if penalizeExecutionTimeout || penalizeResultUploadTimeout {
 				timeoutPenaltyMetrics = calculatePenaltyNodeHealthMetrics(node)
+				wasHealthExcluded := node.HealthExcluded
 				before := CaptureNodeQosTraceValues(node)
 				if err := ApplyHealthPenalty(ctx, tx, node); err != nil {
 					return err
 				}
+				logHealthExcluded = !wasHealthExcluded && node.HealthExcluded
 				qosTraceEvents = append(qosTraceEvents, NodeQosTraceInput{
 					NodeAddress:      node.Address,
 					TaskIDCommitment: task.TaskIDCommitment,
@@ -604,6 +614,9 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 	metrics.TasksAborted.WithLabelValues(metrics.AbortReasonLabel(task.AbortReason), metrics.AbortStatusLabel(lastStatus, &task), metrics.TaskTypeLabel(task.TaskType), metrics.VramTierLabel(task.MinVRAM)).Inc()
 	if logTimeoutPenalty && timeoutPenaltyNode != nil {
 		logTaskTimeoutNodeHealthEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
+		if logHealthExcluded {
+			logHealthExcludedEvent(timeoutPenaltyNode, &task, timeoutPenaltyMetrics)
+		}
 	}
 	for _, event := range qosTraceEvents {
 		RecordNodeQosTrace(event)

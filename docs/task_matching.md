@@ -26,7 +26,7 @@ Relay MUST maintain one in-memory node scheduling index covering every non-Quit 
 - node version (`major.minor.patch`)
 - on-disk model ID set
 - in-use model ID set
-- `QOSScore`, `HealthBase`, `HealthUpdatedAt`
+- `QOSScore`, `HealthBase`, `HealthUpdatedAt`, `HealthExcluded`
 - `StakeAmount`
 
 Delegated staking, vesting stake, max staking, and node name policy data MUST be read from their existing in-memory caches.
@@ -63,14 +63,14 @@ Relay MUST run one matching scheduler. Each matching round executes these steps 
 1. Fetch queued tasks from the database ordered by `priority DESC, id ASC`, limited to `task_matching.batch_size` tasks. Expired queued tasks MUST be skipped and left to the timeout processor as specified in [task_timeout.md](./task_timeout.md).
 2. Take the current node scheduling index state as the round's node view.
 3. Iterate the fetched tasks in queue order. For each task:
-   1. Compute the qualified node set from the index by applying the hard filters defined in [node_selection.md](./node_selection.md), excluding nodes already reserved in this round.
+   1. Compute the qualified node set from the index by applying the hard filters defined in [node_selection.md](./node_selection.md), including active health exclusion, and excluding nodes already reserved in this round. Every health calculation in one candidate-set computation MUST use the same current time.
    2. Extract the task's single lowercase `base:` model ID. Auxiliary IDs MUST NOT participate in Relay matching.
    3. Retain only qualified nodes that have the task's base model on disk.
    4. If no base-ready node remains, leave the task queued and continue with the next task. Relay MUST NOT fall back to the qualified node set. The matching round MUST NOT emit `DownloadModel` events; model distribution is owned by the model distribution controller specified in [model_distribution.md](./model_distribution.md).
    5. Compute base-ready candidate weights and select one node by weighted random sampling as defined in [node_selection.md](./node_selection.md).
    6. Reserve the selected node for this task for the remainder of the round.
 4. If every fetched task is either matched or blocked and unreserved eligible nodes remain, fetch the next page of queued tasks and continue matching within the same round.
-5. Execute `SetTaskStatusStarted` for all matched pairs. Executions MAY run concurrently across pairs. The task start transaction MUST retain its optimistic status guards, trace snapshot capture, and metrics. Task start MUST NOT emit model download events or create `NodeModel` rows; it MUST only update the in-use state of existing node-reported base-model rows.
+5. Execute `SetTaskStatusStarted` for all matched pairs. Executions MAY run concurrently across pairs. Before changing task or node state, task start MUST reload the node from the database and recompute effective health. If persistent health exclusion is active, task start MUST fail and leave the task `Queued` and node `Available`. If the persistent flag is set but effective health has reached the exit threshold, the transaction MUST set the task `Started`, set the node `Busy`, set the current task, and clear `health_excluded` atomically. The task start transaction MUST retain its optimistic status guards, trace snapshot capture, and metrics. Task start MUST NOT emit model download events or create `NodeModel` rows; it MUST only update the in-use state of existing node-reported base-model rows.
 6. Release the reservation of every pair whose task start failed. The task remains queued and re-enters matching in a later round. The node's index entry MUST be resynced from the database before reuse.
 
 Relay MUST start the next round immediately when the current round matched at least one task, and MUST otherwise wait `task_matching.tick_interval_seconds` before the next round.
@@ -95,7 +95,7 @@ Within a round, tasks that share the same requirement signature MUST be served f
 
 ## Consistency Requirements
 
-The index is advisory. The task start transaction keeps its existing guards: the conditional task status update, the node availability pre-check, and the status-conditional node update. A matching decision that loses a race with a concurrent node state change MUST fail at the database and MUST NOT be forced through.
+The index is advisory. The task start transaction keeps its existing guards: the conditional task status update, the node availability pre-check, the database health-exclusion recheck, and the status-conditional node update. A matching decision that loses a race with a concurrent node state or health change MUST fail at the database and MUST NOT be forced through. Task state, node status, current task, in-use model changes, and exclusion clear MUST commit or roll back together.
 
 The matching scheduler, the node scheduling index, and the in-round reservation set are process-local structures. This design requires the single-process Relay deployment that the existing in-memory caches already assume.
 

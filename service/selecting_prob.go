@@ -50,8 +50,11 @@ func CalculateNodeSelectingProb(node models.Node, now time.Time) NodeSelectingPr
 		scoreStakeAmount = GetNodeScoreStakeAmount(node, now)
 	}
 
-	qosScore := CalculateQosScore(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
+	qosScore := CalculateQosScoreAt(node.QOSScore, node.HealthBase, node.HealthUpdatedAt, now)
 	stakingScore, qosScore, probWeight := CalculateSelectingProb(scoreStakeAmount, GetMaxStaking(), qosScore)
+	if IsHealthExcluded(&node, now) {
+		probWeight = 0
+	}
 	return NodeSelectingProb{
 		ScoreStakeAmount: scoreStakeAmount,
 		StakingScore:     stakingScore,

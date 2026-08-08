@@ -62,16 +62,12 @@ func getNodeTaskQosScore(node *models.Node, qos uint64) (float64, error) {
 }
 
 // ShouldPermanentKickout returns true if the node should be kicked out by
-// either long-term QoS or qos short threshold.
+// long-term QoS after the score pool has enough samples.
 func ShouldPermanentKickout(node *models.Node) bool {
 	if node == nil {
 		return false
 	}
 	cfg := config.GetConfig().QoS
-	if getEffectiveHealth(node.HealthBase, node.HealthUpdatedAt) < cfg.HealthKickoutThreshold {
-		return true
-	}
-
 	poolSize := cfg.ScorePoolSize
 	nodeQoSScorePool.mu.RLock()
 	qosScorePool, ok := nodeQoSScorePool.pool[node.Address]
@@ -89,26 +85,33 @@ func ShouldPermanentKickout(node *models.Node) bool {
 // using exponential decay recovery toward 1.0.
 // If HealthUpdatedAt is not set, the node is considered fully healthy.
 func getEffectiveHealth(healthBase float64, healthUpdatedAt sql.NullTime) float64 {
+	return getEffectiveHealthAt(healthBase, healthUpdatedAt, time.Now().UTC())
+}
+
+func getEffectiveHealthAt(healthBase float64, healthUpdatedAt sql.NullTime, now time.Time) float64 {
 	if !healthUpdatedAt.Valid {
 		return 1.0
 	}
-	cfg := config.GetConfig().QoS
-	tau := cfg.RecoveryTauMinutes
-	if tau <= 0 {
-		tau = 30.0
-	}
 
-	elapsed := time.Since(healthUpdatedAt.Time).Minutes()
+	elapsed := now.Sub(healthUpdatedAt.Time).Minutes()
 	if elapsed < 0 {
 		elapsed = 0
 	}
 
 	// H_effective(t) = H_base + (1 - H_base) * (1 - exp(-(t - t_base) / tau))
-	hEffective := healthBase + (1.0-healthBase)*(1.0-math.Exp(-elapsed/tau))
+	hEffective := healthBase + (1.0-healthBase)*(1.0-math.Exp(-elapsed/config.GetConfig().QoS.RecoveryTauMinutes))
 	if hEffective > 1.0 {
 		hEffective = 1.0
 	}
 	return hEffective
+}
+
+func IsHealthExcluded(node *models.Node, now time.Time) bool {
+	if node == nil || !node.HealthExcluded {
+		return false
+	}
+	return getEffectiveHealthAt(node.HealthBase, node.HealthUpdatedAt, now) <
+		config.GetConfig().QoS.HealthExcludeExitThreshold
 }
 
 func calculatePenalizedHealth(hEffective float64) float64 {
@@ -135,18 +138,26 @@ func calculateCombinedQos(qosLong float64, health float64) float64 {
 // ApplyHealthPenalty is called when a task times out. It multiplies the
 // current effective health by the configured penalty factor.
 func ApplyHealthPenalty(ctx context.Context, db *gorm.DB, node *models.Node) error {
-	hEffective := getEffectiveHealth(node.HealthBase, node.HealthUpdatedAt)
+	now := time.Now().UTC()
+	hEffective := getEffectiveHealthAt(node.HealthBase, node.HealthUpdatedAt, now)
 	hNew := calculatePenalizedHealth(hEffective)
-	updatedAt := sql.NullTime{Time: time.Now(), Valid: true}
+	updatedAt := sql.NullTime{Time: now, Valid: true}
 
-	if err := node.Update(ctx, db, map[string]interface{}{
+	updates := map[string]interface{}{
 		"health_base":       hNew,
 		"health_updated_at": updatedAt,
-	}); err != nil {
+	}
+	if hNew < config.GetConfig().QoS.HealthExcludeEnterThreshold {
+		updates["health_excluded"] = true
+	}
+	if err := node.Update(ctx, db, updates); err != nil {
 		return err
 	}
 	node.HealthBase = hNew
 	node.HealthUpdatedAt = updatedAt
+	if hNew < config.GetConfig().QoS.HealthExcludeEnterThreshold {
+		node.HealthExcluded = true
+	}
 	metrics.NodeHealthPenalties.Inc()
 	return nil
 }
@@ -172,7 +183,11 @@ func ApplyHealthBoost(ctx context.Context, db *gorm.DB, node *models.Node) error
 // CalculateQosScore returns the node's current QoS score (0 to 1),
 // combining long-term performance and short-term reliability.
 func CalculateQosScore(qosScore float64, healthBase float64, healthUpdatedAt sql.NullTime) float64 {
-	_, _, qos := CalculateQosComponents(qosScore, healthBase, healthUpdatedAt)
+	return CalculateQosScoreAt(qosScore, healthBase, healthUpdatedAt, time.Now().UTC())
+}
+
+func CalculateQosScoreAt(qosScore float64, healthBase float64, healthUpdatedAt sql.NullTime, now time.Time) float64 {
+	_, _, qos := CalculateQosComponentsAt(qosScore, healthBase, healthUpdatedAt, now)
 	return qos
 }
 
@@ -213,7 +228,11 @@ func resetNodeQosScorePool(address string) {
 
 // CalculateQosComponents returns long-term QoS, short-term QoS and combined QoS.
 func CalculateQosComponents(qosScore float64, healthBase float64, healthUpdatedAt sql.NullTime) (float64, float64, float64) {
-	h := getEffectiveHealth(healthBase, healthUpdatedAt)
+	return CalculateQosComponentsAt(qosScore, healthBase, healthUpdatedAt, time.Now().UTC())
+}
+
+func CalculateQosComponentsAt(qosScore float64, healthBase float64, healthUpdatedAt sql.NullTime, now time.Time) (float64, float64, float64) {
+	h := getEffectiveHealthAt(healthBase, healthUpdatedAt, now)
 	qosLong := CalculateLongTermQos(qosScore)
 	return qosLong, h, calculateCombinedQos(qosLong, h)
 }

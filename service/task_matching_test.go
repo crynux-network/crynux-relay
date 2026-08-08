@@ -217,6 +217,62 @@ func TestBuildMatchingCandidateSetHasNoFallbackWithoutAllBaseModels(t *testing.T
 	}
 }
 
+func TestBuildMatchingCandidateSetHardFiltersActiveHealthExclusion(t *testing.T) {
+	initMatchingTestConfig(t)
+	task := newMatchingTestTask()
+	eligible := newMatchingTestEntry("0xeligible")
+	eligible.OnDiskModelIDs["base:model-a"] = struct{}{}
+	excluded := newMatchingTestEntry("0xexcluded")
+	excluded.OnDiskModelIDs["base:model-a"] = struct{}{}
+	excluded.HealthExcluded = true
+	excluded.HealthBase = 0.5
+	excluded.HealthUpdatedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
+
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{excluded, eligible})
+	if err != nil {
+		t.Fatalf("build candidate set: %v", err)
+	}
+	if len(set.entries) != 1 || set.entries[0].Address != eligible.Address {
+		t.Fatalf("expected only eligible node, got %d candidates", len(set.entries))
+	}
+}
+
+func TestBuildMatchingCandidateSetDoesNotFallbackWhenAllNodesHealthExcluded(t *testing.T) {
+	initMatchingTestConfig(t)
+	task := newMatchingTestTask()
+	excluded := newMatchingTestEntry("0xexcluded")
+	excluded.OnDiskModelIDs["base:model-a"] = struct{}{}
+	excluded.HealthExcluded = true
+	excluded.HealthBase = 0.5
+	excluded.HealthUpdatedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
+
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{excluded})
+	if err != nil {
+		t.Fatalf("build candidate set: %v", err)
+	}
+	if len(set.entries) != 0 {
+		t.Fatalf("expected no candidates, got %d", len(set.entries))
+	}
+}
+
+func TestBuildMatchingCandidateSetIncludesRecoveredHealthExcludedNode(t *testing.T) {
+	initMatchingTestConfig(t)
+	task := newMatchingTestTask()
+	recovered := newMatchingTestEntry("0xrecovered")
+	recovered.OnDiskModelIDs["base:model-a"] = struct{}{}
+	recovered.HealthExcluded = true
+	recovered.HealthBase = config.GetConfig().QoS.HealthExcludeExitThreshold
+	recovered.HealthUpdatedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
+
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{recovered})
+	if err != nil {
+		t.Fatalf("build candidate set: %v", err)
+	}
+	if len(set.entries) != 1 || set.entries[0].Address != recovered.Address {
+		t.Fatalf("expected recovered node in candidate set, got %d candidates", len(set.entries))
+	}
+}
+
 func TestMatchTaskFromCandidateSetRespectsReservations(t *testing.T) {
 	task := newMatchingTestTask()
 	entry1 := newMatchingTestEntry("0xnode1")

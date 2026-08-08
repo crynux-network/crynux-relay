@@ -37,6 +37,7 @@ type Node struct {
 	StakeAmount             BigInt         `json:"stake_amount"`
 	HealthBase              float64        `json:"health_base" gorm:"default:1.0"`
 	HealthUpdatedAt         sql.NullTime   `json:"health_updated_at" gorm:"null;default:null"`
+	HealthExcluded          bool           `json:"-" gorm:"not null;default:false"`
 	DelegatorShare          uint8          `json:"delegator_share"`
 	CurrentTaskIDCommitment sql.NullString `json:"current_task_id_commitment" gorm:"null;default:null"`
 	LastSeenTime            sql.NullTime   `json:"last_seen_time" gorm:"null;default:null"`
