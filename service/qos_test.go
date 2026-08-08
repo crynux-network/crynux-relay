@@ -3,9 +3,14 @@ package service
 import (
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func initQosTestConfig(t *testing.T) {
@@ -29,7 +34,8 @@ func initQosTestConfig(t *testing.T) {
 		"  score_pool_size: 50\n" +
 		"  tracing_max_task_events: 50\n" +
 		"  kickout_threshold: 2.0\n" +
-		"  rejoin_qos_long_floor: 0.3\n"
+		"  rejoin_qos_long_floor: 0.3\n" +
+		qosHealthTestConfigYAML
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
@@ -90,5 +96,130 @@ func TestAdjustNodeQosForJoinKeepsPoolAboveFloor(t *testing.T) {
 	}
 	if size := getNodeQosWindowSize(address); size != 50 {
 		t.Fatalf("expected score pool to be kept, got %d entries", size)
+	}
+}
+
+func TestApplyHealthPenaltySetsExclusionBelowEnterThreshold(t *testing.T) {
+	initQosTestConfig(t)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Node{}); err != nil {
+		t.Fatalf("migrate node: %v", err)
+	}
+	now := time.Now().UTC()
+	node := &models.Node{
+		Address:         "0xpenalty",
+		Status:          models.NodeStatusAvailable,
+		HealthBase:      0.5,
+		HealthUpdatedAt: sql.NullTime{Time: now, Valid: true},
+	}
+	if err := db.Create(node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := ApplyHealthPenalty(t.Context(), db, node); err != nil {
+		t.Fatalf("apply penalty: %v", err)
+	}
+	if !node.HealthExcluded {
+		t.Fatal("expected node to be health excluded")
+	}
+	var persisted models.Node
+	if err := db.First(&persisted, node.ID).Error; err != nil {
+		t.Fatalf("read node: %v", err)
+	}
+	if !persisted.HealthExcluded {
+		t.Fatal("expected exclusion to be persisted with health penalty")
+	}
+}
+
+func TestApplyHealthPenaltyDoesNotExcludeAtEnterThreshold(t *testing.T) {
+	initQosTestConfig(t)
+	config.GetConfig().QoS.PenaltyFactor = 0.4
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Node{}); err != nil {
+		t.Fatalf("migrate node: %v", err)
+	}
+	node := &models.Node{
+		Address:         "0xthreshold",
+		Status:          models.NodeStatusAvailable,
+		HealthBase:      0.5,
+		HealthUpdatedAt: sql.NullTime{Time: time.Now().UTC().Add(time.Hour), Valid: true},
+	}
+	if err := db.Create(node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	if err := ApplyHealthPenalty(t.Context(), db, node); err != nil {
+		t.Fatalf("apply penalty: %v", err)
+	}
+	if node.HealthBase != config.GetConfig().QoS.HealthExcludeEnterThreshold {
+		t.Fatalf("expected health at enter threshold, got %f", node.HealthBase)
+	}
+	if node.HealthExcluded {
+		t.Fatal("expected strict less-than exclusion semantics")
+	}
+}
+
+func TestIsHealthExcludedUsesPersistedFlagAndExitThreshold(t *testing.T) {
+	initQosTestConfig(t)
+	now := time.Now().UTC()
+	node := &models.Node{
+		HealthBase:      0.5,
+		HealthUpdatedAt: sql.NullTime{Time: now, Valid: true},
+	}
+	if IsHealthExcluded(node, now) {
+		t.Fatal("expected an unset flag to remain eligible")
+	}
+	node.HealthExcluded = true
+	if !IsHealthExcluded(node, now) {
+		t.Fatal("expected exclusion below exit threshold")
+	}
+	node.HealthBase = config.GetConfig().QoS.HealthExcludeExitThreshold
+	if IsHealthExcluded(node, now) {
+		t.Fatal("expected health equal to exit threshold to be eligible")
+	}
+	node.HealthBase = 0.9
+	if IsHealthExcluded(node, now) {
+		t.Fatal("expected health above exit threshold to be eligible")
+	}
+}
+
+func TestCalculateNodeSelectingProbZerosActiveExclusion(t *testing.T) {
+	initMatchingTestConfig(t)
+	node := models.Node{
+		Address:         "0xexcluded",
+		Status:          models.NodeStatusAvailable,
+		StakeAmount:     models.BigInt{},
+		HealthBase:      0.5,
+		HealthUpdatedAt: sql.NullTime{Time: time.Now().UTC(), Valid: true},
+		HealthExcluded:  true,
+	}
+	node.StakeAmount.SetInt64(1)
+	if prob := CalculateNodeSelectingProb(node, time.Now().UTC()); prob.ProbWeight != 0 {
+		t.Fatalf("expected zero selection weight, got %f", prob.ProbWeight)
+	}
+}
+
+func TestShouldPermanentKickoutIgnoresShortTermHealth(t *testing.T) {
+	initQosTestConfig(t)
+	node := &models.Node{
+		Address:         "0xshort-health",
+		QOSScore:        5,
+		HealthBase:      0,
+		HealthUpdatedAt: sql.NullTime{Time: time.Now().UTC(), Valid: true},
+		HealthExcluded:  true,
+	}
+	if ShouldPermanentKickout(node) {
+		t.Fatal("expected short-term health not to cause permanent kickout")
+	}
+
+	seedNodeQosScorePool(node.Address, 1, int(config.GetConfig().QoS.ScorePoolSize))
+	defer resetNodeQosScorePool(node.Address)
+	node.QOSScore = 1
+	if !ShouldPermanentKickout(node) {
+		t.Fatal("expected long-term QoS kickout to remain active")
 	}
 }

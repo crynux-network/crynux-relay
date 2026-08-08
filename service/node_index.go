@@ -31,6 +31,7 @@ type NodeIndexEntry struct {
 	QOSScore        float64
 	HealthBase      float64
 	HealthUpdatedAt sql.NullTime
+	HealthExcluded  bool
 	StakeAmount     *big.Int
 	OnDiskModelIDs  map[string]struct{}
 	InUseModelIDs   map[string]struct{}
@@ -46,6 +47,7 @@ func (e *NodeIndexEntry) scoreNode() models.Node {
 		QOSScore:        e.QOSScore,
 		HealthBase:      e.HealthBase,
 		HealthUpdatedAt: e.HealthUpdatedAt,
+		HealthExcluded:  e.HealthExcluded,
 		StakeAmount:     models.BigInt{Int: *new(big.Int).Set(e.StakeAmount)},
 	}
 }
@@ -82,6 +84,7 @@ func buildNodeIndexEntry(node *models.Node) *NodeIndexEntry {
 		QOSScore:        node.QOSScore,
 		HealthBase:      node.HealthBase,
 		HealthUpdatedAt: node.HealthUpdatedAt,
+		HealthExcluded:  node.HealthExcluded,
 		StakeAmount:     new(big.Int).Set(&node.StakeAmount.Int),
 		OnDiskModelIDs:  make(map[string]struct{}, len(node.Models)),
 		InUseModelIDs:   make(map[string]struct{}),

@@ -64,10 +64,18 @@ func isDarwinEntry(entry *NodeIndexEntry) bool {
 // view: node availability, GPU or VRAM requirement, version compatibility and
 // the LLM Darwin exclusion.
 func filterIndexEntriesForTask(task *models.InferenceTask, entries []*NodeIndexEntry) []*NodeIndexEntry {
+	return filterIndexEntriesForTaskAt(task, entries, time.Now().UTC())
+}
+
+func filterIndexEntriesForTaskAt(task *models.InferenceTask, entries []*NodeIndexEntry, now time.Time) []*NodeIndexEntry {
 	taskVersionNumbers := task.VersionNumbers()
 	filtered := make([]*NodeIndexEntry, 0, len(entries))
 	for _, entry := range entries {
 		if entry.Status != models.NodeStatusAvailable || entry.HasCurrentTask {
+			continue
+		}
+		node := entry.scoreNode()
+		if IsHealthExcluded(&node, now) {
 			continue
 		}
 		if !entryMatchesTaskVersion(entry, taskVersionNumbers) {
@@ -138,13 +146,13 @@ func matchEntryModels(modelIDSet map[string]struct{}, taskModelIDs []string) int
 // signature: hard filters, node name policy, the base-model availability gate,
 // sampling weights and the in-memory model locality boost.
 func buildMatchingCandidateSet(ctx context.Context, task *models.InferenceTask, entries []*NodeIndexEntry) (*matchingCandidateSet, error) {
-	filtered := filterIndexEntriesForTask(task, entries)
+	now := time.Now().UTC()
+	filtered := filterIndexEntriesForTaskAt(task, entries, now)
 	filtered, err := filterIndexEntriesByNodeNamePolicy(ctx, filtered)
 	if err != nil {
 		return nil, err
 	}
 
-	now := time.Now().UTC()
 	scores := make([]float64, len(filtered))
 	probs := make([]NodeSelectingProb, len(filtered))
 	for i, entry := range filtered {

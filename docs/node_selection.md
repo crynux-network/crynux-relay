@@ -21,6 +21,7 @@ Node selection is a pipeline:
 Relay MUST first apply these hard filters to form the qualified node set:
 
 - **Availability**. Only nodes currently in the `Available` status are eligible for selection.
+- **Short-term health**. A node with persistent `health_excluded = true` and effective health below `qos.health_exclude_exit_threshold` MUST be removed from the candidate set. Relay MUST apply this as a hard filter and MUST NOT depend on a zero selection weight. A node whose effective health is equal to or above the exit threshold MAY pass this filter while its persistent flag remains set; the task-start transaction MUST recheck health and clear the flag atomically.
 - **Hardware compatibility**. If the task specifies a required GPU, the node must match both that GPU model and the required VRAM exactly. Otherwise, the node must satisfy the task's minimum VRAM requirement.
 - **Version compatibility**. For task and node version compatibility rules used by this selection flow, see [task_version.md](./task_version.md).
 - **Task-specific exclusions**. `LLM` tasks exclude nodes on `Darwin`.

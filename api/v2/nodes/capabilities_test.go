@@ -74,7 +74,14 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 		"  max_nodes: 10\n" +
 		"  download_timeout_seconds: 1800\n" +
 		"qos:\n" +
-		"  tracing_max_task_events: 50\n"
+		"  tracing_max_task_events: 50\n" +
+		"  penalty_factor: 0.3\n" +
+		"  first_timeout_penalty_factor: 0.95\n" +
+		"  first_timeout_health_threshold: 0.99\n" +
+		"  success_boost: 0.15\n" +
+		"  recovery_tau_minutes: 30\n" +
+		"  health_exclude_enter_threshold: 0.2\n" +
+		"  health_exclude_exit_threshold: 0.8\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}

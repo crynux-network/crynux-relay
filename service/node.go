@@ -19,6 +19,7 @@ import (
 var (
 	ErrDelegatedSlashJobInProgress  = errors.New("delegated slash job in progress")
 	ErrPendingSlashAlreadyProcessed = errors.New("pending slash has already been processed")
+	ErrNodeHealthExcluded           = errors.New("node health exclusion is active")
 	getStakingInfo                  = blockchain.GetStakingInfo
 	getNodeDelegatorShare           = blockchain.GetNodeDelegatorShare
 	getNodeStakingInfos             = blockchain.GetNodeStakingInfos
@@ -70,6 +71,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		node.JoinTime = time.Now()
 		node.HealthBase = 1.0
 		node.HealthUpdatedAt = sql.NullTime{Time: time.Now(), Valid: true}
+		node.HealthExcluded = false
 		healthResetAfter = CaptureNodeQosTraceValues(node)
 		node.DelegatorShare = delegatorShare
 		if err := node.Save(ctx, tx); err != nil {
@@ -276,6 +278,9 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 	if node.Status != models.NodeStatusAvailable || node.CurrentTaskIDCommitment.Valid {
 		return errors.New("node is not available")
 	}
+	if IsHealthExcluded(node, time.Now().UTC()) {
+		return ErrNodeHealthExcluded
+	}
 
 	changedModels := make([]models.NodeModel, 0)
 	baseModelIDs := models.BaseModelIDs(taskModelIDs)
@@ -306,10 +311,14 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := node.Update(ctx, tx, map[string]interface{}{
+		updates := map[string]interface{}{
 			"status":                     models.NodeStatusBusy,
 			"current_task_id_commitment": sql.NullString{String: taskIDCommitment, Valid: true},
-		}); err != nil {
+		}
+		if node.HealthExcluded {
+			updates["health_excluded"] = false
+		}
+		if err := node.Update(ctx, tx, updates); err != nil {
 			return err
 		}
 
@@ -318,6 +327,9 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 				return err
 			}
 		}
+		node.Status = models.NodeStatusBusy
+		node.CurrentTaskIDCommitment = sql.NullString{String: taskIDCommitment, Valid: true}
+		node.HealthExcluded = false
 		return nil
 	})
 }

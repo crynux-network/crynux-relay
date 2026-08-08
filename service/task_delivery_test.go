@@ -32,7 +32,8 @@ func initDeliveryTestConfig(t *testing.T) {
 		"  history_cleanup_batch_size: 2000\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
-		"  tracing_max_task_events: 50\n"
+		"  tracing_max_task_events: 50\n" +
+		qosHealthTestConfigYAML
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}

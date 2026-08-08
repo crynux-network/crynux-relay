@@ -26,7 +26,8 @@ func initTaskTraceStoreTestConfig(t *testing.T, retentionDays uint64) {
 		"  task_tracing_duration_days: " + strconv.FormatUint(retentionDays, 10) + "\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
-		"  tracing_max_task_events: 50\n"
+		"  tracing_max_task_events: 50\n" +
+		qosHealthTestConfigYAML
 	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}

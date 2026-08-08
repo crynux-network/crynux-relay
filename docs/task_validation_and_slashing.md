@@ -230,7 +230,7 @@ The public `POST /v1/inference_tasks/:task_id_commitment/abort_reason` API MUST 
 
 `TaskAbortCreatorValidationTimeout` MUST keep the task aborted and MUST distribute its fee by the successful-task split because the creator failed to complete the protocol while the node remained occupied. The payment compensates node occupancy and MUST NOT indicate that Relay verified the score or error report as correct. This rule MUST apply to both `TaskScoreReady` and `TaskErrorReported`. Relay MUST NOT assign validation rank, update group `Q_long`, apply a node penalty, apply a result-upload success boost, or slash a node for this timeout.
 
-Every other aborted reason MUST refund the task fee. A node execution `TaskAbortTimeout` and `TaskAbortResultUploadTimeout` MUST apply the corresponding node health penalty. Queue timeout and creator cancellation MUST NOT penalize a node. Complete deadline, fee, Node Busy, and finish behavior is specified in [task_timeout.md](./task_timeout.md).
+Every other aborted reason MUST refund the task fee. A node execution `TaskAbortTimeout` and `TaskAbortResultUploadTimeout` MUST apply the corresponding node health penalty and health exclusion rule. Short-term health MUST NOT permanently kick out a node. Permanent QoS kickout MUST depend only on the long-term QoS condition after the required sample count. Queue timeout and creator cancellation MUST NOT penalize a node. Complete deadline, fee, Node Busy, and finish behavior is specified in [task_timeout.md](./task_timeout.md).
 
 ## Error Reporting
 
@@ -245,7 +245,8 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 | `task.passive_slash_mode` | Required boolean that controls whether validation invalidation records pending slash evidence or executes automatic slash |
 | `qos.score_pool_size` | Number of task scores in the rolling QoS pool (default: 50) |
 | `qos.kickout_threshold` | QoS score below which a node is permanently kicked out |
-| `qos.health_kickout_threshold` | Health threshold below which a timeouted node is kicked out when the task finishes |
+| `qos.health_exclude_enter_threshold` | Strict short-term health threshold below which a node-attributed timeout enters health exclusion |
+| `qos.health_exclude_exit_threshold` | Short-term health threshold at or above which an excluded node can start a task and clear exclusion |
 
 ## Relevant Source Files
 

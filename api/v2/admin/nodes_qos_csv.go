@@ -14,13 +14,15 @@ import (
 )
 
 type exportNodeQosCSVRow struct {
-	Address      string
-	Card         string
-	ProbWeight   float64
-	StakingScore float64
-	QOSScore     float64
-	QOSLong      float64
-	QOSShort     float64
+	Address               string
+	Card                  string
+	ProbWeight            float64
+	StakingScore          float64
+	QOSScore              float64
+	QOSLong               float64
+	QOSShort              float64
+	HealthExcluded        bool
+	HealthExclusionActive bool
 }
 
 func ExportNodeQosCSV(c *gin.Context) {
@@ -37,16 +39,18 @@ func ExportNodeQosCSV(c *gin.Context) {
 	rows := make([]exportNodeQosCSVRow, 0, len(nodes))
 	now := time.Now().UTC()
 	for _, node := range nodes {
-		qosLong, qosShort, qosScore := service.CalculateQosComponents(node.QOSScore, node.HealthBase, node.HealthUpdatedAt)
+		qosLong, qosShort, qosScore := service.CalculateQosComponentsAt(node.QOSScore, node.HealthBase, node.HealthUpdatedAt, now)
 		selectingProb := service.CalculateNodeSelectingProb(node, now)
 		rows = append(rows, exportNodeQosCSVRow{
-			Address:      node.Address,
-			Card:         fmt.Sprintf("%s + %dGB", node.GPUName, node.GPUVram),
-			ProbWeight:   selectingProb.ProbWeight,
-			StakingScore: selectingProb.StakingScore,
-			QOSScore:     qosScore,
-			QOSLong:      qosLong,
-			QOSShort:     qosShort,
+			Address:               node.Address,
+			Card:                  fmt.Sprintf("%s + %dGB", node.GPUName, node.GPUVram),
+			ProbWeight:            selectingProb.ProbWeight,
+			StakingScore:          selectingProb.StakingScore,
+			QOSScore:              qosScore,
+			QOSLong:               qosLong,
+			QOSShort:              qosShort,
+			HealthExcluded:        node.HealthExcluded,
+			HealthExclusionActive: service.IsHealthExcluded(&node, now),
 		})
 	}
 
@@ -66,6 +70,8 @@ func ExportNodeQosCSV(c *gin.Context) {
 		"qos_score",
 		"qos_long",
 		"qos_short",
+		"health_excluded",
+		"health_exclusion_active",
 	}); err != nil {
 		c.JSON(500, gin.H{
 			"message": err.Error(),
@@ -82,6 +88,8 @@ func ExportNodeQosCSV(c *gin.Context) {
 			strconv.FormatFloat(row.QOSScore, 'f', 8, 64),
 			strconv.FormatFloat(row.QOSLong, 'f', 8, 64),
 			strconv.FormatFloat(row.QOSShort, 'f', 8, 64),
+			strconv.FormatBool(row.HealthExcluded),
+			strconv.FormatBool(row.HealthExclusionActive),
 		}); err != nil {
 			c.JSON(500, gin.H{
 				"message": err.Error(),
