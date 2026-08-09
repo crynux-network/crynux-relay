@@ -1,11 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"math"
 	"math/big"
 	"testing"
@@ -27,6 +32,13 @@ func testSDRate(gpuName string, gpuVram uint64) float64 {
 	globalTaskPricing.mu.RLock()
 	defer globalTaskPricing.mu.RUnlock()
 	return globalTaskPricing.records[gpuCalibrationKey{name: gpuName, vram: gpuVram}].record.SecondsPerSDPixelStep
+}
+
+func setTestLLMWorkload(task *models.InferenceTask, textInputBytes *uint64) {
+	zero := uint64(0)
+	task.LLMTextInputBytes = textInputBytes
+	task.LLMImageCount = &zero
+	task.LLMImagePixels = &zero
 }
 
 func TestComputeSDPricingUnitsDefaults(t *testing.T) {
@@ -106,6 +118,47 @@ func TestComputeLLMInputBytesCanonical(t *testing.T) {
 	}
 	if firstBytes != secondBytes {
 		t.Fatalf("canonical input bytes differ: %d != %d", firstBytes, secondBytes)
+	}
+}
+
+func TestComputeLLMWorkloadExtractsImageDimensionsAndExcludesPayload(t *testing.T) {
+	encodeImage := func(fill color.Color) string {
+		t.Helper()
+		img := image.NewRGBA(image.Rect(0, 0, 2, 3))
+		for y := 0; y < 3; y++ {
+			for x := 0; x < 2; x++ {
+				img.Set(x, y, fill)
+			}
+		}
+		var buffer bytes.Buffer
+		if err := png.Encode(&buffer, img); err != nil {
+			t.Fatalf("encode png: %v", err)
+		}
+		return base64.StdEncoding.EncodeToString(buffer.Bytes())
+	}
+	taskArgs := func(payload string) string {
+		return fmt.Sprintf(`{"messages":[{"role":"user","content":[{"type":"text","text":"describe"},{"type":"image","base64":%q}]}],"tools":[],"template_args":{}}`, payload)
+	}
+	first, err := computeLLMWorkload(taskArgs(encodeImage(color.Black)))
+	if err != nil {
+		t.Fatalf("compute first workload: %v", err)
+	}
+	second, err := computeLLMWorkload(taskArgs(encodeImage(color.White)))
+	if err != nil {
+		t.Fatalf("compute second workload: %v", err)
+	}
+	if first.imageCount != 1 || first.imagePixels != 6 {
+		t.Fatalf("unexpected image workload: %+v", first)
+	}
+	if first.textInputBytes != second.textInputBytes {
+		t.Fatalf("base64 payload changed text bytes: %d != %d", first.textInputBytes, second.textInputBytes)
+	}
+}
+
+func TestComputeLLMWorkloadRejectsUnreadableImage(t *testing.T) {
+	_, err := computeLLMWorkload(`{"messages":[{"role":"user","content":[{"type":"image","base64":"bm90LWEtc3VwcG9ydGVkLWltYWdl"}]}]}`)
+	if err == nil {
+		t.Fatal("expected unreadable image error")
 	}
 }
 
@@ -221,7 +274,13 @@ func TestComputeEstimatedNodeSecondsUsesStoredLLMMaxNewTokens(t *testing.T) {
 		LLMInputBytes:   &input,
 		LLMMaxNewTokens: &tokens,
 	}
-	got, err := computeEstimatedNodeSeconds(task, executionParameters{llm: [3]float64{30, 0.0001, 0.1}})
+	zero := uint64(0)
+	task.LLMTextInputBytes = &input
+	task.LLMImageCount = &zero
+	task.LLMImagePixels = &zero
+	got, err := computeEstimatedNodeSeconds(task, executionParameters{llm: llmExecutionParameters{
+		constantSeconds: 30, secondsPerInputByte: 0.0001, secondsPerOutputToken: 0.1,
+	}})
 	if err != nil {
 		t.Fatalf("compute estimated seconds: %v", err)
 	}
@@ -254,6 +313,7 @@ func TestCalibrateUploadedLLMTaskRequiresTerminalSuccessStatus(t *testing.T) {
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(20 * time.Second), Valid: true},
 	}
+	setTestLLMWorkload(task, &input)
 	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
 	if err := CalibrateUploadedLLMTask(task, 10); err != nil {
 		t.Fatalf("calibrate with non-terminal status: %v", err)
@@ -419,6 +479,28 @@ func TestComputeExecutionTimeoutColdStartUsesSlowestReadySameVRAM(t *testing.T) 
 	}
 }
 
+func TestComputeExecutionTimeoutIncludesModelSwitch(t *testing.T) {
+	initTaskPricingTestStore(t)
+	textBytes, maxTokens, imageCount, imagePixels := uint64(100), uint64(10), uint64(0), uint64(0)
+	task := &models.InferenceTask{
+		TaskType: models.TaskTypeLLM, LLMTextInputBytes: &textBytes, LLMMaxNewTokens: &maxTokens,
+		LLMImageCount: &imageCount, LLMImagePixels: &imagePixels,
+	}
+	withoutSwitch, err := ComputeExecutionTimeout(task, "A100", 40, false)
+	if err != nil {
+		t.Fatalf("compute timeout without switch: %v", err)
+	}
+	withSwitch, err := ComputeExecutionTimeout(task, "A100", 40, true)
+	if err != nil {
+		t.Fatalf("compute timeout with switch: %v", err)
+	}
+	expectedIncrease := uint64(math.Ceil(config.GetConfig().TaskPricing.InitialLLMModelSwitchSeconds *
+		config.GetConfig().TaskPricing.TimeoutMultiplier))
+	if withSwitch-withoutSwitch != expectedIncrease {
+		t.Fatalf("model switch timeout increase = %d, want %d", withSwitch-withoutSwitch, expectedIncrease)
+	}
+}
+
 func TestLLMEWLSFitsIndependentNonnegativeCoefficients(t *testing.T) {
 	initTaskPricingTestStore(t)
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -440,6 +522,7 @@ func TestLLMEWLSFitsIndependentNonnegativeCoefficients(t *testing.T) {
 			StartTime:        sql.NullTime{Time: start, Valid: true},
 			ScoreReadyTime:   sql.NullTime{Time: start.Add(time.Duration(sample.seconds * float64(time.Second))), Valid: true},
 		}
+		setTestLLMWorkload(task, &sample.input)
 		CaptureTaskExecutionGPUSnapshot(taskID, "A100", 40)
 		if err := CalibrateUploadedLLMTask(task, sample.output); err != nil {
 			t.Fatalf("calibrate sample %d: %v", i, err)
@@ -454,8 +537,10 @@ func TestLLMEWLSFitsIndependentNonnegativeCoefficients(t *testing.T) {
 			t.Fatalf("coefficient %d is negative: %f", i, coefficient)
 		}
 	}
-	if !llmMatrixFullRank(&record) {
-		t.Fatal("expected full-rank LLM calibration matrix")
+	if math.Abs(record.LLMModelSwitchSeconds-config.GetConfig().TaskPricing.InitialLLMModelSwitchSeconds) > 1e-9 ||
+		math.Abs(record.LLMSecondsPerImage-config.GetConfig().TaskPricing.InitialLLMSecondsPerImage) > 1e-9 ||
+		math.Abs(record.LLMSecondsPerMegapixel-config.GetConfig().TaskPricing.InitialLLMSecondsPerMegapixel) > 1e-9 {
+		t.Fatalf("unobserved coefficients did not retain their initial values: %+v", record)
 	}
 }
 
@@ -490,6 +575,7 @@ func TestCalibrateUploadedLLMTaskDoesNotCommitWhenFitFails(t *testing.T) {
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(20 * time.Second), Valid: true},
 	}
+	setTestLLMWorkload(task, &input)
 	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
 	if err := CalibrateUploadedLLMTask(task, 10); err == nil {
 		t.Fatal("expected fit failure")
@@ -590,6 +676,36 @@ func TestCalibrationFlushPersistsDirtyRecord(t *testing.T) {
 	}
 }
 
+func TestInitTaskPricingResetsOldLLMFormulaAndPreservesSD(t *testing.T) {
+	initServiceTestConfig(t)
+	db := config.GetDB()
+	if err := db.AutoMigrate(&models.GPUExecutionCalibration{}); err != nil {
+		t.Fatalf("migrate calibrations: %v", err)
+	}
+	record := models.GPUExecutionCalibration{
+		GPUName: "A100", GPUVram: 40, SecondsPerSDPixelStep: 0.25, SDSuccessSamples: 7,
+		LLMConstantSeconds: 1, LLMSecondsPerInputByte: 2, LLMSecondsPerOutputToken: 3,
+		LLMFormulaVersion: 1, LLMSuccessSamples: 9, LLMXTX00: 1, LLMXTY0: 1,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatalf("seed old calibration: %v", err)
+	}
+	if err := InitTaskPricing(context.Background(), db); err != nil {
+		t.Fatalf("init task pricing: %v", err)
+	}
+	globalTaskPricing.mu.RLock()
+	cached := globalTaskPricing.records[gpuCalibrationKey{name: "A100", vram: 40}]
+	globalTaskPricing.mu.RUnlock()
+	if cached.record.SecondsPerSDPixelStep != 0.25 || cached.record.SDSuccessSamples != 7 {
+		t.Fatalf("SD calibration changed: %+v", cached.record)
+	}
+	if cached.record.LLMFormulaVersion != llmFormulaVersion || cached.record.LLMSuccessSamples != 0 ||
+		cached.record.LLMConstantSeconds != config.GetConfig().TaskPricing.InitialLLMConstantSeconds ||
+		cached.dirtyVersion == 0 {
+		t.Fatalf("old LLM formula was not reset: %+v", cached)
+	}
+}
+
 func TestCleanupTaskExecutionGPUSnapshotsExcludesQueueTimeout(t *testing.T) {
 	initTaskPricingTestStore(t)
 	cfg := config.GetConfig().TaskPricing
@@ -642,6 +758,7 @@ func TestCalibrateUploadedLLMTaskSkipsResidualTruncateWhenPredictionNonPositive(
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(120 * time.Second), Valid: true},
 	}
+	setTestLLMWorkload(task, &input)
 	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
 	if err := CalibrateUploadedLLMTask(task, 50); err != nil {
 		t.Fatalf("calibrate: %v", err)

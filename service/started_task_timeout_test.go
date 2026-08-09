@@ -342,6 +342,8 @@ func TestShouldUpdateNodeQosScoreOnAbort(t *testing.T) {
 func TestUsesRelayOwnedTimeoutsRequiresCompleteWorkloadFields(t *testing.T) {
 	sdUnits := uint64(512 * 512)
 	inputBytes := uint64(100)
+	imageCount := uint64(0)
+	imagePixels := uint64(0)
 	maxNewTokens := uint64(256)
 
 	if !UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: models.TaskTypeSD, SDUnits: &sdUnits}) {
@@ -351,12 +353,13 @@ func TestUsesRelayOwnedTimeoutsRequiresCompleteWorkloadFields(t *testing.T) {
 		t.Fatal("SD without SDUnits must keep legacy timeouts")
 	}
 	if !UsesRelayOwnedTimeouts(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, LLMInputBytes: &inputBytes, LLMMaxNewTokens: &maxNewTokens,
+		TaskType: models.TaskTypeLLM, LLMTextInputBytes: &inputBytes, LLMImageCount: &imageCount,
+		LLMImagePixels: &imagePixels, LLMMaxNewTokens: &maxNewTokens,
 	}) {
-		t.Fatal("LLM with both workload fields must use relay-owned timeouts")
+		t.Fatal("LLM with all workload fields must use relay-owned timeouts")
 	}
 	if UsesRelayOwnedTimeouts(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, LLMInputBytes: &inputBytes,
+		TaskType: models.TaskTypeLLM, LLMTextInputBytes: &inputBytes,
 	}) {
 		t.Fatal("LLM missing LLMMaxNewTokens must keep legacy timeouts")
 	}

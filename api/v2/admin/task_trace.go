@@ -279,6 +279,15 @@ func (b *taskTraceBuilder) addTaskCreated() {
 	if b.task.LLMInputBytes != nil {
 		details["llm_input_bytes"] = *b.task.LLMInputBytes
 	}
+	if b.task.LLMTextInputBytes != nil {
+		details["llm_text_input_bytes"] = *b.task.LLMTextInputBytes
+	}
+	if b.task.LLMImageCount != nil {
+		details["llm_image_count"] = *b.task.LLMImageCount
+	}
+	if b.task.LLMImagePixels != nil {
+		details["llm_image_pixels"] = *b.task.LLMImagePixels
+	}
 	if b.task.LLMMaxNewTokens != nil {
 		details["llm_max_new_tokens"] = *b.task.LLMMaxNewTokens
 	}
@@ -426,6 +435,12 @@ func (b *taskTraceBuilder) addTaskStarted() {
 				details["timeout_multiplier"] = description.TimeoutMultiplier
 				details["min_execution_timeout_seconds"] = description.MinExecutionTimeoutSeconds
 				details["max_execution_timeout_seconds"] = description.MaxExecutionTimeoutSeconds
+				details["constant_seconds"] = description.ConstantSeconds
+				details["text_input_seconds"] = description.TextInputSeconds
+				details["output_token_seconds"] = description.OutputTokenSeconds
+				details["model_switch_seconds"] = description.ModelSwitchSeconds
+				details["image_count_seconds"] = description.ImageCountSeconds
+				details["image_megapixel_seconds"] = description.ImageMegapixelSeconds
 				b.markStored("task_started.cold_start")
 				b.markStored("task_started.predicted_execution_seconds")
 			}

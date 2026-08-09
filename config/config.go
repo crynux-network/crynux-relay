@@ -249,6 +249,15 @@ func checkTaskPricingConfig() error {
 	if pricing.InitialLLMSecondsPerOutputToken <= 0 {
 		return errors.New("task_pricing.initial_llm_seconds_per_output_token is not set")
 	}
+	if pricing.InitialLLMModelSwitchSeconds <= 0 {
+		return errors.New("task_pricing.initial_llm_model_switch_seconds is not set")
+	}
+	if pricing.InitialLLMSecondsPerImage <= 0 {
+		return errors.New("task_pricing.initial_llm_seconds_per_image is not set")
+	}
+	if pricing.InitialLLMSecondsPerMegapixel <= 0 {
+		return errors.New("task_pricing.initial_llm_seconds_per_megapixel is not set")
+	}
 	if pricing.CalibrationAlpha <= 0 || pricing.CalibrationAlpha >= 1 {
 		return errors.New("task_pricing.calibration_alpha must be in (0, 1)")
 	}

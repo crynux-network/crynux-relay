@@ -17,15 +17,37 @@ type GPUExecutionCalibration struct {
 	LLMConstantSeconds       float64 `gorm:"not null"`
 	LLMSecondsPerInputByte   float64 `gorm:"not null"`
 	LLMSecondsPerOutputToken float64 `gorm:"not null"`
+	LLMModelSwitchSeconds    float64 `gorm:"not null"`
+	LLMSecondsPerImage       float64 `gorm:"not null"`
+	LLMSecondsPerMegapixel   float64 `gorm:"not null"`
+	LLMFormulaVersion        uint64  `gorm:"not null"`
 	LLMXTX00                 float64 `gorm:"column:llm_xtx_00;not null"`
 	LLMXTX01                 float64 `gorm:"column:llm_xtx_01;not null"`
 	LLMXTX02                 float64 `gorm:"column:llm_xtx_02;not null"`
+	LLMXTX03                 float64 `gorm:"column:llm_xtx_03;not null"`
+	LLMXTX04                 float64 `gorm:"column:llm_xtx_04;not null"`
+	LLMXTX05                 float64 `gorm:"column:llm_xtx_05;not null"`
 	LLMXTX11                 float64 `gorm:"column:llm_xtx_11;not null"`
 	LLMXTX12                 float64 `gorm:"column:llm_xtx_12;not null"`
+	LLMXTX13                 float64 `gorm:"column:llm_xtx_13;not null"`
+	LLMXTX14                 float64 `gorm:"column:llm_xtx_14;not null"`
+	LLMXTX15                 float64 `gorm:"column:llm_xtx_15;not null"`
 	LLMXTX22                 float64 `gorm:"column:llm_xtx_22;not null"`
+	LLMXTX23                 float64 `gorm:"column:llm_xtx_23;not null"`
+	LLMXTX24                 float64 `gorm:"column:llm_xtx_24;not null"`
+	LLMXTX25                 float64 `gorm:"column:llm_xtx_25;not null"`
+	LLMXTX33                 float64 `gorm:"column:llm_xtx_33;not null"`
+	LLMXTX34                 float64 `gorm:"column:llm_xtx_34;not null"`
+	LLMXTX35                 float64 `gorm:"column:llm_xtx_35;not null"`
+	LLMXTX44                 float64 `gorm:"column:llm_xtx_44;not null"`
+	LLMXTX45                 float64 `gorm:"column:llm_xtx_45;not null"`
+	LLMXTX55                 float64 `gorm:"column:llm_xtx_55;not null"`
 	LLMXTY0                  float64 `gorm:"column:llm_xty_0;not null"`
 	LLMXTY1                  float64 `gorm:"column:llm_xty_1;not null"`
 	LLMXTY2                  float64 `gorm:"column:llm_xty_2;not null"`
+	LLMXTY3                  float64 `gorm:"column:llm_xty_3;not null"`
+	LLMXTY4                  float64 `gorm:"column:llm_xty_4;not null"`
+	LLMXTY5                  float64 `gorm:"column:llm_xty_5;not null"`
 	LLMSuccessSamples        uint64  `gorm:"not null"`
 	CreatedAt                time.Time
 	UpdatedAt                time.Time

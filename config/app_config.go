@@ -157,6 +157,9 @@ type AppConfig struct {
 		InitialLLMConstantSeconds              float64 `mapstructure:"initial_llm_constant_seconds"`
 		InitialLLMSecondsPerInputByte          float64 `mapstructure:"initial_llm_seconds_per_input_byte"`
 		InitialLLMSecondsPerOutputToken        float64 `mapstructure:"initial_llm_seconds_per_output_token"`
+		InitialLLMModelSwitchSeconds           float64 `mapstructure:"initial_llm_model_switch_seconds"`
+		InitialLLMSecondsPerImage              float64 `mapstructure:"initial_llm_seconds_per_image"`
+		InitialLLMSecondsPerMegapixel          float64 `mapstructure:"initial_llm_seconds_per_megapixel"`
 		CalibrationAlpha                       float64 `mapstructure:"calibration_alpha"`
 		CalibrationRegularization              float64 `mapstructure:"calibration_regularization"`
 		CalibrationMaxPositiveResidualMultiple float64 `mapstructure:"calibration_max_positive_residual_multiple"`

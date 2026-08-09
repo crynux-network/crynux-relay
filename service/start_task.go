@@ -31,7 +31,8 @@ const (
 
 func UsesRelayOwnedTimeouts(task *models.InferenceTask) bool {
 	return (task.TaskType == models.TaskTypeSD && task.SDUnits != nil) ||
-		(task.TaskType == models.TaskTypeLLM && task.LLMInputBytes != nil && task.LLMMaxNewTokens != nil)
+		(task.TaskType == models.TaskTypeLLM && task.LLMTextInputBytes != nil &&
+			task.LLMImageCount != nil && task.LLMImagePixels != nil && task.LLMMaxNewTokens != nil)
 }
 
 // GetQueueDeadline returns CreateTime plus the queue timeout for the task type.
@@ -125,10 +126,10 @@ func getTimedOutQueuedTasks(ctx context.Context, db *gorm.DB, now time.Time) ([]
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		relayOwnedCandidate := db.Where(
 			db.Where("task_type = ? AND sd_units IS NOT NULL", models.TaskTypeSD).
-				Or("task_type = ? AND llm_input_bytes IS NOT NULL AND llm_max_new_tokens IS NOT NULL", models.TaskTypeLLM),
+				Or("task_type = ? AND llm_text_input_bytes IS NOT NULL AND llm_image_count IS NOT NULL AND llm_image_pixels IS NOT NULL AND llm_max_new_tokens IS NOT NULL", models.TaskTypeLLM),
 		).Where("create_time <= ?", relayOwnedCutoff)
 		legacyCandidate := db.Where("task_type <> ? OR sd_units IS NULL", models.TaskTypeSD).
-			Where("task_type <> ? OR llm_input_bytes IS NULL OR llm_max_new_tokens IS NULL", models.TaskTypeLLM).
+			Where("task_type <> ? OR llm_text_input_bytes IS NULL OR llm_image_count IS NULL OR llm_image_pixels IS NULL OR llm_max_new_tokens IS NULL", models.TaskTypeLLM).
 			Where("create_time <= ?", legacyEarliestCutoff)
 		err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
 			Where("status = ?", models.TaskQueued).

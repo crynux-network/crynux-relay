@@ -28,7 +28,40 @@ type taskPricingKey struct {
 
 type executionParameters struct {
 	sdRate float64
-	llm    [3]float64
+	llm    llmExecutionParameters
+}
+
+const llmFormulaVersion uint64 = 2
+
+type llmExecutionParameters struct {
+	constantSeconds       float64
+	secondsPerInputByte   float64
+	secondsPerOutputToken float64
+	modelSwitchSeconds    float64
+	secondsPerImage       float64
+	secondsPerMegapixel   float64
+}
+
+func (p llmExecutionParameters) values() [6]float64 {
+	return [6]float64{
+		p.constantSeconds,
+		p.secondsPerInputByte,
+		p.secondsPerOutputToken,
+		p.modelSwitchSeconds,
+		p.secondsPerImage,
+		p.secondsPerMegapixel,
+	}
+}
+
+func llmParametersFromValues(values [6]float64) llmExecutionParameters {
+	return llmExecutionParameters{
+		constantSeconds:       values[0],
+		secondsPerInputByte:   values[1],
+		secondsPerOutputToken: values[2],
+		modelSwitchSeconds:    values[3],
+		secondsPerImage:       values[4],
+		secondsPerMegapixel:   values[5],
+	}
 }
 
 type cachedGPUCalibration struct {
@@ -56,10 +89,13 @@ func initialExecutionParameters() executionParameters {
 	cfg := config.GetConfig().TaskPricing
 	return executionParameters{
 		sdRate: cfg.InitialSecondsPerSDPixelStep,
-		llm: [3]float64{
-			cfg.InitialLLMConstantSeconds,
-			cfg.InitialLLMSecondsPerInputByte,
-			cfg.InitialLLMSecondsPerOutputToken,
+		llm: llmExecutionParameters{
+			constantSeconds:       cfg.InitialLLMConstantSeconds,
+			secondsPerInputByte:   cfg.InitialLLMSecondsPerInputByte,
+			secondsPerOutputToken: cfg.InitialLLMSecondsPerOutputToken,
+			modelSwitchSeconds:    cfg.InitialLLMModelSwitchSeconds,
+			secondsPerImage:       cfg.InitialLLMSecondsPerImage,
+			secondsPerMegapixel:   cfg.InitialLLMSecondsPerMegapixel,
 		},
 	}
 }
@@ -77,7 +113,13 @@ func InitTaskPricing(ctx context.Context, db *gorm.DB) error {
 	globalTaskPricing.version = 0
 	for i := range records {
 		record := records[i]
-		globalTaskPricing.records[gpuCalibrationKey{name: record.GPUName, vram: record.GPUVram}] = &cachedGPUCalibration{record: record}
+		cached := &cachedGPUCalibration{record: record}
+		if record.LLMFormulaVersion != llmFormulaVersion {
+			resetLLMCalibration(&cached.record)
+			globalTaskPricing.version++
+			cached.dirtyVersion = globalTaskPricing.version
+		}
+		globalTaskPricing.records[gpuCalibrationKey{name: record.GPUName, vram: record.GPUVram}] = cached
 	}
 	publishTaskPricingMetricsLocked()
 	return nil
@@ -86,12 +128,36 @@ func InitTaskPricing(ctx context.Context, db *gorm.DB) error {
 func parametersFromRecord(record *models.GPUExecutionCalibration) executionParameters {
 	return executionParameters{
 		sdRate: record.SecondsPerSDPixelStep,
-		llm: [3]float64{
-			record.LLMConstantSeconds,
-			record.LLMSecondsPerInputByte,
-			record.LLMSecondsPerOutputToken,
+		llm: llmExecutionParameters{
+			constantSeconds:       record.LLMConstantSeconds,
+			secondsPerInputByte:   record.LLMSecondsPerInputByte,
+			secondsPerOutputToken: record.LLMSecondsPerOutputToken,
+			modelSwitchSeconds:    record.LLMModelSwitchSeconds,
+			secondsPerImage:       record.LLMSecondsPerImage,
+			secondsPerMegapixel:   record.LLMSecondsPerMegapixel,
 		},
 	}
+}
+
+func resetLLMCalibration(record *models.GPUExecutionCalibration) {
+	initial := initialExecutionParameters().llm
+	record.LLMConstantSeconds = initial.constantSeconds
+	record.LLMSecondsPerInputByte = initial.secondsPerInputByte
+	record.LLMSecondsPerOutputToken = initial.secondsPerOutputToken
+	record.LLMModelSwitchSeconds = initial.modelSwitchSeconds
+	record.LLMSecondsPerImage = initial.secondsPerImage
+	record.LLMSecondsPerMegapixel = initial.secondsPerMegapixel
+	record.LLMFormulaVersion = llmFormulaVersion
+	record.LLMXTX00, record.LLMXTX01, record.LLMXTX02 = 0, 0, 0
+	record.LLMXTX03, record.LLMXTX04, record.LLMXTX05 = 0, 0, 0
+	record.LLMXTX11, record.LLMXTX12, record.LLMXTX13 = 0, 0, 0
+	record.LLMXTX14, record.LLMXTX15, record.LLMXTX22 = 0, 0, 0
+	record.LLMXTX23, record.LLMXTX24, record.LLMXTX25 = 0, 0, 0
+	record.LLMXTX33, record.LLMXTX34, record.LLMXTX35 = 0, 0, 0
+	record.LLMXTX44, record.LLMXTX45, record.LLMXTX55 = 0, 0, 0
+	record.LLMXTY0, record.LLMXTY1, record.LLMXTY2 = 0, 0, 0
+	record.LLMXTY3, record.LLMXTY4, record.LLMXTY5 = 0, 0, 0
+	record.LLMSuccessSamples = 0
 }
 
 func calibrationHasSamples(record *models.GPUExecutionCalibration, taskType models.TaskType) bool {
@@ -119,9 +185,12 @@ func aggregateParametersLocked(taskType models.TaskType, vram uint64, exactVRAM 
 		if taskType == models.TaskTypeSD {
 			total.sdRate += parameters.sdRate
 		} else {
-			for i := range total.llm {
-				total.llm[i] += parameters.llm[i]
+			totalValues := total.llm.values()
+			parameterValues := parameters.llm.values()
+			for i := range totalValues {
+				totalValues[i] += parameterValues[i]
 			}
+			total.llm = llmParametersFromValues(totalValues)
 		}
 		count++
 	}
@@ -131,9 +200,11 @@ func aggregateParametersLocked(taskType models.TaskType, vram uint64, exactVRAM 
 	if taskType == models.TaskTypeSD {
 		total.sdRate /= count
 	} else {
-		for i := range total.llm {
-			total.llm[i] /= count
+		values := total.llm.values()
+		for i := range values {
+			values[i] /= count
 		}
+		total.llm = llmParametersFromValues(values)
 	}
 	return total
 }
@@ -145,9 +216,13 @@ func createExactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
 		GPUName:                  key.name,
 		GPUVram:                  key.vram,
 		SecondsPerSDPixelStep:    sd.sdRate,
-		LLMConstantSeconds:       llm.llm[0],
-		LLMSecondsPerInputByte:   llm.llm[1],
-		LLMSecondsPerOutputToken: llm.llm[2],
+		LLMConstantSeconds:       llm.llm.constantSeconds,
+		LLMSecondsPerInputByte:   llm.llm.secondsPerInputByte,
+		LLMSecondsPerOutputToken: llm.llm.secondsPerOutputToken,
+		LLMModelSwitchSeconds:    llm.llm.modelSwitchSeconds,
+		LLMSecondsPerImage:       llm.llm.secondsPerImage,
+		LLMSecondsPerMegapixel:   llm.llm.secondsPerMegapixel,
+		LLMFormulaVersion:        llmFormulaVersion,
 	}}
 	globalTaskPricing.records[key] = cached
 	return cached
@@ -263,36 +338,51 @@ func CalibrateValidatedSDTask(task *models.InferenceTask) error {
 }
 
 func llmXTX(record *models.GPUExecutionCalibration) *mat.SymDense {
-	matrix := mat.NewSymDense(3, nil)
+	matrix := mat.NewSymDense(6, nil)
 	matrix.SetSym(0, 0, record.LLMXTX00)
 	matrix.SetSym(0, 1, record.LLMXTX01)
 	matrix.SetSym(0, 2, record.LLMXTX02)
+	matrix.SetSym(0, 3, record.LLMXTX03)
+	matrix.SetSym(0, 4, record.LLMXTX04)
+	matrix.SetSym(0, 5, record.LLMXTX05)
 	matrix.SetSym(1, 1, record.LLMXTX11)
 	matrix.SetSym(1, 2, record.LLMXTX12)
+	matrix.SetSym(1, 3, record.LLMXTX13)
+	matrix.SetSym(1, 4, record.LLMXTX14)
+	matrix.SetSym(1, 5, record.LLMXTX15)
 	matrix.SetSym(2, 2, record.LLMXTX22)
+	matrix.SetSym(2, 3, record.LLMXTX23)
+	matrix.SetSym(2, 4, record.LLMXTX24)
+	matrix.SetSym(2, 5, record.LLMXTX25)
+	matrix.SetSym(3, 3, record.LLMXTX33)
+	matrix.SetSym(3, 4, record.LLMXTX34)
+	matrix.SetSym(3, 5, record.LLMXTX35)
+	matrix.SetSym(4, 4, record.LLMXTX44)
+	matrix.SetSym(4, 5, record.LLMXTX45)
+	matrix.SetSym(5, 5, record.LLMXTX55)
 	return matrix
-}
-
-func llmMatrixFullRank(record *models.GPUExecutionCalibration) bool {
-	var svd mat.SVD
-	if !svd.Factorize(llmXTX(record), mat.SVDFull) {
-		return false
-	}
-	return svd.Rank(1e-10) == 3
 }
 
 func fitLLMParameters(record *models.GPUExecutionCalibration) error {
 	matrix := llmXTX(record)
-	for i := 0; i < 3; i++ {
-		matrix.SetSym(i, i, matrix.At(i, i)+config.GetConfig().TaskPricing.CalibrationRegularization)
+	regularization := config.GetConfig().TaskPricing.CalibrationRegularization
+	initial := initialExecutionParameters().llm.values()
+	yValues := [6]float64{
+		record.LLMXTY0, record.LLMXTY1, record.LLMXTY2,
+		record.LLMXTY3, record.LLMXTY4, record.LLMXTY5,
 	}
-	y := mat.NewVecDense(3, []float64{record.LLMXTY0, record.LLMXTY1, record.LLMXTY2})
+	for i := 0; i < 6; i++ {
+		matrix.SetSym(i, i, matrix.At(i, i)+regularization)
+		yValues[i] += regularization * initial[i]
+	}
+	y := mat.NewVecDense(6, yValues[:])
 	var coefficients mat.VecDense
 	if err := coefficients.SolveVec(matrix, y); err != nil {
 		return err
 	}
-	values := [3]float64{coefficients.AtVec(0), coefficients.AtVec(1), coefficients.AtVec(2)}
+	values := [6]float64{}
 	for i := range values {
+		values[i] = coefficients.AtVec(i)
 		if math.IsNaN(values[i]) || math.IsInf(values[i], 0) {
 			return errors.New("fitted LLM coefficient is not finite")
 		}
@@ -303,11 +393,16 @@ func fitLLMParameters(record *models.GPUExecutionCalibration) error {
 	record.LLMConstantSeconds = values[0]
 	record.LLMSecondsPerInputByte = values[1]
 	record.LLMSecondsPerOutputToken = values[2]
+	record.LLMModelSwitchSeconds = values[3]
+	record.LLMSecondsPerImage = values[4]
+	record.LLMSecondsPerMegapixel = values[5]
+	record.LLMFormulaVersion = llmFormulaVersion
 	return nil
 }
 
 func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint64) error {
-	if task.TaskType != models.TaskTypeLLM || task.LLMInputBytes == nil ||
+	if task.TaskType != models.TaskTypeLLM || task.LLMTextInputBytes == nil ||
+		task.LLMImageCount == nil || task.LLMImagePixels == nil ||
 		!task.StartTime.Valid || !task.ScoreReadyTime.Valid {
 		return nil
 	}
@@ -322,11 +417,24 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 		return nil
 	}
 	cached := exactCalibrationLocked(snapshot.GPUName, snapshot.GPUVram)
-	x := [3]float64{1, float64(*task.LLMInputBytes), float64(completionTokens)}
+	modelSwitched := 0.0
+	if task.ModelSwtiched {
+		modelSwitched = 1
+	}
+	x := [6]float64{
+		1,
+		float64(*task.LLMTextInputBytes),
+		float64(completionTokens),
+		modelSwitched,
+		float64(*task.LLMImageCount),
+		float64(*task.LLMImagePixels) / 1_000_000,
+	}
 	actual := task.ScoreReadyTime.Time.Sub(task.StartTime.Time).Seconds()
-	prediction := cached.record.LLMConstantSeconds +
-		x[1]*cached.record.LLMSecondsPerInputByte +
-		x[2]*cached.record.LLMSecondsPerOutputToken
+	parameterValues := parametersFromRecord(&cached.record).llm.values()
+	prediction := 0.0
+	for i := range x {
+		prediction += x[i] * parameterValues[i]
+	}
 	if prediction > 0 {
 		maxActual := prediction * (1 + config.GetConfig().TaskPricing.CalibrationMaxPositiveResidualMultiple)
 		if actual > maxActual {
@@ -336,15 +444,18 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 	alpha := config.GetConfig().TaskPricing.CalibrationAlpha
 	decay := 1 - alpha
 	next := cached.record
-	next.LLMXTX00 = decay*next.LLMXTX00 + alpha*x[0]*x[0]
-	next.LLMXTX01 = decay*next.LLMXTX01 + alpha*x[0]*x[1]
-	next.LLMXTX02 = decay*next.LLMXTX02 + alpha*x[0]*x[2]
-	next.LLMXTX11 = decay*next.LLMXTX11 + alpha*x[1]*x[1]
-	next.LLMXTX12 = decay*next.LLMXTX12 + alpha*x[1]*x[2]
-	next.LLMXTX22 = decay*next.LLMXTX22 + alpha*x[2]*x[2]
-	next.LLMXTY0 = decay*next.LLMXTY0 + alpha*x[0]*actual
-	next.LLMXTY1 = decay*next.LLMXTY1 + alpha*x[1]*actual
-	next.LLMXTY2 = decay*next.LLMXTY2 + alpha*x[2]*actual
+	matrix := llmXTX(&next)
+	yValues := [6]float64{
+		next.LLMXTY0, next.LLMXTY1, next.LLMXTY2,
+		next.LLMXTY3, next.LLMXTY4, next.LLMXTY5,
+	}
+	for i := range x {
+		for j := i; j < len(x); j++ {
+			matrix.SetSym(i, j, decay*matrix.At(i, j)+alpha*x[i]*x[j])
+		}
+		yValues[i] = decay*yValues[i] + alpha*x[i]*actual
+	}
+	setLLMFitState(&next, matrix, yValues)
 	next.LLMSuccessSamples++
 	if err := fitLLMParameters(&next); err != nil {
 		return err
@@ -356,16 +467,33 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 	return nil
 }
 
+func setLLMFitState(record *models.GPUExecutionCalibration, matrix *mat.SymDense, y [6]float64) {
+	record.LLMXTX00, record.LLMXTX01, record.LLMXTX02 = matrix.At(0, 0), matrix.At(0, 1), matrix.At(0, 2)
+	record.LLMXTX03, record.LLMXTX04, record.LLMXTX05 = matrix.At(0, 3), matrix.At(0, 4), matrix.At(0, 5)
+	record.LLMXTX11, record.LLMXTX12 = matrix.At(1, 1), matrix.At(1, 2)
+	record.LLMXTX13, record.LLMXTX14, record.LLMXTX15 = matrix.At(1, 3), matrix.At(1, 4), matrix.At(1, 5)
+	record.LLMXTX22, record.LLMXTX23 = matrix.At(2, 2), matrix.At(2, 3)
+	record.LLMXTX24, record.LLMXTX25 = matrix.At(2, 4), matrix.At(2, 5)
+	record.LLMXTX33, record.LLMXTX34, record.LLMXTX35 = matrix.At(3, 3), matrix.At(3, 4), matrix.At(3, 5)
+	record.LLMXTX44, record.LLMXTX45, record.LLMXTX55 = matrix.At(4, 4), matrix.At(4, 5), matrix.At(5, 5)
+	record.LLMXTY0, record.LLMXTY1, record.LLMXTY2 = y[0], y[1], y[2]
+	record.LLMXTY3, record.LLMXTY4, record.LLMXTY5 = y[3], y[4], y[5]
+}
+
 func calibrationReady(record *models.GPUExecutionCalibration, taskType models.TaskType) bool {
 	warmup := config.GetConfig().TaskPricing.CalibrationWarmupSuccessSamples
 	if taskType == models.TaskTypeSD {
 		return record.SDSuccessSamples >= warmup
 	}
-	return record.LLMSuccessSamples >= warmup && llmMatrixFullRank(record)
+	return record.LLMSuccessSamples >= warmup && record.LLMFormulaVersion == llmFormulaVersion
 }
 
-func ComputeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVram uint64) (uint64, error) {
-	description, err := DescribeExecutionTimeout(task, gpuName, gpuVram)
+func ComputeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVram uint64, switched ...bool) (uint64, error) {
+	timeoutTask := *task
+	if len(switched) > 0 {
+		timeoutTask.ModelSwtiched = switched[0]
+	}
+	description, err := DescribeExecutionTimeout(&timeoutTask, gpuName, gpuVram)
 	if err != nil {
 		return 0, err
 	}
@@ -373,12 +501,18 @@ func ComputeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVram
 }
 
 type ExecutionTimeoutDescription struct {
-	ColdStart                   bool
-	PredictedExecutionSeconds   float64
-	TimeoutMultiplier           float64
-	MinExecutionTimeoutSeconds  uint64
-	MaxExecutionTimeoutSeconds  uint64
-	ComputedTimeout             uint64
+	ColdStart                  bool
+	PredictedExecutionSeconds  float64
+	TimeoutMultiplier          float64
+	MinExecutionTimeoutSeconds uint64
+	MaxExecutionTimeoutSeconds uint64
+	ComputedTimeout            uint64
+	ConstantSeconds            float64
+	TextInputSeconds           float64
+	OutputTokenSeconds         float64
+	ModelSwitchSeconds         float64
+	ImageCountSeconds          float64
+	ImageMegapixelSeconds      float64
 }
 
 // DescribeExecutionTimeout returns the cold-start flag, prediction, clamp inputs,
@@ -402,22 +536,28 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 	var err error
 	if calibrationReady(&target.record, task.TaskType) {
 		description.ColdStart = false
-		prediction, err = computeEstimatedNodeSeconds(task, parametersFromRecord(&target.record))
+		parameters := parametersFromRecord(&target.record)
+		prediction, err = computeEstimatedNodeSeconds(task, parameters, task.ModelSwtiched)
+		setLLMTimeoutContributions(&description, task, parameters.llm)
 	} else {
 		description.ColdStart = true
-		prediction, err = computeEstimatedNodeSeconds(task, initialExecutionParameters())
+		selectedParameters := initialExecutionParameters()
+		prediction, err = computeEstimatedNodeSeconds(task, selectedParameters, task.ModelSwtiched)
 		for key, cached := range globalTaskPricing.records {
 			if err != nil || key.vram != gpuVram || key.name == gpuName || !calibrationReady(&cached.record, task.TaskType) {
 				continue
 			}
-			candidate, candidateErr := computeEstimatedNodeSeconds(task, parametersFromRecord(&cached.record))
+			candidateParameters := parametersFromRecord(&cached.record)
+			candidate, candidateErr := computeEstimatedNodeSeconds(task, candidateParameters, task.ModelSwtiched)
 			if candidateErr != nil {
 				return ExecutionTimeoutDescription{}, candidateErr
 			}
 			if candidate > prediction {
 				prediction = candidate
+				selectedParameters = candidateParameters
 			}
 		}
+		setLLMTimeoutContributions(&description, task, selectedParameters.llm)
 	}
 	if err != nil {
 		return ExecutionTimeoutDescription{}, err
@@ -428,6 +568,21 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 	timeout = math.Min(timeout, float64(cfg.MaxExecutionTimeoutSeconds))
 	description.ComputedTimeout = uint64(math.Ceil(timeout))
 	return description, nil
+}
+
+func setLLMTimeoutContributions(description *ExecutionTimeoutDescription, task *models.InferenceTask, parameters llmExecutionParameters) {
+	if task.TaskType != models.TaskTypeLLM || task.LLMTextInputBytes == nil || task.LLMMaxNewTokens == nil ||
+		task.LLMImageCount == nil || task.LLMImagePixels == nil {
+		return
+	}
+	description.ConstantSeconds = parameters.constantSeconds
+	description.TextInputSeconds = float64(*task.LLMTextInputBytes) * parameters.secondsPerInputByte
+	description.OutputTokenSeconds = float64(*task.LLMMaxNewTokens) * parameters.secondsPerOutputToken
+	if task.ModelSwtiched {
+		description.ModelSwitchSeconds = parameters.modelSwitchSeconds
+	}
+	description.ImageCountSeconds = float64(*task.LLMImageCount) * parameters.secondsPerImage
+	description.ImageMegapixelSeconds = float64(*task.LLMImagePixels) / 1_000_000 * parameters.secondsPerMegapixel
 }
 
 func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
@@ -518,18 +673,14 @@ func StartTaskPricingCalibrationFlush(ctx context.Context, db *gorm.DB) {
 func publishTaskPricingMetricsLocked() {
 	metrics.ResetTaskPricingCalibrationMetrics()
 	for key, parameters := range globalTaskPricing.aggregates {
-		metrics.SetTaskPricingCalibration(metrics.TaskTypeLabel(key.taskType), key.vramDemand, parameters.sdRate, parameters.llm)
+		metrics.SetTaskPricingCalibration(metrics.TaskTypeLabel(key.taskType), key.vramDemand, parameters.sdRate, parameters.llm.values())
 	}
 	for key, cached := range globalTaskPricing.records {
 		metrics.SetGPUExecutionCalibration(
 			key.name,
 			key.vram,
 			cached.record.SecondsPerSDPixelStep,
-			[3]float64{
-				cached.record.LLMConstantSeconds,
-				cached.record.LLMSecondsPerInputByte,
-				cached.record.LLMSecondsPerOutputToken,
-			},
+			parametersFromRecord(&cached.record).llm.values(),
 			cached.record.SDSuccessSamples,
 			cached.record.LLMSuccessSamples,
 		)

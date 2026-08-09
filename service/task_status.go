@@ -105,10 +105,11 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	// start inference task
 	startTime := time.Now()
 	timeout := task.Timeout
+	modelSwitched := !isSameModels(inUseModelIDs, models.BaseModelIDs(task.ModelIDs))
 	captureExecutionGPU := UsesRelayOwnedTimeouts(&task)
 	if captureExecutionGPU {
 		var err error
-		timeout, err = ComputeExecutionTimeout(&task, node.GPUName, node.GPUVram)
+		timeout, err = ComputeExecutionTimeout(&task, node.GPUName, node.GPUVram, modelSwitched)
 		if err != nil {
 			return err
 		}
@@ -119,7 +120,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 			"start_time":     sql.NullTime{Time: startTime, Valid: true},
 			"timeout":        timeout,
 			"status":         models.TaskStarted,
-			"model_swtiched": !isSameModels(inUseModelIDs, models.BaseModelIDs(task.ModelIDs)),
+			"model_swtiched": modelSwitched,
 		}); err != nil {
 			return err
 		}
@@ -140,6 +141,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 		metrics.NodeEvents.WithLabelValues("health_recovered").Inc()
 	}
 	task.Timeout = timeout
+	task.ModelSwtiched = modelSwitched
 	if captureExecutionGPU {
 		CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, node.GPUName, node.GPUVram)
 	}
