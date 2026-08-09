@@ -50,6 +50,9 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 		"  initial_llm_constant_seconds: 30\n" +
 		"  initial_llm_seconds_per_input_byte: 0.0001\n" +
 		"  initial_llm_seconds_per_output_token: 0.1\n" +
+		"  initial_llm_model_switch_seconds: 120\n" +
+		"  initial_llm_seconds_per_image: 10\n" +
+		"  initial_llm_seconds_per_megapixel: 5\n" +
 		"  calibration_alpha: 0.1\n" +
 		"  calibration_regularization: 0.000000001\n" +
 		"  calibration_max_positive_residual_multiple: 3\n" +

@@ -34,9 +34,13 @@ For LLM, Relay MUST compute:
 ```
 estimated_node_seconds =
     constant_seconds
-    + seconds_per_input_byte * LLMInputBytes
+    + seconds_per_input_byte * LLMTextInputBytes
     + seconds_per_output_token * LLMMaxNewTokens
+    + seconds_per_image * LLMImageCount
+    + seconds_per_megapixel * (LLMImagePixels / 1000000)
 ```
+
+Task creation MUST set the model-switch term to zero because the selected node is not known. Model switching MUST NOT change the frozen creation estimate or queue priority.
 
 At task creation, if `generation_config.max_new_tokens` is absent, Relay MUST store the configured default into `LLMMaxNewTokens`. Relay MUST assume generation can reach `LLMMaxNewTokens` and MUST NOT reduce output work by a historical early-stop ratio.
 
@@ -58,7 +62,7 @@ Relay MUST compute:
 priority = task_fee / (estimated_node_seconds * vram_weight)
 ```
 
-Relay MUST store `SDUnits` or `LLMInputBytes` and `LLMMaxNewTokens`, `estimated_node_seconds`, `vram_weight`, and `priority` on task creation. These values MUST remain unchanged for the task lifetime. Later execution-parameter updates MUST NOT recalculate existing task priority.
+Relay MUST store `SDUnits` or all of `LLMTextInputBytes`, `LLMImageCount`, `LLMImagePixels`, and `LLMMaxNewTokens`, together with `estimated_node_seconds`, `vram_weight`, and `priority` on task creation. These values MUST remain unchanged for the task lifetime. Later execution-parameter updates and the model-switch decision at dispatch MUST NOT recalculate existing task priority.
 
 VRAM weight MUST affect queue priority only. It MUST NOT alter candidate filtering, node score, staking score, QoS, model locality, or weighted node sampling.
 

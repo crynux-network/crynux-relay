@@ -42,11 +42,16 @@ Timeout = ceil(clamp(
     max_execution_timeout_seconds,
     (
         constant_seconds
-        + seconds_per_input_byte * LLMInputBytes
+        + seconds_per_input_byte * LLMTextInputBytes
         + seconds_per_output_token * LLMMaxNewTokens
+        + model_switch_seconds * model_switched
+        + seconds_per_image * LLMImageCount
+        + seconds_per_megapixel * (LLMImagePixels / 1000000)
     ) * timeout_multiplier
 ))
 ```
+
+After selecting the node and before calculating Timeout, Relay MUST compare the node's current in-use base models with the task's required base models exactly once. Relay MUST pass that result into Timeout calculation and persist the same value in `model_swtiched`. The switch term MUST affect dispatch Timeout only and MUST NOT change queue priority.
 
 If the selected GPU variant has not completed cold start, Relay MUST use the conservative same-VRAM prediction defined in [task_execution_parameters.md](./task_execution_parameters.md) before applying `timeout_multiplier`, ceiling, and min/max clamp.
 
@@ -54,7 +59,7 @@ Relay MUST write selected node, `StartTime`, computed `Timeout`, and `TaskStarte
 
 Execution Timeout covers only the period from `TaskStarted` until score submission or task-error reporting. It MUST NOT include queue waiting, creator validation, or result upload.
 
-SDFT LoRA MUST retain its creator-supplied Timeout and existing timeout calculation. A migrated non-terminal normal task whose stored workload field is null MUST retain its legacy stored Timeout and legacy deadline behavior until terminal state and MUST NOT enter execution-parameter calibration.
+SDFT LoRA MUST retain its creator-supplied Timeout and existing timeout calculation. A migrated non-terminal LLM task with any null `LLMTextInputBytes`, `LLMImageCount`, `LLMImagePixels`, or `LLMMaxNewTokens` field MUST retain its legacy stored Timeout and legacy deadline behavior until terminal state and MUST NOT enter execution-parameter calibration.
 
 ## Creator Validation Timeout
 

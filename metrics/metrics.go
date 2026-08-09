@@ -196,23 +196,23 @@ func ResetTaskPricingCalibrationMetrics() {
 	GPUExecutionCalibrationSamples.Reset()
 }
 
-func SetTaskPricingCalibration(taskType string, vramDemand uint64, sdRate float64, llm [3]float64) {
+func SetTaskPricingCalibration(taskType string, vramDemand uint64, sdRate float64, llm [6]float64) {
 	vram := fmt.Sprint(vramDemand)
 	if taskType == "sd" {
 		TaskPricingSecondsPerSDPixelStep.WithLabelValues(vram).Set(sdRate)
 		return
 	}
 	if taskType == "llm" {
-		for i, name := range []string{"constant", "input", "output"} {
+		for i, name := range []string{"constant", "text_input", "output", "model_switch", "image_count", "image_megapixel"} {
 			TaskPricingLLMCoefficient.WithLabelValues(name, vram).Set(llm[i])
 		}
 	}
 }
 
-func SetGPUExecutionCalibration(gpuName string, gpuVram uint64, sdRate float64, llm [3]float64, sdSamples, llmSamples uint64) {
+func SetGPUExecutionCalibration(gpuName string, gpuVram uint64, sdRate float64, llm [6]float64, sdSamples, llmSamples uint64) {
 	vram := fmt.Sprint(gpuVram)
 	GPUExecutionSecondsPerSDPixelStep.WithLabelValues(gpuName, vram).Set(sdRate)
-	for i, name := range []string{"constant", "input", "output"} {
+	for i, name := range []string{"constant", "text_input", "output", "model_switch", "image_count", "image_megapixel"} {
 		GPUExecutionLLMCoefficient.WithLabelValues(name, gpuName, vram).Set(llm[i])
 	}
 	GPUExecutionCalibrationSamples.WithLabelValues("sd", gpuName, vram).Set(float64(sdSamples))

@@ -13,11 +13,14 @@ require (
 	github.com/go-gormigrate/gormigrate/v2 v2.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/loopfz/gadgeto v0.9.0
+	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/client_model v0.6.2
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.16.0
 	github.com/vechain/go-ecvrf v0.0.0-20220525125849-96fa0442e765
 	github.com/wI2L/fizz v0.23.0
+	golang.org/x/image v0.14.0
 	gonum.org/v1/gonum v0.15.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gorm.io/driver/mysql v1.5.1
@@ -38,8 +41,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/supranational/blst v0.3.16 // indirect

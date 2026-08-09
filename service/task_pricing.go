@@ -4,11 +4,19 @@ import (
 	"bytes"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"math"
 	"math/big"
+	"strings"
+
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -36,6 +44,12 @@ type llmPricingGenerationConfig struct {
 
 type llmPricingArgs struct {
 	GenerationConfig *llmPricingGenerationConfig `json:"generation_config"`
+}
+
+type llmWorkload struct {
+	textInputBytes uint64
+	imageCount     uint64
+	imagePixels    uint64
 }
 
 func computeSDPricingUnits(taskArgs string) (uint64, error) {
@@ -78,26 +92,103 @@ func computeLLMMaxNewTokens(taskArgs string) (uint64, error) {
 	return config.GetConfig().TaskPricing.DefaultLLMMaxNewTokens, nil
 }
 
-func computeLLMInputBytes(taskArgs string) (uint64, error) {
+func computeLLMWorkload(taskArgs string) (llmWorkload, error) {
 	decoder := json.NewDecoder(bytes.NewBufferString(taskArgs))
 	decoder.UseNumber()
 	var args map[string]interface{}
 	if err := decoder.Decode(&args); err != nil {
-		return 0, fmt.Errorf("parse llm task args: %w", err)
+		return llmWorkload{}, fmt.Errorf("parse llm task args: %w", err)
+	}
+	messages, workload, err := stripLLMImagePayloads(args["messages"])
+	if err != nil {
+		return llmWorkload{}, err
 	}
 	canonical := map[string]interface{}{
-		"messages":      args["messages"],
+		"messages":      messages,
 		"tools":         args["tools"],
 		"template_args": args["template_args"],
 	}
 	encoded, err := json.Marshal(canonical)
 	if err != nil {
-		return 0, fmt.Errorf("encode canonical llm input: %w", err)
+		return llmWorkload{}, fmt.Errorf("encode canonical llm input: %w", err)
 	}
-	return uint64(len(encoded)), nil
+	workload.textInputBytes = uint64(len(encoded))
+	return workload, nil
 }
 
-func computeEstimatedNodeSeconds(task *models.InferenceTask, parameters executionParameters) (float64, error) {
+func stripLLMImagePayloads(value interface{}) (interface{}, llmWorkload, error) {
+	switch value := value.(type) {
+	case []interface{}:
+		result := make([]interface{}, len(value))
+		var total llmWorkload
+		for i := range value {
+			cleaned, workload, err := stripLLMImagePayloads(value[i])
+			if err != nil {
+				return nil, llmWorkload{}, err
+			}
+			result[i] = cleaned
+			if total.imageCount > math.MaxUint64-workload.imageCount ||
+				total.imagePixels > math.MaxUint64-workload.imagePixels {
+				return nil, llmWorkload{}, errors.New("llm image workload overflows uint64")
+			}
+			total.imageCount += workload.imageCount
+			total.imagePixels += workload.imagePixels
+		}
+		return result, total, nil
+	case map[string]interface{}:
+		result := make(map[string]interface{}, len(value))
+		for key, item := range value {
+			result[key] = item
+		}
+		if imageType, _ := value["type"].(string); imageType == "image" {
+			rawBase64, ok := value["base64"].(string)
+			if !ok {
+				return nil, llmWorkload{}, errors.New("llm image block base64 is not a string")
+			}
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rawBase64))
+			if err != nil {
+				return nil, llmWorkload{}, fmt.Errorf("decode llm image base64: %w", err)
+			}
+			imageConfig, _, err := image.DecodeConfig(bytes.NewReader(decoded))
+			if err != nil {
+				return nil, llmWorkload{}, fmt.Errorf("read llm image dimensions: %w", err)
+			}
+			if imageConfig.Width <= 0 || imageConfig.Height <= 0 {
+				return nil, llmWorkload{}, errors.New("llm image dimensions must be positive")
+			}
+			width, height := uint64(imageConfig.Width), uint64(imageConfig.Height)
+			if width > math.MaxUint64/height {
+				return nil, llmWorkload{}, errors.New("llm image pixels overflow uint64")
+			}
+			delete(result, "base64")
+			return result, llmWorkload{imageCount: 1, imagePixels: width * height}, nil
+		}
+		var total llmWorkload
+		for key, item := range result {
+			cleaned, workload, err := stripLLMImagePayloads(item)
+			if err != nil {
+				return nil, llmWorkload{}, err
+			}
+			result[key] = cleaned
+			if total.imageCount > math.MaxUint64-workload.imageCount ||
+				total.imagePixels > math.MaxUint64-workload.imagePixels {
+				return nil, llmWorkload{}, errors.New("llm image workload overflows uint64")
+			}
+			total.imageCount += workload.imageCount
+			total.imagePixels += workload.imagePixels
+		}
+		return result, total, nil
+	default:
+		return value, llmWorkload{}, nil
+	}
+}
+
+func computeLLMInputBytes(taskArgs string) (uint64, error) {
+	workload, err := computeLLMWorkload(taskArgs)
+	return workload.textInputBytes, err
+}
+
+func computeEstimatedNodeSeconds(task *models.InferenceTask, parameters executionParameters, modelSwitch ...bool) (float64, error) {
 	switch task.TaskType {
 	case models.TaskTypeSD:
 		if task.SDUnits == nil {
@@ -105,13 +196,28 @@ func computeEstimatedNodeSeconds(task *models.InferenceTask, parameters executio
 		}
 		return config.GetConfig().TaskPricing.OverheadSeconds + float64(*task.SDUnits)*parameters.sdRate, nil
 	case models.TaskTypeLLM:
-		if task.LLMInputBytes == nil {
-			return 0, errors.New("llm_input_bytes is not set")
+		if task.LLMTextInputBytes == nil {
+			return 0, errors.New("llm_text_input_bytes is not set")
 		}
 		if task.LLMMaxNewTokens == nil {
 			return 0, errors.New("llm_max_new_tokens is not set")
 		}
-		return parameters.llm[0] + float64(*task.LLMInputBytes)*parameters.llm[1] + float64(*task.LLMMaxNewTokens)*parameters.llm[2], nil
+		if task.LLMImageCount == nil {
+			return 0, errors.New("llm_image_count is not set")
+		}
+		if task.LLMImagePixels == nil {
+			return 0, errors.New("llm_image_pixels is not set")
+		}
+		switchWork := 0.0
+		if len(modelSwitch) > 0 && modelSwitch[0] {
+			switchWork = 1
+		}
+		return parameters.llm.constantSeconds +
+			float64(*task.LLMTextInputBytes)*parameters.llm.secondsPerInputByte +
+			float64(*task.LLMMaxNewTokens)*parameters.llm.secondsPerOutputToken +
+			switchWork*parameters.llm.modelSwitchSeconds +
+			float64(*task.LLMImageCount)*parameters.llm.secondsPerImage +
+			(float64(*task.LLMImagePixels)/1_000_000)*parameters.llm.secondsPerMegapixel, nil
 	case models.TaskTypeSDFTLora:
 		return float64(task.Timeout), nil
 	default:
@@ -142,10 +248,13 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 		}
 		task.SDUnits = &units
 		task.LLMInputBytes = nil
+		task.LLMTextInputBytes = nil
+		task.LLMImageCount = nil
+		task.LLMImagePixels = nil
 		task.LLMMaxNewTokens = nil
 		task.PricingUnits = float64(units)
 	case models.TaskTypeLLM:
-		inputBytes, err := computeLLMInputBytes(task.TaskArgs)
+		workload, err := computeLLMWorkload(task.TaskArgs)
 		if err != nil {
 			return err
 		}
@@ -153,13 +262,19 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 		if err != nil {
 			return err
 		}
-		task.LLMInputBytes = &inputBytes
+		task.LLMInputBytes = &workload.textInputBytes
+		task.LLMTextInputBytes = &workload.textInputBytes
+		task.LLMImageCount = &workload.imageCount
+		task.LLMImagePixels = &workload.imagePixels
 		task.LLMMaxNewTokens = &maxNewTokens
 		task.SDUnits = nil
 		task.PricingUnits = float64(maxNewTokens)
 	case models.TaskTypeSDFTLora:
 		task.SDUnits = nil
 		task.LLMInputBytes = nil
+		task.LLMTextInputBytes = nil
+		task.LLMImageCount = nil
+		task.LLMImagePixels = nil
 		task.LLMMaxNewTokens = nil
 		task.PricingUnits = 0
 	default:
@@ -169,7 +284,7 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 	if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM {
 		parameters = getTaskPricingParameters(task)
 	}
-	estimatedNodeSeconds, err := computeEstimatedNodeSeconds(task, parameters)
+	estimatedNodeSeconds, err := computeEstimatedNodeSeconds(task, parameters, false)
 	if err != nil {
 		return err
 	}

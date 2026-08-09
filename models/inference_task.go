@@ -121,6 +121,9 @@ type InferenceTask struct {
 	PricingUnits         float64         `json:"pricing_units" gorm:"not null;default:0"`
 	SDUnits              *uint64         `json:"sd_units" gorm:"type:bigint unsigned;null;default:null"`
 	LLMInputBytes        *uint64         `json:"llm_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
+	LLMTextInputBytes    *uint64         `json:"llm_text_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
+	LLMImageCount        *uint64         `json:"llm_image_count" gorm:"type:bigint unsigned;null;default:null"`
+	LLMImagePixels       *uint64         `json:"llm_image_pixels" gorm:"type:bigint unsigned;null;default:null"`
 	LLMMaxNewTokens      *uint64         `json:"llm_max_new_tokens" gorm:"type:bigint unsigned;null;default:null"`
 	TaskSize             uint64          `json:"task_size"`
 	ModelIDs             StringArray     `json:"model_ids" gorm:"type:text"`
