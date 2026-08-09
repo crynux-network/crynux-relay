@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"math"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 )
@@ -39,6 +40,27 @@ func setTestLLMWorkload(task *models.InferenceTask, textInputBytes *uint64) {
 	task.LLMTextInputBytes = textInputBytes
 	task.LLMImageCount = &zero
 	task.LLMImagePixels = &zero
+}
+
+func calibrateTestLLMSample(t *testing.T, taskID string, inputBytes, completionTokens uint64, seconds float64) models.GPUExecutionCalibration {
+	t.Helper()
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	task := &models.InferenceTask{
+		TaskIDCommitment: taskID,
+		TaskType:         models.TaskTypeLLM,
+		Status:           models.TaskEndSuccess,
+		LLMInputBytes:    &inputBytes,
+		StartTime:        sql.NullTime{Time: start, Valid: true},
+		ScoreReadyTime:   sql.NullTime{Time: start.Add(time.Duration(seconds * float64(time.Second))), Valid: true},
+	}
+	setTestLLMWorkload(task, &inputBytes)
+	CaptureTaskExecutionGPUSnapshot(taskID, "A100", 40)
+	if err := CalibrateUploadedLLMTask(task, completionTokens); err != nil {
+		t.Fatalf("calibrate LLM sample: %v", err)
+	}
+	globalTaskPricing.mu.RLock()
+	defer globalTaskPricing.mu.RUnlock()
+	return globalTaskPricing.records[gpuCalibrationKey{name: "A100", vram: 40}].record
 }
 
 func TestComputeSDPricingUnitsDefaults(t *testing.T) {
@@ -501,6 +523,43 @@ func TestComputeExecutionTimeoutIncludesModelSwitch(t *testing.T) {
 	}
 }
 
+func TestLLMEWLSSingleLargeInputSampleFits(t *testing.T) {
+	for _, inputBytes := range []uint64{12_221, 18_271} {
+		t.Run(fmt.Sprintf("%d_bytes", inputBytes), func(t *testing.T) {
+			initTaskPricingTestStore(t)
+			record := calibrateTestLLMSample(t, fmt.Sprintf("large-input-%d", inputBytes), inputBytes, 128, 60)
+
+			if record.LLMSuccessSamples != 1 {
+				t.Fatalf("LLMSuccessSamples = %d, want 1", record.LLMSuccessSamples)
+			}
+			for i, coefficient := range parametersFromRecord(&record).llm.values() {
+				if coefficient < 0 || math.IsNaN(coefficient) || math.IsInf(coefficient, 0) {
+					t.Fatalf("coefficient %d is not finite and non-negative: %v", i, coefficient)
+				}
+			}
+			initial := initialExecutionParameters().llm
+			if math.Abs(record.LLMModelSwitchSeconds-initial.modelSwitchSeconds) > 1e-9 ||
+				math.Abs(record.LLMSecondsPerImage-initial.secondsPerImage) > 1e-9 ||
+				math.Abs(record.LLMSecondsPerMegapixel-initial.secondsPerMegapixel) > 1e-9 {
+				t.Fatalf("unobserved coefficients did not retain their initial values: %+v", record)
+			}
+		})
+	}
+}
+
+func TestLLMEWLSStoresSmallInputInOriginalByteUnits(t *testing.T) {
+	initTaskPricingTestStore(t)
+	record := calibrateTestLLMSample(t, "small-input", 10, 20, 20)
+	alpha := config.GetConfig().TaskPricing.CalibrationAlpha
+
+	if record.LLMXTX01 != alpha*10 || record.LLMXTX11 != alpha*10*10 {
+		t.Fatalf("input-byte matrix entries were scaled before persistence: XTX01=%v XTX11=%v", record.LLMXTX01, record.LLMXTX11)
+	}
+	if record.LLMXTY1 != alpha*10*20 {
+		t.Fatalf("input-byte XTy entry = %v, want %v", record.LLMXTY1, alpha*10*20)
+	}
+}
+
 func TestLLMEWLSFitsIndependentNonnegativeCoefficients(t *testing.T) {
 	initTaskPricingTestStore(t)
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -579,6 +638,8 @@ func TestCalibrateUploadedLLMTaskDoesNotCommitWhenFitFails(t *testing.T) {
 	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
 	if err := CalibrateUploadedLLMTask(task, 10); err == nil {
 		t.Fatal("expected fit failure")
+	} else if !strings.Contains(err.Error(), "does not produce a positive finite scale") {
+		t.Fatalf("unexpected fit failure: %v", err)
 	}
 
 	globalTaskPricing.mu.RLock()

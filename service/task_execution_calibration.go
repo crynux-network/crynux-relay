@@ -6,6 +6,7 @@ import (
 	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -375,14 +376,29 @@ func fitLLMParameters(record *models.GPUExecutionCalibration) error {
 		matrix.SetSym(i, i, matrix.At(i, i)+regularization)
 		yValues[i] += regularization * initial[i]
 	}
-	y := mat.NewVecDense(6, yValues[:])
+	scale := [6]float64{}
+	for i := range scale {
+		scale[i] = math.Sqrt(matrix.At(i, i))
+		if scale[i] <= 0 || math.IsNaN(scale[i]) || math.IsInf(scale[i], 0) {
+			return fmt.Errorf("LLM fit matrix diagonal %d does not produce a positive finite scale", i)
+		}
+	}
+	scaledMatrix := mat.NewSymDense(6, nil)
+	scaledYValues := [6]float64{}
+	for i := range scale {
+		for j := i; j < len(scale); j++ {
+			scaledMatrix.SetSym(i, j, matrix.At(i, j)/(scale[i]*scale[j]))
+		}
+		scaledYValues[i] = yValues[i] / scale[i]
+	}
+	scaledY := mat.NewVecDense(6, scaledYValues[:])
 	var coefficients mat.VecDense
-	if err := coefficients.SolveVec(matrix, y); err != nil {
+	if err := coefficients.SolveVec(scaledMatrix, scaledY); err != nil {
 		return err
 	}
 	values := [6]float64{}
 	for i := range values {
-		values[i] = coefficients.AtVec(i)
+		values[i] = coefficients.AtVec(i) / scale[i]
 		if math.IsNaN(values[i]) || math.IsInf(values[i], 0) {
 			return errors.New("fitted LLM coefficient is not finite")
 		}
