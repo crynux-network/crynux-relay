@@ -46,7 +46,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	if err != nil {
 		return err
 	}
-	stakingAmount := new(big.Int).Add(stakingInfo.StakedBalance, stakingInfo.StakedCredits)
+	stakingAmount := new(big.Int).Set(stakingInfo.StakedBalance)
 	if stakingAmount.Cmp(&node.StakeAmount.Int) != 0 {
 		return errors.New("staking amount mismatch")
 	}

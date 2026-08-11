@@ -33,14 +33,13 @@ var (
 type NodeStakingStakingInfo struct {
 	NodeAddress      common.Address
 	StakedBalance    *big.Int
-	StakedCredits    *big.Int
 	Status           uint8
 	UnstakeTimestamp *big.Int
 }
 
 // NodeStakingMetaData contains all meta data concerning the NodeStaking contract.
 var NodeStakingMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"creditsContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"benefitAddressContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"slashReceiverAddress\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"NodeTryUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"}],\"name\":\"NodeUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"parameterControllerAddress\",\"type\":\"address\"}],\"name\":\"ParameterControllerUpdated\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"forceUnstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"page\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"pageSize\",\"type\":\"uint256\"}],\"name\":\"getAllNodeAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getForceUnstakeDelay\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getStakingInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"stakedCredits\",\"type\":\"uint256\"},{\"internalType\":\"enumNodeStaking.StakingStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"unstakeTimestamp\",\"type\":\"uint256\"}],\"internalType\":\"structNodeStaking.StakingInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"delay\",\"type\":\"uint256\"}],\"name\":\"setForceUnstakeDelay\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakeAmount\",\"type\":\"uint256\"}],\"name\":\"setMinStakeAmount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setParameterController\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"slashStaking\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakedAmount\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tryUnstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"unstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"benefitAddressContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"slashReceiverAddress\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"OwnershipRenouncementDisabled\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ReentrancyGuardReentrantCall\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldAddress\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newAddress\",\"type\":\"address\"}],\"name\":\"AdminAddressUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"oldDelay\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"newDelay\",\"type\":\"uint256\"}],\"name\":\"ForceUnstakeDelayUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"oldAmount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"newAmount\",\"type\":\"uint256\"}],\"name\":\"MinStakeAmountUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"}],\"name\":\"NodeSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"}],\"name\":\"NodeStaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"NodeTryUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"}],\"name\":\"NodeUnstaked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldObserver\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newObserver\",\"type\":\"address\"}],\"name\":\"ObserverUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"ba\",\"outputs\":[{\"internalType\":\"contractBenefitAddress\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"forceUnstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"page\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"pageSize\",\"type\":\"uint256\"}],\"name\":\"getAllNodeAddresses\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getForceUnstakeDelay\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getMinStakeAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"getStakingInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"stakedBalance\",\"type\":\"uint256\"},{\"internalType\":\"enumNodeStaking.StakingStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"unstakeTimestamp\",\"type\":\"uint256\"}],\"internalType\":\"structNodeStaking.StakingInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setAdminAddress\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"delay\",\"type\":\"uint256\"}],\"name\":\"setForceUnstakeDelay\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakeAmount\",\"type\":\"uint256\"}],\"name\":\"setMinStakeAmount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"setObserver\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"slashReceiver\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"slashStaking\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"stakedAmount\",\"type\":\"uint256\"}],\"name\":\"stake\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tryUnstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"nodeAddress\",\"type\":\"address\"}],\"name\":\"unstake\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // NodeStakingABI is the input ABI used to generate the binding from.
@@ -189,6 +188,37 @@ func (_NodeStaking *NodeStakingTransactorRaw) Transact(opts *bind.TransactOpts, 
 	return _NodeStaking.Contract.contract.Transact(opts, method, params...)
 }
 
+// Ba is a free data retrieval call binding the contract method 0x772604c1.
+//
+// Solidity: function ba() view returns(address)
+func (_NodeStaking *NodeStakingCaller) Ba(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _NodeStaking.contract.Call(opts, &out, "ba")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// Ba is a free data retrieval call binding the contract method 0x772604c1.
+//
+// Solidity: function ba() view returns(address)
+func (_NodeStaking *NodeStakingSession) Ba() (common.Address, error) {
+	return _NodeStaking.Contract.Ba(&_NodeStaking.CallOpts)
+}
+
+// Ba is a free data retrieval call binding the contract method 0x772604c1.
+//
+// Solidity: function ba() view returns(address)
+func (_NodeStaking *NodeStakingCallerSession) Ba() (common.Address, error) {
+	return _NodeStaking.Contract.Ba(&_NodeStaking.CallOpts)
+}
+
 // GetAllNodeAddresses is a free data retrieval call binding the contract method 0x6ba8ac44.
 //
 // Solidity: function getAllNodeAddresses(uint256 page, uint256 pageSize) view returns(address[])
@@ -284,7 +314,7 @@ func (_NodeStaking *NodeStakingCallerSession) GetMinStakeAmount() (*big.Int, err
 
 // GetStakingInfo is a free data retrieval call binding the contract method 0xaa4704f3.
 //
-// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256,uint8,uint256))
+// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint8,uint256))
 func (_NodeStaking *NodeStakingCaller) GetStakingInfo(opts *bind.CallOpts, nodeAddress common.Address) (NodeStakingStakingInfo, error) {
 	var out []interface{}
 	err := _NodeStaking.contract.Call(opts, &out, "getStakingInfo", nodeAddress)
@@ -301,14 +331,14 @@ func (_NodeStaking *NodeStakingCaller) GetStakingInfo(opts *bind.CallOpts, nodeA
 
 // GetStakingInfo is a free data retrieval call binding the contract method 0xaa4704f3.
 //
-// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256,uint8,uint256))
+// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint8,uint256))
 func (_NodeStaking *NodeStakingSession) GetStakingInfo(nodeAddress common.Address) (NodeStakingStakingInfo, error) {
 	return _NodeStaking.Contract.GetStakingInfo(&_NodeStaking.CallOpts, nodeAddress)
 }
 
 // GetStakingInfo is a free data retrieval call binding the contract method 0xaa4704f3.
 //
-// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint256,uint8,uint256))
+// Solidity: function getStakingInfo(address nodeAddress) view returns((address,uint256,uint8,uint256))
 func (_NodeStaking *NodeStakingCallerSession) GetStakingInfo(nodeAddress common.Address) (NodeStakingStakingInfo, error) {
 	return _NodeStaking.Contract.GetStakingInfo(&_NodeStaking.CallOpts, nodeAddress)
 }
@@ -344,6 +374,66 @@ func (_NodeStaking *NodeStakingCallerSession) Owner() (common.Address, error) {
 	return _NodeStaking.Contract.Owner(&_NodeStaking.CallOpts)
 }
 
+// RenounceOwnership is a free data retrieval call binding the contract method 0x715018a6.
+//
+// Solidity: function renounceOwnership() view returns()
+func (_NodeStaking *NodeStakingCaller) RenounceOwnership(opts *bind.CallOpts) error {
+	var out []interface{}
+	err := _NodeStaking.contract.Call(opts, &out, "renounceOwnership")
+
+	if err != nil {
+		return err
+	}
+
+	return err
+
+}
+
+// RenounceOwnership is a free data retrieval call binding the contract method 0x715018a6.
+//
+// Solidity: function renounceOwnership() view returns()
+func (_NodeStaking *NodeStakingSession) RenounceOwnership() error {
+	return _NodeStaking.Contract.RenounceOwnership(&_NodeStaking.CallOpts)
+}
+
+// RenounceOwnership is a free data retrieval call binding the contract method 0x715018a6.
+//
+// Solidity: function renounceOwnership() view returns()
+func (_NodeStaking *NodeStakingCallerSession) RenounceOwnership() error {
+	return _NodeStaking.Contract.RenounceOwnership(&_NodeStaking.CallOpts)
+}
+
+// SlashReceiver is a free data retrieval call binding the contract method 0x1bc4e5fb.
+//
+// Solidity: function slashReceiver() view returns(address)
+func (_NodeStaking *NodeStakingCaller) SlashReceiver(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _NodeStaking.contract.Call(opts, &out, "slashReceiver")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// SlashReceiver is a free data retrieval call binding the contract method 0x1bc4e5fb.
+//
+// Solidity: function slashReceiver() view returns(address)
+func (_NodeStaking *NodeStakingSession) SlashReceiver() (common.Address, error) {
+	return _NodeStaking.Contract.SlashReceiver(&_NodeStaking.CallOpts)
+}
+
+// SlashReceiver is a free data retrieval call binding the contract method 0x1bc4e5fb.
+//
+// Solidity: function slashReceiver() view returns(address)
+func (_NodeStaking *NodeStakingCallerSession) SlashReceiver() (common.Address, error) {
+	return _NodeStaking.Contract.SlashReceiver(&_NodeStaking.CallOpts)
+}
+
 // ForceUnstake is a paid mutator transaction binding the contract method 0xdf4bbd22.
 //
 // Solidity: function forceUnstake() returns()
@@ -363,27 +453,6 @@ func (_NodeStaking *NodeStakingSession) ForceUnstake() (*types.Transaction, erro
 // Solidity: function forceUnstake() returns()
 func (_NodeStaking *NodeStakingTransactorSession) ForceUnstake() (*types.Transaction, error) {
 	return _NodeStaking.Contract.ForceUnstake(&_NodeStaking.TransactOpts)
-}
-
-// RenounceOwnership is a paid mutator transaction binding the contract method 0x715018a6.
-//
-// Solidity: function renounceOwnership() returns()
-func (_NodeStaking *NodeStakingTransactor) RenounceOwnership(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _NodeStaking.contract.Transact(opts, "renounceOwnership")
-}
-
-// RenounceOwnership is a paid mutator transaction binding the contract method 0x715018a6.
-//
-// Solidity: function renounceOwnership() returns()
-func (_NodeStaking *NodeStakingSession) RenounceOwnership() (*types.Transaction, error) {
-	return _NodeStaking.Contract.RenounceOwnership(&_NodeStaking.TransactOpts)
-}
-
-// RenounceOwnership is a paid mutator transaction binding the contract method 0x715018a6.
-//
-// Solidity: function renounceOwnership() returns()
-func (_NodeStaking *NodeStakingTransactorSession) RenounceOwnership() (*types.Transaction, error) {
-	return _NodeStaking.Contract.RenounceOwnership(&_NodeStaking.TransactOpts)
 }
 
 // SetAdminAddress is a paid mutator transaction binding the contract method 0x2c1e816d.
@@ -449,25 +518,25 @@ func (_NodeStaking *NodeStakingTransactorSession) SetMinStakeAmount(stakeAmount 
 	return _NodeStaking.Contract.SetMinStakeAmount(&_NodeStaking.TransactOpts, stakeAmount)
 }
 
-// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
+// SetObserver is a paid mutator transaction binding the contract method 0x94d9c9c7.
 //
-// Solidity: function setParameterController(address addr) returns()
-func (_NodeStaking *NodeStakingTransactor) SetParameterController(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
-	return _NodeStaking.contract.Transact(opts, "setParameterController", addr)
+// Solidity: function setObserver(address addr) returns()
+func (_NodeStaking *NodeStakingTransactor) SetObserver(opts *bind.TransactOpts, addr common.Address) (*types.Transaction, error) {
+	return _NodeStaking.contract.Transact(opts, "setObserver", addr)
 }
 
-// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
+// SetObserver is a paid mutator transaction binding the contract method 0x94d9c9c7.
 //
-// Solidity: function setParameterController(address addr) returns()
-func (_NodeStaking *NodeStakingSession) SetParameterController(addr common.Address) (*types.Transaction, error) {
-	return _NodeStaking.Contract.SetParameterController(&_NodeStaking.TransactOpts, addr)
+// Solidity: function setObserver(address addr) returns()
+func (_NodeStaking *NodeStakingSession) SetObserver(addr common.Address) (*types.Transaction, error) {
+	return _NodeStaking.Contract.SetObserver(&_NodeStaking.TransactOpts, addr)
 }
 
-// SetParameterController is a paid mutator transaction binding the contract method 0xa0152dde.
+// SetObserver is a paid mutator transaction binding the contract method 0x94d9c9c7.
 //
-// Solidity: function setParameterController(address addr) returns()
-func (_NodeStaking *NodeStakingTransactorSession) SetParameterController(addr common.Address) (*types.Transaction, error) {
-	return _NodeStaking.Contract.SetParameterController(&_NodeStaking.TransactOpts, addr)
+// Solidity: function setObserver(address addr) returns()
+func (_NodeStaking *NodeStakingTransactorSession) SetObserver(addr common.Address) (*types.Transaction, error) {
+	return _NodeStaking.Contract.SetObserver(&_NodeStaking.TransactOpts, addr)
 }
 
 // SlashStaking is a paid mutator transaction binding the contract method 0xf7999cb1.
@@ -575,6 +644,429 @@ func (_NodeStaking *NodeStakingTransactorSession) Unstake(nodeAddress common.Add
 	return _NodeStaking.Contract.Unstake(&_NodeStaking.TransactOpts, nodeAddress)
 }
 
+// NodeStakingAdminAddressUpdatedIterator is returned from FilterAdminAddressUpdated and is used to iterate over the raw logs and unpacked data for AdminAddressUpdated events raised by the NodeStaking contract.
+type NodeStakingAdminAddressUpdatedIterator struct {
+	Event *NodeStakingAdminAddressUpdated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *NodeStakingAdminAddressUpdatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(NodeStakingAdminAddressUpdated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(NodeStakingAdminAddressUpdated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *NodeStakingAdminAddressUpdatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *NodeStakingAdminAddressUpdatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// NodeStakingAdminAddressUpdated represents a AdminAddressUpdated event raised by the NodeStaking contract.
+type NodeStakingAdminAddressUpdated struct {
+	OldAddress common.Address
+	NewAddress common.Address
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterAdminAddressUpdated is a free log retrieval operation binding the contract event 0x39eb67354e1d981c44468f6a2b1837bb1598cf711fe761db800b185706b4e8cb.
+//
+// Solidity: event AdminAddressUpdated(address indexed oldAddress, address indexed newAddress)
+func (_NodeStaking *NodeStakingFilterer) FilterAdminAddressUpdated(opts *bind.FilterOpts, oldAddress []common.Address, newAddress []common.Address) (*NodeStakingAdminAddressUpdatedIterator, error) {
+
+	var oldAddressRule []interface{}
+	for _, oldAddressItem := range oldAddress {
+		oldAddressRule = append(oldAddressRule, oldAddressItem)
+	}
+	var newAddressRule []interface{}
+	for _, newAddressItem := range newAddress {
+		newAddressRule = append(newAddressRule, newAddressItem)
+	}
+
+	logs, sub, err := _NodeStaking.contract.FilterLogs(opts, "AdminAddressUpdated", oldAddressRule, newAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return &NodeStakingAdminAddressUpdatedIterator{contract: _NodeStaking.contract, event: "AdminAddressUpdated", logs: logs, sub: sub}, nil
+}
+
+// WatchAdminAddressUpdated is a free log subscription operation binding the contract event 0x39eb67354e1d981c44468f6a2b1837bb1598cf711fe761db800b185706b4e8cb.
+//
+// Solidity: event AdminAddressUpdated(address indexed oldAddress, address indexed newAddress)
+func (_NodeStaking *NodeStakingFilterer) WatchAdminAddressUpdated(opts *bind.WatchOpts, sink chan<- *NodeStakingAdminAddressUpdated, oldAddress []common.Address, newAddress []common.Address) (event.Subscription, error) {
+
+	var oldAddressRule []interface{}
+	for _, oldAddressItem := range oldAddress {
+		oldAddressRule = append(oldAddressRule, oldAddressItem)
+	}
+	var newAddressRule []interface{}
+	for _, newAddressItem := range newAddress {
+		newAddressRule = append(newAddressRule, newAddressItem)
+	}
+
+	logs, sub, err := _NodeStaking.contract.WatchLogs(opts, "AdminAddressUpdated", oldAddressRule, newAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(NodeStakingAdminAddressUpdated)
+				if err := _NodeStaking.contract.UnpackLog(event, "AdminAddressUpdated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseAdminAddressUpdated is a log parse operation binding the contract event 0x39eb67354e1d981c44468f6a2b1837bb1598cf711fe761db800b185706b4e8cb.
+//
+// Solidity: event AdminAddressUpdated(address indexed oldAddress, address indexed newAddress)
+func (_NodeStaking *NodeStakingFilterer) ParseAdminAddressUpdated(log types.Log) (*NodeStakingAdminAddressUpdated, error) {
+	event := new(NodeStakingAdminAddressUpdated)
+	if err := _NodeStaking.contract.UnpackLog(event, "AdminAddressUpdated", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// NodeStakingForceUnstakeDelayUpdatedIterator is returned from FilterForceUnstakeDelayUpdated and is used to iterate over the raw logs and unpacked data for ForceUnstakeDelayUpdated events raised by the NodeStaking contract.
+type NodeStakingForceUnstakeDelayUpdatedIterator struct {
+	Event *NodeStakingForceUnstakeDelayUpdated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *NodeStakingForceUnstakeDelayUpdatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(NodeStakingForceUnstakeDelayUpdated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(NodeStakingForceUnstakeDelayUpdated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *NodeStakingForceUnstakeDelayUpdatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *NodeStakingForceUnstakeDelayUpdatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// NodeStakingForceUnstakeDelayUpdated represents a ForceUnstakeDelayUpdated event raised by the NodeStaking contract.
+type NodeStakingForceUnstakeDelayUpdated struct {
+	OldDelay *big.Int
+	NewDelay *big.Int
+	Raw      types.Log // Blockchain specific contextual infos
+}
+
+// FilterForceUnstakeDelayUpdated is a free log retrieval operation binding the contract event 0x2324fb4874e07c77ab5d8b58eb3aa9da7d4027ea88d8d08142dd0963b7ef7351.
+//
+// Solidity: event ForceUnstakeDelayUpdated(uint256 oldDelay, uint256 newDelay)
+func (_NodeStaking *NodeStakingFilterer) FilterForceUnstakeDelayUpdated(opts *bind.FilterOpts) (*NodeStakingForceUnstakeDelayUpdatedIterator, error) {
+
+	logs, sub, err := _NodeStaking.contract.FilterLogs(opts, "ForceUnstakeDelayUpdated")
+	if err != nil {
+		return nil, err
+	}
+	return &NodeStakingForceUnstakeDelayUpdatedIterator{contract: _NodeStaking.contract, event: "ForceUnstakeDelayUpdated", logs: logs, sub: sub}, nil
+}
+
+// WatchForceUnstakeDelayUpdated is a free log subscription operation binding the contract event 0x2324fb4874e07c77ab5d8b58eb3aa9da7d4027ea88d8d08142dd0963b7ef7351.
+//
+// Solidity: event ForceUnstakeDelayUpdated(uint256 oldDelay, uint256 newDelay)
+func (_NodeStaking *NodeStakingFilterer) WatchForceUnstakeDelayUpdated(opts *bind.WatchOpts, sink chan<- *NodeStakingForceUnstakeDelayUpdated) (event.Subscription, error) {
+
+	logs, sub, err := _NodeStaking.contract.WatchLogs(opts, "ForceUnstakeDelayUpdated")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(NodeStakingForceUnstakeDelayUpdated)
+				if err := _NodeStaking.contract.UnpackLog(event, "ForceUnstakeDelayUpdated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseForceUnstakeDelayUpdated is a log parse operation binding the contract event 0x2324fb4874e07c77ab5d8b58eb3aa9da7d4027ea88d8d08142dd0963b7ef7351.
+//
+// Solidity: event ForceUnstakeDelayUpdated(uint256 oldDelay, uint256 newDelay)
+func (_NodeStaking *NodeStakingFilterer) ParseForceUnstakeDelayUpdated(log types.Log) (*NodeStakingForceUnstakeDelayUpdated, error) {
+	event := new(NodeStakingForceUnstakeDelayUpdated)
+	if err := _NodeStaking.contract.UnpackLog(event, "ForceUnstakeDelayUpdated", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// NodeStakingMinStakeAmountUpdatedIterator is returned from FilterMinStakeAmountUpdated and is used to iterate over the raw logs and unpacked data for MinStakeAmountUpdated events raised by the NodeStaking contract.
+type NodeStakingMinStakeAmountUpdatedIterator struct {
+	Event *NodeStakingMinStakeAmountUpdated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *NodeStakingMinStakeAmountUpdatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(NodeStakingMinStakeAmountUpdated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(NodeStakingMinStakeAmountUpdated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *NodeStakingMinStakeAmountUpdatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *NodeStakingMinStakeAmountUpdatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// NodeStakingMinStakeAmountUpdated represents a MinStakeAmountUpdated event raised by the NodeStaking contract.
+type NodeStakingMinStakeAmountUpdated struct {
+	OldAmount *big.Int
+	NewAmount *big.Int
+	Raw       types.Log // Blockchain specific contextual infos
+}
+
+// FilterMinStakeAmountUpdated is a free log retrieval operation binding the contract event 0xca0542093af2ac14ccf6e52b6e1a131c7e2825fb3b51139bf1dd8186a1339e95.
+//
+// Solidity: event MinStakeAmountUpdated(uint256 oldAmount, uint256 newAmount)
+func (_NodeStaking *NodeStakingFilterer) FilterMinStakeAmountUpdated(opts *bind.FilterOpts) (*NodeStakingMinStakeAmountUpdatedIterator, error) {
+
+	logs, sub, err := _NodeStaking.contract.FilterLogs(opts, "MinStakeAmountUpdated")
+	if err != nil {
+		return nil, err
+	}
+	return &NodeStakingMinStakeAmountUpdatedIterator{contract: _NodeStaking.contract, event: "MinStakeAmountUpdated", logs: logs, sub: sub}, nil
+}
+
+// WatchMinStakeAmountUpdated is a free log subscription operation binding the contract event 0xca0542093af2ac14ccf6e52b6e1a131c7e2825fb3b51139bf1dd8186a1339e95.
+//
+// Solidity: event MinStakeAmountUpdated(uint256 oldAmount, uint256 newAmount)
+func (_NodeStaking *NodeStakingFilterer) WatchMinStakeAmountUpdated(opts *bind.WatchOpts, sink chan<- *NodeStakingMinStakeAmountUpdated) (event.Subscription, error) {
+
+	logs, sub, err := _NodeStaking.contract.WatchLogs(opts, "MinStakeAmountUpdated")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(NodeStakingMinStakeAmountUpdated)
+				if err := _NodeStaking.contract.UnpackLog(event, "MinStakeAmountUpdated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseMinStakeAmountUpdated is a log parse operation binding the contract event 0xca0542093af2ac14ccf6e52b6e1a131c7e2825fb3b51139bf1dd8186a1339e95.
+//
+// Solidity: event MinStakeAmountUpdated(uint256 oldAmount, uint256 newAmount)
+func (_NodeStaking *NodeStakingFilterer) ParseMinStakeAmountUpdated(log types.Log) (*NodeStakingMinStakeAmountUpdated, error) {
+	event := new(NodeStakingMinStakeAmountUpdated)
+	if err := _NodeStaking.contract.UnpackLog(event, "MinStakeAmountUpdated", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
 // NodeStakingNodeSlashedIterator is returned from FilterNodeSlashed and is used to iterate over the raw logs and unpacked data for NodeSlashed events raised by the NodeStaking contract.
 type NodeStakingNodeSlashedIterator struct {
 	Event *NodeStakingNodeSlashed // Event containing the contract specifics and raw log
@@ -646,13 +1138,12 @@ func (it *NodeStakingNodeSlashedIterator) Close() error {
 type NodeStakingNodeSlashed struct {
 	NodeAddress   common.Address
 	StakedBalance *big.Int
-	StakedCredits *big.Int
 	Raw           types.Log // Blockchain specific contextual infos
 }
 
-// FilterNodeSlashed is a free log retrieval operation binding the contract event 0xa8d720d0a0a2e7c96bf9eb87433901ebb6331356c8f3283b2568de34478703cc.
+// FilterNodeSlashed is a free log retrieval operation binding the contract event 0x51cf713376ddb1e5f5828bb6aa39d99de812176d62c3d3550bdc4e0b5e86e1a5.
 //
-// Solidity: event NodeSlashed(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeSlashed(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) FilterNodeSlashed(opts *bind.FilterOpts, nodeAddress []common.Address) (*NodeStakingNodeSlashedIterator, error) {
 
 	var nodeAddressRule []interface{}
@@ -667,9 +1158,9 @@ func (_NodeStaking *NodeStakingFilterer) FilterNodeSlashed(opts *bind.FilterOpts
 	return &NodeStakingNodeSlashedIterator{contract: _NodeStaking.contract, event: "NodeSlashed", logs: logs, sub: sub}, nil
 }
 
-// WatchNodeSlashed is a free log subscription operation binding the contract event 0xa8d720d0a0a2e7c96bf9eb87433901ebb6331356c8f3283b2568de34478703cc.
+// WatchNodeSlashed is a free log subscription operation binding the contract event 0x51cf713376ddb1e5f5828bb6aa39d99de812176d62c3d3550bdc4e0b5e86e1a5.
 //
-// Solidity: event NodeSlashed(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeSlashed(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) WatchNodeSlashed(opts *bind.WatchOpts, sink chan<- *NodeStakingNodeSlashed, nodeAddress []common.Address) (event.Subscription, error) {
 
 	var nodeAddressRule []interface{}
@@ -709,9 +1200,9 @@ func (_NodeStaking *NodeStakingFilterer) WatchNodeSlashed(opts *bind.WatchOpts, 
 	}), nil
 }
 
-// ParseNodeSlashed is a log parse operation binding the contract event 0xa8d720d0a0a2e7c96bf9eb87433901ebb6331356c8f3283b2568de34478703cc.
+// ParseNodeSlashed is a log parse operation binding the contract event 0x51cf713376ddb1e5f5828bb6aa39d99de812176d62c3d3550bdc4e0b5e86e1a5.
 //
-// Solidity: event NodeSlashed(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeSlashed(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) ParseNodeSlashed(log types.Log) (*NodeStakingNodeSlashed, error) {
 	event := new(NodeStakingNodeSlashed)
 	if err := _NodeStaking.contract.UnpackLog(event, "NodeSlashed", log); err != nil {
@@ -792,13 +1283,12 @@ func (it *NodeStakingNodeStakedIterator) Close() error {
 type NodeStakingNodeStaked struct {
 	NodeAddress   common.Address
 	StakedBalance *big.Int
-	StakedCredits *big.Int
 	Raw           types.Log // Blockchain specific contextual infos
 }
 
-// FilterNodeStaked is a free log retrieval operation binding the contract event 0x99a32eb4ddb5f70b97ac30749039f48ad104fff6c815cc699424d4ec8356224a.
+// FilterNodeStaked is a free log retrieval operation binding the contract event 0xf02b9c90d1a12278c9244be1ddc794b15f8a3b9d50cf085ad7711683c0f9a090.
 //
-// Solidity: event NodeStaked(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeStaked(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) FilterNodeStaked(opts *bind.FilterOpts, nodeAddress []common.Address) (*NodeStakingNodeStakedIterator, error) {
 
 	var nodeAddressRule []interface{}
@@ -813,9 +1303,9 @@ func (_NodeStaking *NodeStakingFilterer) FilterNodeStaked(opts *bind.FilterOpts,
 	return &NodeStakingNodeStakedIterator{contract: _NodeStaking.contract, event: "NodeStaked", logs: logs, sub: sub}, nil
 }
 
-// WatchNodeStaked is a free log subscription operation binding the contract event 0x99a32eb4ddb5f70b97ac30749039f48ad104fff6c815cc699424d4ec8356224a.
+// WatchNodeStaked is a free log subscription operation binding the contract event 0xf02b9c90d1a12278c9244be1ddc794b15f8a3b9d50cf085ad7711683c0f9a090.
 //
-// Solidity: event NodeStaked(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeStaked(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) WatchNodeStaked(opts *bind.WatchOpts, sink chan<- *NodeStakingNodeStaked, nodeAddress []common.Address) (event.Subscription, error) {
 
 	var nodeAddressRule []interface{}
@@ -855,9 +1345,9 @@ func (_NodeStaking *NodeStakingFilterer) WatchNodeStaked(opts *bind.WatchOpts, s
 	}), nil
 }
 
-// ParseNodeStaked is a log parse operation binding the contract event 0x99a32eb4ddb5f70b97ac30749039f48ad104fff6c815cc699424d4ec8356224a.
+// ParseNodeStaked is a log parse operation binding the contract event 0xf02b9c90d1a12278c9244be1ddc794b15f8a3b9d50cf085ad7711683c0f9a090.
 //
-// Solidity: event NodeStaked(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeStaked(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) ParseNodeStaked(log types.Log) (*NodeStakingNodeStaked, error) {
 	event := new(NodeStakingNodeStaked)
 	if err := _NodeStaking.contract.UnpackLog(event, "NodeStaked", log); err != nil {
@@ -1082,13 +1572,12 @@ func (it *NodeStakingNodeUnstakedIterator) Close() error {
 type NodeStakingNodeUnstaked struct {
 	NodeAddress   common.Address
 	StakedBalance *big.Int
-	StakedCredits *big.Int
 	Raw           types.Log // Blockchain specific contextual infos
 }
 
-// FilterNodeUnstaked is a free log retrieval operation binding the contract event 0xb4288416c9357d00b226d50e61ee6f3d6d7b94406ea7ede4c928a2dd3a4d0a0b.
+// FilterNodeUnstaked is a free log retrieval operation binding the contract event 0x67722cd735ac17faf7e2ff2d57ac864a5a1f41405ee9113c16a413344ce31fbf.
 //
-// Solidity: event NodeUnstaked(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeUnstaked(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) FilterNodeUnstaked(opts *bind.FilterOpts, nodeAddress []common.Address) (*NodeStakingNodeUnstakedIterator, error) {
 
 	var nodeAddressRule []interface{}
@@ -1103,9 +1592,9 @@ func (_NodeStaking *NodeStakingFilterer) FilterNodeUnstaked(opts *bind.FilterOpt
 	return &NodeStakingNodeUnstakedIterator{contract: _NodeStaking.contract, event: "NodeUnstaked", logs: logs, sub: sub}, nil
 }
 
-// WatchNodeUnstaked is a free log subscription operation binding the contract event 0xb4288416c9357d00b226d50e61ee6f3d6d7b94406ea7ede4c928a2dd3a4d0a0b.
+// WatchNodeUnstaked is a free log subscription operation binding the contract event 0x67722cd735ac17faf7e2ff2d57ac864a5a1f41405ee9113c16a413344ce31fbf.
 //
-// Solidity: event NodeUnstaked(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeUnstaked(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) WatchNodeUnstaked(opts *bind.WatchOpts, sink chan<- *NodeStakingNodeUnstaked, nodeAddress []common.Address) (event.Subscription, error) {
 
 	var nodeAddressRule []interface{}
@@ -1145,12 +1634,165 @@ func (_NodeStaking *NodeStakingFilterer) WatchNodeUnstaked(opts *bind.WatchOpts,
 	}), nil
 }
 
-// ParseNodeUnstaked is a log parse operation binding the contract event 0xb4288416c9357d00b226d50e61ee6f3d6d7b94406ea7ede4c928a2dd3a4d0a0b.
+// ParseNodeUnstaked is a log parse operation binding the contract event 0x67722cd735ac17faf7e2ff2d57ac864a5a1f41405ee9113c16a413344ce31fbf.
 //
-// Solidity: event NodeUnstaked(address indexed nodeAddress, uint256 stakedBalance, uint256 stakedCredits)
+// Solidity: event NodeUnstaked(address indexed nodeAddress, uint256 stakedBalance)
 func (_NodeStaking *NodeStakingFilterer) ParseNodeUnstaked(log types.Log) (*NodeStakingNodeUnstaked, error) {
 	event := new(NodeStakingNodeUnstaked)
 	if err := _NodeStaking.contract.UnpackLog(event, "NodeUnstaked", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// NodeStakingObserverUpdatedIterator is returned from FilterObserverUpdated and is used to iterate over the raw logs and unpacked data for ObserverUpdated events raised by the NodeStaking contract.
+type NodeStakingObserverUpdatedIterator struct {
+	Event *NodeStakingObserverUpdated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *NodeStakingObserverUpdatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(NodeStakingObserverUpdated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(NodeStakingObserverUpdated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *NodeStakingObserverUpdatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *NodeStakingObserverUpdatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// NodeStakingObserverUpdated represents a ObserverUpdated event raised by the NodeStaking contract.
+type NodeStakingObserverUpdated struct {
+	OldObserver common.Address
+	NewObserver common.Address
+	Raw         types.Log // Blockchain specific contextual infos
+}
+
+// FilterObserverUpdated is a free log retrieval operation binding the contract event 0x5d62ce8ed7aebf9654df2f8c5372e47942b59bcb73a5d26ac71edaf9f670daec.
+//
+// Solidity: event ObserverUpdated(address indexed oldObserver, address indexed newObserver)
+func (_NodeStaking *NodeStakingFilterer) FilterObserverUpdated(opts *bind.FilterOpts, oldObserver []common.Address, newObserver []common.Address) (*NodeStakingObserverUpdatedIterator, error) {
+
+	var oldObserverRule []interface{}
+	for _, oldObserverItem := range oldObserver {
+		oldObserverRule = append(oldObserverRule, oldObserverItem)
+	}
+	var newObserverRule []interface{}
+	for _, newObserverItem := range newObserver {
+		newObserverRule = append(newObserverRule, newObserverItem)
+	}
+
+	logs, sub, err := _NodeStaking.contract.FilterLogs(opts, "ObserverUpdated", oldObserverRule, newObserverRule)
+	if err != nil {
+		return nil, err
+	}
+	return &NodeStakingObserverUpdatedIterator{contract: _NodeStaking.contract, event: "ObserverUpdated", logs: logs, sub: sub}, nil
+}
+
+// WatchObserverUpdated is a free log subscription operation binding the contract event 0x5d62ce8ed7aebf9654df2f8c5372e47942b59bcb73a5d26ac71edaf9f670daec.
+//
+// Solidity: event ObserverUpdated(address indexed oldObserver, address indexed newObserver)
+func (_NodeStaking *NodeStakingFilterer) WatchObserverUpdated(opts *bind.WatchOpts, sink chan<- *NodeStakingObserverUpdated, oldObserver []common.Address, newObserver []common.Address) (event.Subscription, error) {
+
+	var oldObserverRule []interface{}
+	for _, oldObserverItem := range oldObserver {
+		oldObserverRule = append(oldObserverRule, oldObserverItem)
+	}
+	var newObserverRule []interface{}
+	for _, newObserverItem := range newObserver {
+		newObserverRule = append(newObserverRule, newObserverItem)
+	}
+
+	logs, sub, err := _NodeStaking.contract.WatchLogs(opts, "ObserverUpdated", oldObserverRule, newObserverRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(NodeStakingObserverUpdated)
+				if err := _NodeStaking.contract.UnpackLog(event, "ObserverUpdated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseObserverUpdated is a log parse operation binding the contract event 0x5d62ce8ed7aebf9654df2f8c5372e47942b59bcb73a5d26ac71edaf9f670daec.
+//
+// Solidity: event ObserverUpdated(address indexed oldObserver, address indexed newObserver)
+func (_NodeStaking *NodeStakingFilterer) ParseObserverUpdated(log types.Log) (*NodeStakingObserverUpdated, error) {
+	event := new(NodeStakingObserverUpdated)
+	if err := _NodeStaking.contract.UnpackLog(event, "ObserverUpdated", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log
@@ -1304,150 +1946,6 @@ func (_NodeStaking *NodeStakingFilterer) WatchOwnershipTransferred(opts *bind.Wa
 func (_NodeStaking *NodeStakingFilterer) ParseOwnershipTransferred(log types.Log) (*NodeStakingOwnershipTransferred, error) {
 	event := new(NodeStakingOwnershipTransferred)
 	if err := _NodeStaking.contract.UnpackLog(event, "OwnershipTransferred", log); err != nil {
-		return nil, err
-	}
-	event.Raw = log
-	return event, nil
-}
-
-// NodeStakingParameterControllerUpdatedIterator is returned from FilterParameterControllerUpdated and is used to iterate over the raw logs and unpacked data for ParameterControllerUpdated events raised by the NodeStaking contract.
-type NodeStakingParameterControllerUpdatedIterator struct {
-	Event *NodeStakingParameterControllerUpdated // Event containing the contract specifics and raw log
-
-	contract *bind.BoundContract // Generic contract to use for unpacking event data
-	event    string              // Event name to use for unpacking event data
-
-	logs chan types.Log        // Log channel receiving the found contract events
-	sub  ethereum.Subscription // Subscription for errors, completion and termination
-	done bool                  // Whether the subscription completed delivering logs
-	fail error                 // Occurred error to stop iteration
-}
-
-// Next advances the iterator to the subsequent event, returning whether there
-// are any more events found. In case of a retrieval or parsing error, false is
-// returned and Error() can be queried for the exact failure.
-func (it *NodeStakingParameterControllerUpdatedIterator) Next() bool {
-	// If the iterator failed, stop iterating
-	if it.fail != nil {
-		return false
-	}
-	// If the iterator completed, deliver directly whatever's available
-	if it.done {
-		select {
-		case log := <-it.logs:
-			it.Event = new(NodeStakingParameterControllerUpdated)
-			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-				it.fail = err
-				return false
-			}
-			it.Event.Raw = log
-			return true
-
-		default:
-			return false
-		}
-	}
-	// Iterator still in progress, wait for either a data or an error event
-	select {
-	case log := <-it.logs:
-		it.Event = new(NodeStakingParameterControllerUpdated)
-		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-			it.fail = err
-			return false
-		}
-		it.Event.Raw = log
-		return true
-
-	case err := <-it.sub.Err():
-		it.done = true
-		it.fail = err
-		return it.Next()
-	}
-}
-
-// Error returns any retrieval or parsing error occurred during filtering.
-func (it *NodeStakingParameterControllerUpdatedIterator) Error() error {
-	return it.fail
-}
-
-// Close terminates the iteration process, releasing any pending underlying
-// resources.
-func (it *NodeStakingParameterControllerUpdatedIterator) Close() error {
-	it.sub.Unsubscribe()
-	return nil
-}
-
-// NodeStakingParameterControllerUpdated represents a ParameterControllerUpdated event raised by the NodeStaking contract.
-type NodeStakingParameterControllerUpdated struct {
-	ParameterControllerAddress common.Address
-	Raw                        types.Log // Blockchain specific contextual infos
-}
-
-// FilterParameterControllerUpdated is a free log retrieval operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
-//
-// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
-func (_NodeStaking *NodeStakingFilterer) FilterParameterControllerUpdated(opts *bind.FilterOpts, parameterControllerAddress []common.Address) (*NodeStakingParameterControllerUpdatedIterator, error) {
-
-	var parameterControllerAddressRule []interface{}
-	for _, parameterControllerAddressItem := range parameterControllerAddress {
-		parameterControllerAddressRule = append(parameterControllerAddressRule, parameterControllerAddressItem)
-	}
-
-	logs, sub, err := _NodeStaking.contract.FilterLogs(opts, "ParameterControllerUpdated", parameterControllerAddressRule)
-	if err != nil {
-		return nil, err
-	}
-	return &NodeStakingParameterControllerUpdatedIterator{contract: _NodeStaking.contract, event: "ParameterControllerUpdated", logs: logs, sub: sub}, nil
-}
-
-// WatchParameterControllerUpdated is a free log subscription operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
-//
-// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
-func (_NodeStaking *NodeStakingFilterer) WatchParameterControllerUpdated(opts *bind.WatchOpts, sink chan<- *NodeStakingParameterControllerUpdated, parameterControllerAddress []common.Address) (event.Subscription, error) {
-
-	var parameterControllerAddressRule []interface{}
-	for _, parameterControllerAddressItem := range parameterControllerAddress {
-		parameterControllerAddressRule = append(parameterControllerAddressRule, parameterControllerAddressItem)
-	}
-
-	logs, sub, err := _NodeStaking.contract.WatchLogs(opts, "ParameterControllerUpdated", parameterControllerAddressRule)
-	if err != nil {
-		return nil, err
-	}
-	return event.NewSubscription(func(quit <-chan struct{}) error {
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case log := <-logs:
-				// New log arrived, parse the event and forward to the user
-				event := new(NodeStakingParameterControllerUpdated)
-				if err := _NodeStaking.contract.UnpackLog(event, "ParameterControllerUpdated", log); err != nil {
-					return err
-				}
-				event.Raw = log
-
-				select {
-				case sink <- event:
-				case err := <-sub.Err():
-					return err
-				case <-quit:
-					return nil
-				}
-			case err := <-sub.Err():
-				return err
-			case <-quit:
-				return nil
-			}
-		}
-	}), nil
-}
-
-// ParseParameterControllerUpdated is a log parse operation binding the contract event 0x4509827890b8a9ffbc5a343f5c719169da089858e3ba940cc3f33f4b95454ba3.
-//
-// Solidity: event ParameterControllerUpdated(address indexed parameterControllerAddress)
-func (_NodeStaking *NodeStakingFilterer) ParseParameterControllerUpdated(log types.Log) (*NodeStakingParameterControllerUpdated, error) {
-	event := new(NodeStakingParameterControllerUpdated)
-	if err := _NodeStaking.contract.UnpackLog(event, "ParameterControllerUpdated", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log

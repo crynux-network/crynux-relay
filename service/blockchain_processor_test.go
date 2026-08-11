@@ -304,7 +304,6 @@ func TestNodeStakedSkipsMismatchedNetwork(t *testing.T) {
 	err := nodeStaked(ctx, db, &bindings.NodeStakingNodeStaked{
 		NodeAddress:   nodeAddress,
 		StakedBalance: big.NewInt(100),
-		StakedCredits: big.NewInt(20),
 	}, "network-b")
 	if err != nil {
 		t.Fatalf("nodeStaked should skip mismatched network without error: %v", err)
@@ -335,7 +334,6 @@ func TestNodeStakedClearsMaxStakingWhenScoreStakeBecomesZero(t *testing.T) {
 	err := nodeStaked(ctx, db, &bindings.NodeStakingNodeStaked{
 		NodeAddress:   nodeAddress,
 		StakedBalance: big.NewInt(0),
-		StakedCredits: big.NewInt(0),
 	}, "network-a")
 	if err != nil {
 		t.Fatalf("nodeStaked failed: %v", err)
@@ -691,7 +689,6 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 		}
 		return bindings.NodeStakingStakingInfo{
 			StakedBalance: big.NewInt(10),
-			StakedCredits: big.NewInt(0),
 		}, nil
 	}
 	getNodeDelegatorShare = func(ctx context.Context, address common.Address, network string) (uint8, error) {
@@ -764,7 +761,6 @@ func TestSetNodeStatusJoinWithZeroShareKeepsDelegationsInEffectiveCache(t *testi
 		}
 		return bindings.NodeStakingStakingInfo{
 			StakedBalance: big.NewInt(10),
-			StakedCredits: big.NewInt(0),
 		}, nil
 	}
 	getNodeDelegatorShare = func(ctx context.Context, address common.Address, network string) (uint8, error) {

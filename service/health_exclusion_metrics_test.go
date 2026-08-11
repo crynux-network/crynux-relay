@@ -169,7 +169,6 @@ func TestSetNodeStatusJoinDoesNotIncrementHealthRecovered(t *testing.T) {
 	getStakingInfo = func(ctx context.Context, address common.Address, network string) (bindings.NodeStakingStakingInfo, error) {
 		return bindings.NodeStakingStakingInfo{
 			StakedBalance: big.NewInt(10),
-			StakedCredits: big.NewInt(0),
 		}, nil
 	}
 	getNodeDelegatorShare = func(ctx context.Context, address common.Address, network string) (uint8, error) {

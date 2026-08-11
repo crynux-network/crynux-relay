@@ -36,7 +36,6 @@ type BlockchainClient struct {
 	RpcEndpoint                      string
 	BenefitAddressContractInstance   *bindings.BenefitAddress
 	NodeStakingContractInstance      *bindings.NodeStaking
-	CreditsContractInstance          *bindings.Credits
 	DelegatedStakingContractInstance *bindings.DelegatedStaking
 	ChainID                          *big.Int
 	GasPrice                         *big.Int
@@ -83,11 +82,6 @@ func initBlockchainClient(ctx context.Context, network string) error {
 		return err
 	}
 
-	creditsInstance, err := bindings.NewCredits(common.HexToAddress(blockchain.Contracts.Credits), client)
-	if err != nil {
-		return err
-	}
-
 	delegatedStakingInstance, err := bindings.NewDelegatedStaking(common.HexToAddress(blockchain.Contracts.DelegatedStaking), client)
 	if err != nil {
 		return err
@@ -116,7 +110,6 @@ func initBlockchainClient(ctx context.Context, network string) error {
 		RpcEndpoint:                      blockchain.RpcEndpoint,
 		BenefitAddressContractInstance:   benefitAddressInstance,
 		NodeStakingContractInstance:      nodeStakingInstance,
-		CreditsContractInstance:          creditsInstance,
 		DelegatedStakingContractInstance: delegatedStakingInstance,
 		ChainID:                          chainID,
 		GasPrice:                         gasPrice,

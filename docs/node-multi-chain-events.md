@@ -12,7 +12,7 @@ The node's current blockchain network MUST be decided during node join. The join
 
 Relay MUST treat the node row's `network` as the authoritative network for that node after join. Later node APIs, admin APIs, task selection, staking reads, slashing, vesting stake refresh, delegated staking projection, and node event projection MUST use the node row's `network`. These flows MUST NOT require callers to pass an additional network parameter for a joined node address.
 
-When a node joins Relay, Relay MUST validate the node's operator staking state against the joined network's `NodeStaking` contract before marking the node available. Relay MUST read `staked_balance + staked_credits` for the node address on that network and require it to equal the join request's staking amount.
+When a node joins Relay, Relay MUST validate the node's operator staking state against the joined network's `NodeStaking` contract before marking the node available. Relay MUST read `staked_balance` for the node address on that network and require it to equal the join request's staking amount.
 
 ## Join-Time Staking State
 
