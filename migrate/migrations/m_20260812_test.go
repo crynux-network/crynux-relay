@@ -7,6 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
+const stakingResetNetworkForM20260812Test = "crynux-on-base"
+
+var stakingResetNetworksForM20260812Test = []string{stakingResetNetworkForM20260812Test}
+
 type resetNodeForM20260812Test struct {
 	ID                      uint `gorm:"primaryKey"`
 	Address                 string
@@ -160,13 +164,13 @@ func TestM20260812ResetsOnlyStakingCurrentState(t *testing.T) {
 	db := openM20260812TestDB(t)
 	const nodeAddress = "0x0000000000000000000000000000000000000001"
 
-	mustCreateM20260812Test(t, db, &resetNodeForM20260812Test{Address: nodeAddress, Network: stakingResetNetworkForM20260812})
+	mustCreateM20260812Test(t, db, &resetNodeForM20260812Test{Address: nodeAddress, Network: stakingResetNetworkForM20260812Test})
 	mustCreateM20260812Test(t, db, &nodeModelForM20260812Test{NodeAddress: nodeAddress})
 	mustCreateM20260812Test(t, db, &nodeModelForM20260812Test{NodeAddress: "orphan"})
 	mustCreateM20260812Test(t, db, &nodeModelSelectionForM20260812Test{NodeAddress: nodeAddress})
 	mustCreateM20260812Test(t, db, &nodeModelSelectionForM20260812Test{NodeAddress: "orphan"})
 	mustCreateM20260812Test(t, db, &nodeNameCountForM20260812Test{})
-	for _, network := range []string{stakingResetNetworkForM20260812, "other-network"} {
+	for _, network := range []string{stakingResetNetworkForM20260812Test, "other-network"} {
 		mustCreateM20260812Test(t, db, &delegationForM20260812Test{Network: network})
 		mustCreateM20260812Test(t, db, &delegatedSlashJobForM20260812Test{Network: network})
 		mustCreateM20260812Test(t, db, &delegatedSlashRecordForM20260812Test{Network: network})
@@ -180,7 +184,7 @@ func TestM20260812ResetsOnlyStakingCurrentState(t *testing.T) {
 	mustCreateM20260812Test(t, db, &networkNodeDataForM20260812Test{Value: "history"})
 	mustCreateM20260812Test(t, db, &eventForM20260812Test{Value: "event"})
 
-	migration := M20260812(db)
+	migration := m20260812WithTargetNetworks(db, stakingResetNetworksForM20260812Test)
 	if err := migration.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -203,7 +207,7 @@ func TestM20260812ResetsOnlyStakingCurrentState(t *testing.T) {
 		&leaderboardSnapshotForM20260812Test{},
 		&blockchainCursorForM20260812Test{},
 	} {
-		if count := countM20260812Test(t, db, model, "network = ?", stakingResetNetworkForM20260812); count != 0 {
+		if count := countM20260812Test(t, db, model, "network = ?", stakingResetNetworkForM20260812Test); count != 0 {
 			t.Fatalf("%T retained target-network rows", model)
 		}
 		if count := countM20260812Test(t, db, model, "network = ?", "other-network"); count != 1 {
@@ -230,17 +234,96 @@ func TestM20260812ResetsOnlyStakingCurrentState(t *testing.T) {
 	}
 }
 
+func TestM20260812ResetsMultipleConfiguredNetworks(t *testing.T) {
+	db := openM20260812TestDB(t)
+	targetNetworks := []string{"network-a", "network-b"}
+
+	for index, network := range targetNetworks {
+		mustCreateM20260812Test(t, db, &resetNodeForM20260812Test{
+			Address: "target-node-" + network,
+			Network: network,
+		})
+		mustCreateM20260812Test(t, db, &delegationForM20260812Test{Network: network})
+		mustCreateM20260812Test(t, db, &blockchainCursorForM20260812Test{Network: network})
+		if index == 0 {
+			mustCreateM20260812Test(t, db, &nodeModelForM20260812Test{NodeAddress: "target-node-" + network})
+		}
+	}
+	mustCreateM20260812Test(t, db, &delegationForM20260812Test{Network: "historical-network"})
+	mustCreateM20260812Test(t, db, &blockchainCursorForM20260812Test{Network: "deposit-only-network"})
+	mustCreateM20260812Test(t, db, &nodeNameCountForM20260812Test{})
+
+	if err := m20260812WithTargetNetworks(db, targetNetworks).Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	for _, model := range []interface{}{
+		&resetNodeForM20260812Test{},
+		&nodeModelForM20260812Test{},
+		&nodeNameCountForM20260812Test{},
+	} {
+		if count := countM20260812Test(t, db, model, ""); count != 0 {
+			t.Fatalf("%T has %d rows after multi-network reset", model, count)
+		}
+	}
+	for _, model := range []interface{}{
+		&delegationForM20260812Test{},
+		&blockchainCursorForM20260812Test{},
+	} {
+		if count := countM20260812Test(t, db, model, "network IN ?", targetNetworks); count != 0 {
+			t.Fatalf("%T retained configured-network rows", model)
+		}
+	}
+	if count := countM20260812Test(t, db, &delegationForM20260812Test{}, "network = ?", "historical-network"); count != 1 {
+		t.Fatalf("historical delegation rows changed: %d", count)
+	}
+	if count := countM20260812Test(t, db, &blockchainCursorForM20260812Test{}, "network = ?", "deposit-only-network"); count != 1 {
+		t.Fatalf("deposit-only cursor rows changed: %d", count)
+	}
+}
+
+func TestM20260812StopsWhenNodeUsesUnconfiguredNetwork(t *testing.T) {
+	db := openM20260812TestDB(t)
+	mustCreateM20260812Test(t, db, &resetNodeForM20260812Test{
+		Address: "unconfigured-node",
+		Network: "unconfigured-network",
+	})
+	mustCreateM20260812Test(t, db, &nodeNameCountForM20260812Test{})
+
+	if err := m20260812WithTargetNetworks(db, stakingResetNetworksForM20260812Test).Migrate(); err == nil {
+		t.Fatal("expected migration to reject a node on an unconfigured network")
+	}
+	if count := countM20260812Test(t, db, &resetNodeForM20260812Test{}, ""); count != 1 {
+		t.Fatalf("node rows changed after rejected reset: %d", count)
+	}
+	if count := countM20260812Test(t, db, &nodeNameCountForM20260812Test{}, ""); count != 1 {
+		t.Fatalf("node name counts changed after rejected reset: %d", count)
+	}
+}
+
+func TestM20260812StopsWhenTargetNetworksAreEmpty(t *testing.T) {
+	db := openM20260812TestDB(t)
+	mustCreateM20260812Test(t, db, &nodeNameCountForM20260812Test{})
+
+	if err := m20260812WithTargetNetworks(db, nil).Migrate(); err == nil {
+		t.Fatal("expected migration to reject an empty target network list")
+	}
+	if count := countM20260812Test(t, db, &nodeNameCountForM20260812Test{}, ""); count != 1 {
+		t.Fatalf("node name counts changed after rejected reset: %d", count)
+	}
+}
+
 func TestM20260812StopsWhenNodeHasTaskCommitment(t *testing.T) {
 	db := openM20260812TestDB(t)
 	commitment := "task-1"
 	mustCreateM20260812Test(t, db, &resetNodeForM20260812Test{
 		Address:                 "0x0000000000000000000000000000000000000001",
-		Network:                 stakingResetNetworkForM20260812,
+		Network:                 stakingResetNetworkForM20260812Test,
 		CurrentTaskIDCommitment: &commitment,
 	})
 	mustCreateM20260812Test(t, db, &nodeNameCountForM20260812Test{})
 
-	if err := M20260812(db).Migrate(); err == nil {
+	if err := m20260812WithTargetNetworks(db, stakingResetNetworksForM20260812Test).Migrate(); err == nil {
 		t.Fatal("expected migration to reject a node with a task commitment")
 	}
 	if count := countM20260812Test(t, db, &resetNodeForM20260812Test{}, ""); count != 1 {
@@ -255,15 +338,15 @@ func TestM20260812RollsBackTheWholeResetOnFailure(t *testing.T) {
 	db := openM20260812TestDB(t)
 	mustCreateM20260812Test(t, db, &resetNodeForM20260812Test{
 		Address: "0x0000000000000000000000000000000000000001",
-		Network: stakingResetNetworkForM20260812,
+		Network: stakingResetNetworkForM20260812Test,
 	})
 	mustCreateM20260812Test(t, db, &nodeNameCountForM20260812Test{})
-	mustCreateM20260812Test(t, db, &delegationForM20260812Test{Network: stakingResetNetworkForM20260812})
+	mustCreateM20260812Test(t, db, &delegationForM20260812Test{Network: stakingResetNetworkForM20260812Test})
 	if err := db.Migrator().DropTable(&blockchainCursorForM20260812Test{}); err != nil {
 		t.Fatalf("drop cursor table: %v", err)
 	}
 
-	if err := M20260812(db).Migrate(); err == nil {
+	if err := m20260812WithTargetNetworks(db, stakingResetNetworksForM20260812Test).Migrate(); err == nil {
 		t.Fatal("expected migration to fail when the cursor table is missing")
 	}
 	for _, model := range []interface{}{
