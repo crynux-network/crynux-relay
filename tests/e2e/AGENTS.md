@@ -67,6 +67,5 @@
   - `blockchains.near.account.address`: signer address for near operations. It must match `blockchain_system_private_key.txt`.
   - `withdraw.relay_wallet_address`: authorization address for Relay Wallet calls to Relay Wallet APIs on Relay. It must equal the address derived from the key `relay.api.private_key_file` in the Relay Wallet's config file.
   - `withdraw.withdrawal_fee_address`: relay operator fee income address for withdrawal fees.
-  - `credits.api_auth_address`: only this signer is allowed to call the credits creation API.
   - `dao.task_fee_share_address`: task fee share recipient address and one of the withdrawal fee waiver addresses.
   - `relay_account.deposit_address`: on-chain deposit target address for relay account top-ups.

@@ -11,8 +11,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type GetLockedVestingInput struct {
+type GetLockedVestingSigningInput struct {
 	Address string `path:"address" json:"address" description:"Address of account"`
+}
+
+type GetLockedVestingInput struct {
+	GetLockedVestingSigningInput
+	Timestamp *int64 `query:"timestamp" json:"timestamp" description:"Signature timestamp"`
+	Signature string `query:"signature" json:"signature" description:"Signature"`
 }
 
 type GetLockedVestingResponse struct {

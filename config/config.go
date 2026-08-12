@@ -155,9 +155,6 @@ func checkFundingNetworks() error {
 		if !common.IsHexAddress(blockchain.Contracts.NodeStaking) {
 			return fmt.Errorf("blockchain %s node staking contract is invalid", network)
 		}
-		if !common.IsHexAddress(blockchain.Contracts.Credits) {
-			return fmt.Errorf("blockchain %s credits contract is invalid", network)
-		}
 		if blockchain.Contracts.DelegatedStaking != "" && !common.IsHexAddress(blockchain.Contracts.DelegatedStaking) {
 			return fmt.Errorf("blockchain %s delegated staking contract is invalid", network)
 		}

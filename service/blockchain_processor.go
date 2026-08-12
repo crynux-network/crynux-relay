@@ -549,7 +549,7 @@ func nodeStaked(ctx context.Context, db *gorm.DB, event *bindings.NodeStakingNod
 	defer dbCancel()
 
 	address := event.NodeAddress.Hex()
-	stakingAmount := big.NewInt(0).Add(event.StakedBalance, event.StakedCredits)
+	stakingAmount := big.NewInt(0).Set(event.StakedBalance)
 	node, err := getNodeForChainEvent(dbCtx, db, address, network, "NodeStaked")
 	if err != nil {
 		log.Errorf("NodeStaked: failed to get node %s: %v", address, err)
@@ -877,8 +877,8 @@ func createOrResumeDelegatedSlashJob(ctx context.Context, db *gorm.DB, event *bi
 	} else if node == nil {
 		return nil
 	}
-	log.Infof("NodeSlashed: processing node slash, node: %s, network: %s, staked balance: %s, staked credits: %s, tx: %s, block: %d, log index: %d",
-		nodeAddress, network, event.StakedBalance.String(), event.StakedCredits.String(), event.Raw.TxHash.Hex(), event.Raw.BlockNumber, event.Raw.Index)
+	log.Infof("NodeSlashed: processing node slash, node: %s, network: %s, staked balance: %s, tx: %s, block: %d, log index: %d",
+		nodeAddress, network, event.StakedBalance.String(), event.Raw.TxHash.Hex(), event.Raw.BlockNumber, event.Raw.Index)
 	if err := SlashNodeVestings(ctx, db, nodeAddress, time.Now().UTC()); err != nil {
 		return err
 	}

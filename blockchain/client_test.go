@@ -38,11 +38,6 @@ func TestGetErrorMessageFromReceipt(t *testing.T) {
 		t.Fatalf("Failed to new node staking instance: %v", err)
 	}
 
-	creditsInstance, err := bindings.NewCredits(common.HexToAddress("0xB47E277aE7Cbb93949D7202b6e29e33f541EC262"), client)
-	if err != nil {
-		t.Fatalf("Failed to new credits instance: %v", err)
-	}
-
 	nonce, err := client.PendingNonceAt(ctx, common.HexToAddress("0x56572715E0eb7149a6465870f59ef3fa3d4887C8"))
 	if err != nil {
 		t.Fatalf("Failed to get nonce: %v", err)
@@ -52,7 +47,6 @@ func TestGetErrorMessageFromReceipt(t *testing.T) {
 		RpcClient:                      client,
 		BenefitAddressContractInstance: benefitAddressInstance,
 		NodeStakingContractInstance:    nodeStakingInstance,
-		CreditsContractInstance:        creditsInstance,
 		ChainID:                        big.NewInt(1313161574),
 		GasPrice:                       big.NewInt(700000000),
 		GasLimit:                       8000000,

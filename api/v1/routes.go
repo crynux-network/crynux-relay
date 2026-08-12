@@ -2,7 +2,6 @@ package v1
 
 import (
 	"crynux_relay/api/v1/client"
-	"crynux_relay/api/v1/credits"
 	"crynux_relay/api/v1/delegator"
 	"crynux_relay/api/v1/event"
 	"crynux_relay/api/v1/incentive"
@@ -313,16 +312,6 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Reject withdraw request"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(withdraw.RejectWithdrawRequest, 200))
-
-	creditsGroup := v1g.Group("credits", "credits", "credits related APIs")
-	creditsGroup.POST("/:address", []fizz.OperationOption{
-		fizz.Summary("Create credits"),
-		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(credits.CreateCredits, 200))
-	creditsGroup.GET("/:id", []fizz.OperationOption{
-		fizz.Summary("Get credits record"),
-		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(credits.GetCreditsRecord, 200))
 
 	clientGroup := v1g.Group("client", "client", "client related APIs")
 	clientGroup.POST("/connect_wallet", []fizz.OperationOption{

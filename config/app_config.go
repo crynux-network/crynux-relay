@@ -20,7 +20,6 @@ type BlockchainAccountConfig struct {
 type SystemBlockchainContractsConfig struct {
 	BenefitAddress   string `mapstructure:"benefit_address"`
 	NodeStaking      string `mapstructure:"node_staking"`
-	Credits          string `mapstructure:"credits"`
 	DelegatedStaking string `mapstructure:"delegated_staking"`
 }
 
@@ -209,10 +208,6 @@ type AppConfig struct {
 		WithdrawalFee        uint64 `mapstructure:"withdrawal_fee"`
 		WithdrawalFeeAddress string `mapstructure:"withdrawal_fee_address"`
 	} `mapstructure:"withdraw"`
-
-	Credits struct {
-		APIAuthAddress string `mapstructure:"api_auth_address"`
-	} `mapstructure:"credits"`
 
 	Dao struct {
 		TaskFeeShareAddress string `mapstructure:"task_fee_share_address"`

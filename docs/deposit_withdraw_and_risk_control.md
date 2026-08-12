@@ -305,6 +305,11 @@ Each funding network entry under `blockchains` and `deposit_withdraw_networks` c
 | `GET` | `/v2/relay_account/:address/vesting/list` | Query vesting records with pagination |
 | `GET` | `/v1/network/withdraw_config` | Query withdraw fee and limit config of all funding networks: `network`, `token_type`, `withdrawal_fee`, `withdrawal_min`, `withdrawal_fee_tiers`, and `max_withdrawals_per_day` |
 
+`GET /v2/relay_account/:address/vesting/locked` and `GET /v2/relay_account/:address/vesting/list` MUST allow access when either authentication method succeeds:
+
+- JWT authentication: the JWT address MUST equal `:address`.
+- Signature authentication: the recovered signer address MUST equal `:address`. The signature payload MUST contain only `address`.
+
 ### Wallet APIs
 
 | Method | Path | Description |

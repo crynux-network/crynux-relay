@@ -67,7 +67,6 @@ blockchains:
     contracts:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
-      credits: "0x0000000000000000000000000000000000000003"
     max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
@@ -195,7 +194,6 @@ blockchains:
     contracts:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
-      credits: "0x0000000000000000000000000000000000000003"
     max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
@@ -328,7 +326,6 @@ blockchains:
     contracts:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
-      credits: "0x0000000000000000000000000000000000000003"
     max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
@@ -419,7 +416,6 @@ blockchains:
     contracts:
       benefit_address: "0x0000000000000000000000000000000000000001"
       node_staking: "0x0000000000000000000000000000000000000002"
-      credits: "0x0000000000000000000000000000000000000003"
     max_withdrawals_per_day: 10
 http:
   max_body_bytes: 33554432
