@@ -1,35 +1,33 @@
-# `crynux-on-base` Staking Contract Migration Runbook
+# Staking Contract Migration Runbook
 
-This runbook applies only to the `crynux-on-base` production blockchain network.
+This runbook applies to every node blockchain network configured under Relay `blockchains` at migration startup. Networks configured only under `deposit_withdraw_networks` are outside the staking migration scope.
 
 ## Migration values
 
-Record and verify these values before starting:
+Record and verify one row for each key under `blockchains` before starting:
 
-- Old BenefitAddress: `0x7c8861a639B712D486eFB2C944419F7531700db0`
-- Old NodeStaking: `0x31609b6531399561c2B65b8673a17FE2575c1654`
-- Old DelegatedStaking: `0xAbCa3C0a800569c05e87E500306dFf9b8Ba21821`
-- New BenefitAddress: `<NEW_BENEFIT_ADDRESS>`
-- New NodeStaking: `<NEW_NODE_STAKING_ADDRESS>`
-- New DelegatedStaking: `<NEW_DELEGATED_STAKING_ADDRESS>`
-- New contract deployment block: `<B>`
-- Relay `start_block_num`: `<B_MINUS_1>`
-- Database backup identifier: `<BACKUP_ID>`
+| Blockchain network key | Old BenefitAddress | Old NodeStaking | Old DelegatedStaking | New BenefitAddress | New NodeStaking | New DelegatedStaking | Deployment block `B` | `start_block_num` equal to `B - 1` |
+|---|---|---|---|---|---|---|---:|---:|
+| `<NETWORK_KEY>` | `<OLD_BENEFIT_ADDRESS>` | `<OLD_NODE_STAKING_ADDRESS>` | `<OLD_DELEGATED_STAKING_ADDRESS>` | `<NEW_BENEFIT_ADDRESS>` | `<NEW_NODE_STAKING_ADDRESS>` | `<NEW_DELEGATED_STAKING_ADDRESS>` | `<B>` | `<B_MINUS_1>` |
+
+Record the database backup identifier separately.
 
 Do not start the migration while any placeholder remains unresolved.
+
+Governance contract addresses MUST NOT be added to Relay `config.yml`. Relay contract configuration contains only BenefitAddress, NodeStaking, and DelegatedStaking for this migration.
 
 ## 1. Verify the new contracts
 
 Complete the new contract deployment and configuration before changing any running service.
 
-1. Verify the three new addresses on `crynux-on-base`.
+1. Verify the three new addresses on each configured node blockchain network.
 2. Verify that each address contains deployed bytecode.
 3. Verify the NodeStaking BenefitAddress binding.
 4. Verify the immutable slash receiver on NodeStaking and DelegatedStaking.
 5. Configure the NodeStaking and DelegatedStaking observers.
 6. Configure the Relay admin or operator address.
 7. Complete the required owner or governance handoff.
-8. Record the deployment block `B` and calculate `B - 1`.
+8. Record the deployment block `B` and calculate `B - 1` independently for each configured node blockchain network.
 
 Pass condition: every configured address and role matches the approved deployment record, and `B - 1` is recorded.
 
@@ -37,17 +35,8 @@ Stop condition: any address has no bytecode, any binding or role is incorrect, e
 
 ## 2. Prepare and deploy Portal
 
-1. Set `system_networks.crynux-on-base.contracts` to the three new contract addresses.
-2. Set `system_networks.crynux-on-base.legacyStakingContracts` to:
-
-```json
-{
-  "abiProfile": "legacy-v1",
-  "beneficialAddress": "0x7c8861a639B712D486eFB2C944419F7531700db0",
-  "delegatedStaking": "0xAbCa3C0a800569c05e87E500306dFf9b8Ba21821",
-  "nodeStaking": "0x31609b6531399561c2B65b8673a17FE2575c1654"
-}
-```
+1. Set `system_networks.<NETWORK_KEY>.contracts` to the three new contract addresses for every migrated blockchain network.
+2. Set `system_networks.<NETWORK_KEY>.legacyStakingContracts` to the corresponding three old contract addresses and the required legacy ABI profile for every migrated blockchain network.
 
 3. Build and deploy Portal.
 4. Log in with a wallet that has old staking state.
@@ -80,7 +69,7 @@ WHERE status < 7;
 
 SELECT COUNT(*) AS nodes_with_task_commitments
 FROM nodes
-WHERE network = 'crynux-on-base'
+WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>)
   AND current_task_id_commitment IS NOT NULL
   AND current_task_id_commitment <> '';
 ```
@@ -96,10 +85,9 @@ Run:
 ```sql
 SELECT id, type, status, tx_hash, to_address
 FROM blockchain_transactions
-WHERE network = 'crynux-on-base'
-  AND to_address IN (
-    '0x31609b6531399561c2B65b8673a17FE2575c1654',
-    '0xAbCa3C0a800569c05e87E500306dFf9b8Ba21821'
+WHERE (network, to_address) IN (
+    (<NETWORK_KEY>, <OLD_NODE_STAKING_ADDRESS>),
+    (<NETWORK_KEY>, <OLD_DELEGATED_STAKING_ADDRESS>)
   )
   AND status IN (0, 1);
 ```
@@ -134,15 +122,20 @@ UNION ALL SELECT 'vesting_records', COUNT(*) FROM vesting_records
 UNION ALL SELECT 'events', COUNT(*) FROM events
 UNION ALL SELECT 'network_node_data', COUNT(*) FROM network_node_data
 UNION ALL SELECT 'node_stakings', COUNT(*) FROM node_stakings;
+
+SELECT network, last_block_num
+FROM blockchain_cursors
+WHERE network NOT IN (<BLOCKCHAINS_NETWORK_KEYS>)
+ORDER BY network;
 ```
 
-Pass condition: Relay is stopped, the restore test succeeds, the backup identifier is recorded, and all pre-migration counts are saved.
+Pass condition: Relay is stopped, the restore test succeeds, the backup identifier is recorded, all pre-migration counts are saved, and every cursor outside the migration target list is recorded.
 
 Stop condition: Relay is still writing, backup creation fails, or the restore test fails.
 
 ## 7. Update Relay configuration
 
-For `blockchains.crynux-on-base`:
+For every `blockchains.<NETWORK_KEY>` entry:
 
 1. Set `contracts.benefit_address` to the new BenefitAddress.
 2. Set `contracts.node_staking` to the new NodeStaking.
@@ -150,13 +143,15 @@ For `blockchains.crynux-on-base`:
 4. Set `start_block_num` to `B - 1`.
 5. Keep the network key, chain ID, RPC endpoint, and Relay signer account unchanged.
 
-Pass condition: a configuration review confirms all three new addresses and the exact `B - 1` value.
+The `deposit_withdraw_networks` entries and their cursors MUST remain unchanged.
+
+Pass condition: a configuration review confirms all three new addresses and the exact per-network `B - 1` value for every key under `blockchains`.
 
 Stop condition: an old staking address remains in the active Relay contract configuration, or `start_block_num` is not `B - 1`.
 
 ## 8. Update Node release configuration
 
-Set the three active contract addresses in all production `crynux-on-base` release templates:
+Set the three active contract addresses in every Node release template for each migrated blockchain network:
 
 - `build/docker/config.yml.base`
 - `build/macos/config.yml.base`
@@ -175,10 +170,15 @@ Start exactly one new Relay instance. Startup applies migration `M20260812` afte
 
 The migration:
 
-- deletes current staking state only for `crynux-on-base`;
-- deletes node model state associated with the reset nodes;
-- deletes all node name counts after verifying that no node belongs to another network;
-- deletes the `crynux-on-base` blockchain cursor;
+- obtains its target blockchain network list from the sorted keys under Relay `blockchains`;
+- fails when the target list is empty;
+- fails when any current node belongs to a blockchain network outside the target list;
+- fails when any current node has a nonempty task commitment;
+- deletes blockchain-scoped current staking state only for the target blockchain networks;
+- preserves blockchain-scoped historical data for every blockchain network outside the target list;
+- deletes all node model state, model download selections, and node name counts only after node validation succeeds;
+- deletes blockchain cursors only for the target blockchain networks;
+- preserves every `deposit_withdraw_networks` cursor that is not also a key under `blockchains`;
 - does not read or modify `inference_tasks`;
 - does not read or modify `blockchain_transactions`;
 - does not create any blockchain transaction;
@@ -193,13 +193,13 @@ Stop condition: migration or startup fails. Keep Relay stopped. Do not use migra
 Run:
 
 ```sql
-SELECT COUNT(*) AS nodes FROM nodes WHERE network = 'crynux-on-base';
-SELECT COUNT(*) AS delegations FROM delegations WHERE network = 'crynux-on-base';
-SELECT COUNT(*) AS delegated_slash_jobs FROM delegated_slash_jobs WHERE network = 'crynux-on-base';
-SELECT COUNT(*) AS delegated_slash_records FROM delegated_staking_slash_records WHERE network = 'crynux-on-base';
-SELECT COUNT(*) AS node_snapshots FROM delegated_staking_node_list_snapshots WHERE network = 'crynux-on-base';
-SELECT COUNT(*) AS leaderboard_snapshots FROM delegation_task_fee_leaderboard_snapshots WHERE network = 'crynux-on-base';
-SELECT COUNT(*) AS cursors FROM blockchain_cursors WHERE network = 'crynux-on-base';
+SELECT COUNT(*) AS nodes FROM nodes WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
+SELECT COUNT(*) AS delegations FROM delegations WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
+SELECT COUNT(*) AS delegated_slash_jobs FROM delegated_slash_jobs WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
+SELECT COUNT(*) AS delegated_slash_records FROM delegated_staking_slash_records WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
+SELECT COUNT(*) AS node_snapshots FROM delegated_staking_node_list_snapshots WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
+SELECT COUNT(*) AS leaderboard_snapshots FROM delegation_task_fee_leaderboard_snapshots WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
+SELECT COUNT(*) AS cursors FROM blockchain_cursors WHERE network IN (<BLOCKCHAINS_NETWORK_KEYS>);
 SELECT COUNT(*) AS node_models FROM node_models;
 SELECT COUNT(*) AS model_download_selections FROM node_model_download_selections;
 SELECT COUNT(*) AS node_name_counts FROM node_name_counts;
@@ -209,15 +209,17 @@ Every query must return `0` before nodes rejoin.
 
 Repeat the preserved-table count query from step 6 and compare every result with the saved pre-migration count.
 
-Pass condition: all reset tables return `0`, all preserved-table counts are unchanged, and the Relay background refresh recreates snapshots only from new current state.
+Repeat the non-target cursor query from step 6 and compare every row with the saved pre-migration result.
 
-Stop condition: a reset table contains old current state or a preserved-table count changed.
+Pass condition: all reset tables return `0`, all preserved-table counts are unchanged, every cursor outside the target list is unchanged, and the Relay background refresh recreates snapshots only from new current state.
+
+Stop condition: a reset table contains old current state, a preserved-table count changed, or any cursor outside the target list changed.
 
 ## 11. Verify blockchain scanning
 
-Verify that the recreated `crynux-on-base` cursor starts from configured block `B - 1` and that the first scanned block is `B`.
+Verify that every recreated target blockchain network cursor starts from that network's configured block `B - 1` and that its first scanned block is `B`.
 
-Pass condition: Relay processes the new contracts beginning at block `B` without reading old-contract events.
+Pass condition: Relay processes each new contract set beginning at that network's block `B` without reading old-contract events.
 
 Stop condition: scanning starts after `B`, scans an old contract, or reports an event decoding error.
 
