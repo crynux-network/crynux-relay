@@ -18,10 +18,16 @@ const (
 	maxVestingPageSize     = 100
 )
 
+type GetVestingRecordsSigningInput struct {
+	Address string `path:"address" json:"address" description:"The address of the user"`
+}
+
 type GetVestingRecordsInput struct {
-	Address  string `path:"address" description:"The address of the user"`
-	Page     int    `query:"page" description:"The page number" default:"1"`
-	PageSize int    `query:"page_size" description:"The page size" default:"20"`
+	GetVestingRecordsSigningInput
+	Timestamp *int64 `query:"timestamp" json:"timestamp" description:"Signature timestamp"`
+	Signature string `query:"signature" json:"signature" description:"Signature"`
+	Page      int    `query:"page" description:"The page number" default:"1"`
+	PageSize  int    `query:"page_size" description:"The page size" default:"20"`
 }
 
 type VestingRecord struct {

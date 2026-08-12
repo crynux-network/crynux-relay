@@ -28,3 +28,45 @@ func TestGetBalanceRejectsAddressMismatch(t *testing.T) {
 		t.Fatalf("expected field 'address', got %s", validationErr.Data.FieldName)
 	}
 }
+
+func TestGetLockedVestingRejectsAddressMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("user_address", "0x123")
+
+	_, err := GetLockedVesting(c, &GetLockedVestingInput{
+		GetLockedVestingSigningInput: GetLockedVestingSigningInput{Address: "0x456"},
+	})
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+
+	validationErr, ok := err.(*response.ValidationErrorResponse)
+	if !ok {
+		t.Fatalf("expected ValidationErrorResponse, got %T", err)
+	}
+	if validationErr.Data.FieldName != "address" {
+		t.Fatalf("expected field 'address', got %s", validationErr.Data.FieldName)
+	}
+}
+
+func TestGetVestingRecordsRejectsAddressMismatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("user_address", "0x123")
+
+	_, err := GetVestingRecords(c, &GetVestingRecordsInput{
+		GetVestingRecordsSigningInput: GetVestingRecordsSigningInput{Address: "0x456"},
+	})
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+
+	validationErr, ok := err.(*response.ValidationErrorResponse)
+	if !ok {
+		t.Fatalf("expected ValidationErrorResponse, got %T", err)
+	}
+	if validationErr.Data.FieldName != "address" {
+		t.Fatalf("expected field 'address', got %s", validationErr.Data.FieldName)
+	}
+}

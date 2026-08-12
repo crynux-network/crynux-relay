@@ -126,13 +126,17 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get locked vesting amount"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
-	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetLockedVesting, 200))
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return relayaccount.GetLockedVestingSigningInput{Address: c.Param("address")}
+	}), tonic.Handler(relayaccount.GetLockedVesting, 200))
 	relayAccountGroup.GET("/:address/vesting/list", []fizz.OperationOption{
 		fizz.ID("relay_account_vesting_list_v2"),
 		fizz.Summary("Get vesting records"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
-	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetVestingRecords, 200))
+	}, middleware.JWTOrSignatureAuthMiddleware(func(c *gin.Context) interface{} {
+		return relayaccount.GetVestingRecordsSigningInput{Address: c.Param("address")}
+	}), tonic.Handler(relayaccount.GetVestingRecords, 200))
 	relayAccountGroup.GET("/:address/emission/chart", []fizz.OperationOption{
 		fizz.ID("relay_account_emission_chart_v2"),
 		fizz.Summary("Get weekly emission chart for relay account"),
