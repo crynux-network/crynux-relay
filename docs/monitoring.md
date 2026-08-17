@@ -66,17 +66,17 @@ Relay MUST expose these in-memory execution parameter metrics:
 
 | Metric | Labels | Base-unit value |
 |---|---|---|
-| `relay_task_pricing_seconds_per_sd_pixel_step` | `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
-| `relay_task_pricing_llm_coefficient` | `coefficient`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
-| `relay_gpu_execution_seconds_per_sd_pixel_step` | `gpu_name`, `gpu_vram` | Exact GPU variant SD seconds per pixel-step |
-| `relay_gpu_execution_llm_coefficient` | `coefficient`, `gpu_name`, `gpu_vram` | Exact GPU variant LLM coefficient |
-| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram` | Cumulative successful samples for the exact GPU variant and task type |
+| `relay_task_pricing_seconds_per_sd_pixel_step` | `model_name`, `model_variant`, `requested_dtype`, `quantize_bits`, `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
+| `relay_task_pricing_llm_coefficient` | `coefficient`, `model_name`, `model_variant`, `requested_dtype`, `quantize_bits`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
+| `relay_gpu_execution_seconds_per_sd_pixel_step` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | SD seconds per pixel-step for one calibration key |
+| `relay_gpu_execution_llm_coefficient` | `coefficient`, `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | LLM coefficient for one calibration key |
+| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | Cumulative successful samples for one calibration key |
 
 The LLM `constant` coefficient MUST use seconds, `text_input` MUST use seconds per input byte, `output` MUST use seconds per output token, `model_switch` MUST use seconds per switch, `image_count` MUST use seconds per image, and `image_megapixel` MUST use seconds per megapixel. Sample count MUST NOT be used as a cross-GPU aggregation weight.
 
 Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM text input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST display model switch, image count, and image megapixel coefficients without unit conversion. Grafana MUST multiply the SD coefficient by `512 * 512` and label it seconds per 512×512 image-step.
 
-GPU parameter grouping MUST use exact `(GPUName, GPUVram)` only. Model ID, architecture, dtype, quantization, and scheduler MUST NOT be metric dimensions. Estimation error from ignored model differences MUST affect only queue priority and execution Timeout and MUST NOT be interpreted as validation, consensus, fee, or slashing data.
+GPU parameter grouping MUST use the complete model execution calibration key. The VRAM interval labels MUST identify the fallback range represented by each series. Model architecture, scheduler, and auxiliary models MUST NOT be metric dimensions.
 
 The average candidate pool size for a task class is the PromQL expression `rate(relay_node_selection_candidates_sum[5m]) / rate(relay_node_selection_candidates_count[5m])` grouped by labels; Relay MUST NOT compute averages itself.
 
@@ -128,3 +128,4 @@ The `nodes` table carries a nullable `last_seen_time` column recording the last 
 | `api/v1/nodes/get_node_task.go` | Node last-seen refresh on task poll |
 | `migrate/migrations/m_20260712.go` | `delivered_time` and `last_seen_time` columns |
 | `migrate/migrations/m_20260717.go` | `min_vram` column on `node_model_download_selections` |
+| `migrate/migrations/m_20260817.go` | Frozen task model configuration and model-keyed calibration schema |

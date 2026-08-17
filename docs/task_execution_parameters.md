@@ -20,11 +20,13 @@ For LLM tasks, Relay MUST also resolve `max_new_tokens` at creation from an expl
 
 Relay MUST use stored workload fields in every later estimate and calibration update. Relay MUST use the stored `LLMMaxNewTokens` in every later estimate and Timeout calculation. Relay MUST NOT parse mutable `TaskArgs` again for these values.
 
+At creation Relay MUST extract and store the normalized base `model_name`, requested `dtype`, SD base-model `variant`, and LLM `quantize_bits`. Missing `dtype` MUST be stored as `auto`, and missing `quantize_bits` MUST be stored as `0`. These fields MUST remain unchanged for the task lifetime. Score submission MAY include a signed `execution_dtype`. When it is absent, Relay MUST use the stored requested dtype for calibration, including the literal value `auto`.
+
 An LLM calibration sample MUST use the actual `usage.completion_tokens` from the uploaded `0.json`. Relay MUST accept this value only after the SHA-256 hash of the complete uploaded JSON equals the task's validated `Score`. A missing, incorrectly typed, negative, or otherwise invalid completion-token value MUST cause Relay to log a structured error and skip that calibration sample without changing validation, upload, fee, QoS, or terminal-state processing.
 
 ## GPU Parameter Identity
 
-Relay MUST maintain one parameter record for each exact `(GPUName, GPUVram)` pair. The record MUST contain:
+Relay MUST maintain one parameter record for each exact `(TaskType, GPUName, GPUVram, ModelName, ModelVariant, ExecutionDType, QuantizeBits)` key. The record MUST contain:
 
 - SD `seconds_per_sd_pixel_step`.
 - LLM `constant_seconds`.
@@ -36,8 +38,9 @@ Relay MUST maintain one parameter record for each exact `(GPUName, GPUVram)` pai
 - LLM formula version.
 - Independent SD and LLM cumulative successful-sample counts.
 - The persisted LLM weighted least-squares matrices.
+- The minimum and maximum task `MinVRAM` observed across valid samples in the record.
 
-Relay MUST NOT split parameter records by model ID, model architecture, dtype, quantization, scheduler, or another model setting. This grouping deliberately ignores execution-speed differences between models on the same GPU variant. Relay MUST limit the resulting estimation error to queue priority and execution Timeout. It MUST NOT affect validation, consensus, fee settlement, or slashing.
+Each valid sample MUST update both VRAM bounds without creating another row for a different `MinVRAM`. Model architecture, scheduler, and auxiliary models MUST NOT be calibration-key fields.
 
 ## Execution GPU Snapshot
 
@@ -109,15 +112,17 @@ Every runtime configuration template MUST explicitly define positive SD and LLM 
 
 ## Initialization and Cold Start
 
-When an exact GPU variant has no valid sample for a task type, Relay MUST initialize its parameters from the simple arithmetic mean of all other GPU names with the same exact `GPUVram` and at least one valid sample for that task type. Every qualifying GPU variant MUST have equal weight. Relay MUST NOT weight this mean by cumulative sample count. If no qualifying record exists, Relay MUST use configured initial parameters.
+For a known model configuration, Relay MUST select records with the same task type, model name, variant, and quantization. An explicit requested dtype MUST select the same execution dtype. A requested dtype of `auto` MUST select both `auto` records from old Nodes and all reported actual execution dtypes. Priority aggregation MUST give every selected record equal weight. Timeout selection MUST calculate the complete prediction from each selected record and use the maximum.
+
+If no record matches the model configuration, Relay MUST compare the task `MinVRAM` with every candidate record interval. Distance MUST be `0` when the interval contains `MinVRAM`; otherwise distance MUST be the difference to the nearest interval boundary. For a selected GPU, Relay MUST first use nearest records for the exact GPU name and VRAM, and MUST use other GPU names with the same VRAM only when the exact GPU has no records. Equal-distance priority candidates MUST be averaged with equal weight. Equal-distance Timeout candidates MUST use the maximum complete prediction. If no candidate exists, Relay MUST use configured initial parameters.
 
 Inherited parameters MUST NOT increase the target variant's own successful-sample count and MUST NOT populate its own LLM fitting matrices. Cumulative successful-sample counts MUST be used only to determine whether a record has samples and whether the exact GPU variant has completed cold start.
 
-An SD GPU variant completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples`.
+An SD calibration record completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples`.
 
-An LLM GPU variant completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples` and its record uses the current LLM formula version. Full rank across all six dimensions MUST NOT be required.
+An LLM calibration record completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples` and its record uses the current LLM formula version. Full rank across all six dimensions MUST NOT be required.
 
-Before cold start completes, Relay MUST calculate the current task's full predicted duration from configured initial parameters and from every other GPU name with the same exact `GPUVram` that has completed cold start for that task type. Relay MUST use the maximum complete prediction. For LLM, Relay MUST compare complete predictions and MUST NOT combine the maximum of individual coefficients. The target GPU variant's own incomplete fitted parameters MUST NOT participate. If no same-VRAM variant has completed cold start, Relay MUST use the configured initial prediction.
+Before cold start completes, Relay MUST calculate the current task's full predicted duration from configured initial parameters and from every selected same-VRAM record that has completed cold start. Relay MUST use the maximum complete prediction. For LLM, Relay MUST compare complete predictions and MUST NOT combine the maximum of individual coefficients. An incomplete fitted record MUST NOT participate. If no selected record has completed cold start, Relay MUST use the configured initial prediction.
 
 After cold start completes, Relay MUST use the exact GPU variant's own parameters. Relay restart MUST produce the same readiness decision from persisted sample counts and fitting matrices.
 
@@ -139,7 +144,7 @@ Relay metrics MUST expose base units:
 - LLM image-count coefficient: seconds per image.
 - LLM image-pixel coefficient: seconds per megapixel.
 
-The sample-count metric MUST expose cumulative successful samples by task type and exact GPU variant. Sample counts MUST NOT be used as cross-GPU aggregation weights.
+The sample-count metric MUST expose cumulative successful samples by the complete calibration key. Calibration metrics MUST include the model configuration and VRAM interval labels so distinct records MUST NOT overwrite one Prometheus series. Sample counts MUST NOT be used as aggregation weights.
 
 Grafana MUST display the LLM text input and output coefficients as seconds per 5,000 units by multiplying the base metrics by `5000`. The model-switch, image-count, and image-megapixel coefficients MUST be displayed in their base units. Grafana MUST display the SD coefficient as seconds per 512×512 image-step by multiplying the base metric by `512 * 512`. Relay storage, calculation, and `/metrics` output MUST remain in base units.
 

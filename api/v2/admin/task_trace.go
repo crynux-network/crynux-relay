@@ -258,6 +258,11 @@ func (b *taskTraceBuilder) addTaskCreated() {
 		"task_args":              b.task.TaskArgs,
 		"task_type":              b.task.TaskType,
 		"task_version":           b.task.TaskVersion,
+		"model_name":             b.task.ModelName,
+		"model_variant":          b.task.ModelVariant,
+		"requested_dtype":        b.task.RequestedDType,
+		"execution_dtype":        b.task.ExecutionDType,
+		"quantize_bits":          b.task.QuantizeBits,
 		"timeout":                b.task.Timeout,
 		"min_vram":               b.task.MinVRAM,
 		"required_gpu":           b.task.RequiredGPU,
@@ -431,6 +436,14 @@ func (b *taskTraceBuilder) addTaskStarted() {
 				b.addMissing("task_started", "predicted_execution_seconds", missingReasonNotPersisted)
 			} else {
 				details["cold_start"] = description.ColdStart
+				details["calibration_model_name"] = description.ModelName
+				details["calibration_model_variant"] = description.ModelVariant
+				details["calibration_requested_dtype"] = description.RequestedDType
+				details["calibration_quantize_bits"] = description.QuantizeBits
+				details["calibration_selected_execution_dtype"] = description.SelectedExecutionDType
+				details["calibration_min_vram_requirement"] = description.MinVRAMRequirement
+				details["calibration_max_vram_requirement"] = description.MaxVRAMRequirement
+				details["calibration_fallback_used"] = description.FallbackUsed
 				details["predicted_execution_seconds"] = description.PredictedExecutionSeconds
 				details["timeout_multiplier"] = description.TimeoutMultiplier
 				details["min_execution_timeout_seconds"] = description.MinExecutionTimeoutSeconds

@@ -104,27 +104,27 @@ var (
 	TaskPricingSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_task_pricing_seconds_per_sd_pixel_step",
 		Help: "Aggregated stable diffusion execution seconds per pixel-step.",
-	}, []string{"vram_demand"})
+	}, []string{"model_name", "model_variant", "requested_dtype", "quantize_bits", "vram_demand"})
 
 	TaskPricingLLMCoefficient = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_task_pricing_llm_coefficient",
 		Help: "Aggregated LLM execution coefficient in its base unit.",
-	}, []string{"coefficient", "vram_demand"})
+	}, []string{"coefficient", "model_name", "model_variant", "requested_dtype", "quantize_bits", "vram_demand"})
 
 	GPUExecutionSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_gpu_execution_seconds_per_sd_pixel_step",
 		Help: "Stable diffusion execution seconds per pixel-step for an exact GPU variant.",
-	}, []string{"gpu_name", "gpu_vram"})
+	}, []string{"task_type", "gpu_name", "gpu_vram", "model_name", "model_variant", "execution_dtype", "quantize_bits", "min_vram_requirement", "max_vram_requirement"})
 
 	GPUExecutionLLMCoefficient = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_gpu_execution_llm_coefficient",
 		Help: "LLM execution coefficient for an exact GPU variant in its base unit.",
-	}, []string{"coefficient", "gpu_name", "gpu_vram"})
+	}, []string{"coefficient", "task_type", "gpu_name", "gpu_vram", "model_name", "model_variant", "execution_dtype", "quantize_bits", "min_vram_requirement", "max_vram_requirement"})
 
 	GPUExecutionCalibrationSamples = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_gpu_execution_calibration_samples",
 		Help: "Cumulative valid calibration samples for an exact GPU variant and task type.",
-	}, []string{"task_type", "gpu_name", "gpu_vram"})
+	}, []string{"task_type", "gpu_name", "gpu_vram", "model_name", "model_variant", "execution_dtype", "quantize_bits", "min_vram_requirement", "max_vram_requirement"})
 
 	TaskPriority = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "relay_task_priority",
@@ -196,27 +196,27 @@ func ResetTaskPricingCalibrationMetrics() {
 	GPUExecutionCalibrationSamples.Reset()
 }
 
-func SetTaskPricingCalibration(taskType string, vramDemand uint64, sdRate float64, llm [6]float64) {
+func SetTaskPricingCalibration(taskType, modelName, modelVariant, requestedDType string, quantizeBits, vramDemand uint64, sdRate float64, llm [6]float64) {
 	vram := fmt.Sprint(vramDemand)
+	labels := []string{modelName, modelVariant, requestedDType, fmt.Sprint(quantizeBits), vram}
 	if taskType == "sd" {
-		TaskPricingSecondsPerSDPixelStep.WithLabelValues(vram).Set(sdRate)
+		TaskPricingSecondsPerSDPixelStep.WithLabelValues(labels...).Set(sdRate)
 		return
 	}
 	if taskType == "llm" {
 		for i, name := range []string{"constant", "text_input", "output", "model_switch", "image_count", "image_megapixel"} {
-			TaskPricingLLMCoefficient.WithLabelValues(name, vram).Set(llm[i])
+			TaskPricingLLMCoefficient.WithLabelValues(append([]string{name}, labels...)...).Set(llm[i])
 		}
 	}
 }
 
-func SetGPUExecutionCalibration(gpuName string, gpuVram uint64, sdRate float64, llm [6]float64, sdSamples, llmSamples uint64) {
-	vram := fmt.Sprint(gpuVram)
-	GPUExecutionSecondsPerSDPixelStep.WithLabelValues(gpuName, vram).Set(sdRate)
+func SetGPUExecutionCalibration(taskType, gpuName string, gpuVram uint64, modelName, modelVariant, executionDType string, quantizeBits, minVRAM, maxVRAM uint64, sdRate float64, llm [6]float64, samples uint64) {
+	labels := []string{taskType, gpuName, fmt.Sprint(gpuVram), modelName, modelVariant, executionDType, fmt.Sprint(quantizeBits), fmt.Sprint(minVRAM), fmt.Sprint(maxVRAM)}
+	GPUExecutionSecondsPerSDPixelStep.WithLabelValues(labels...).Set(sdRate)
 	for i, name := range []string{"constant", "text_input", "output", "model_switch", "image_count", "image_megapixel"} {
-		GPUExecutionLLMCoefficient.WithLabelValues(name, gpuName, vram).Set(llm[i])
+		GPUExecutionLLMCoefficient.WithLabelValues(append([]string{name}, labels...)...).Set(llm[i])
 	}
-	GPUExecutionCalibrationSamples.WithLabelValues("sd", gpuName, vram).Set(float64(sdSamples))
-	GPUExecutionCalibrationSamples.WithLabelValues("llm", gpuName, vram).Set(float64(llmSamples))
+	GPUExecutionCalibrationSamples.WithLabelValues(labels...).Set(float64(samples))
 }
 
 // ModelNodeCount is one relay_model_nodes entry: the distinct node counts of

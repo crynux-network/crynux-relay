@@ -126,3 +126,34 @@ func TestNormalizeTaskArgsModelNamesSDFTLora(t *testing.T) {
 	wantArgs := `{"model":{"name":"crynux-network/stable-diffusion-v1-5","variant":"fp16"},"dataset_name":"lambdalabs/naruto-blip-captions"}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeSDFTLora, wantArgs)
 }
+
+func TestExtractModelExecutionConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		taskType TaskType
+		args     string
+		want     ModelExecutionConfig
+	}{
+		{
+			name: "sd variant and default dtype", taskType: TaskTypeSD,
+			args: `{"base_model":{"name":"Crynux/SDXL","variant":"FP16"}}`,
+			want: ModelExecutionConfig{ModelName: "crynux/sdxl", ModelVariant: "fp16", RequestedDType: AutoExecutionDType},
+		},
+		{
+			name: "llm dtype and quantization", taskType: TaskTypeLLM,
+			args: `{"model":"Qwen/Qwen3","dtype":"BFloat16","quantize_bits":4}`,
+			want: ModelExecutionConfig{ModelName: "qwen/qwen3", RequestedDType: "bfloat16", QuantizeBits: 4},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ExtractModelExecutionConfig(tt.args, tt.taskType)
+			if err != nil {
+				t.Fatalf("extract config: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("config = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

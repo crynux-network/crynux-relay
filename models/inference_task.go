@@ -108,6 +108,11 @@ type InferenceTask struct {
 	Status           TaskStatus `json:"status"`
 	TaskType         TaskType   `json:"task_type" gorm:"index"`
 	TaskVersion      string     `json:"task_version"`
+	ModelName        string     `json:"model_name" gorm:"size:512;not null;default:''"`
+	ModelVariant     string     `json:"model_variant" gorm:"size:191;not null;default:''"`
+	RequestedDType   string     `json:"requested_dtype" gorm:"column:requested_dtype;size:64;not null;default:'auto'"`
+	ExecutionDType   string     `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;default:''"`
+	QuantizeBits     uint64     `json:"quantize_bits" gorm:"not null;default:0"`
 	Timeout          uint64     `json:"timeout"`
 	MinVRAM          uint64     `json:"min_vram"`
 	RequiredGPU      string     `json:"required_gpu"`

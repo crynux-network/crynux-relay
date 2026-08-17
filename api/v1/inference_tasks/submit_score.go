@@ -7,6 +7,7 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"errors"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,7 @@ import (
 type SubmitScoreInput struct {
 	TaskIDCommitment string `path:"task_id_commitment" json:"task_id_commitment" description:"Task id commitment" validate:"required"`
 	Score            string `json:"score" description:"task score" vaidate:"required"`
+	ExecutionDType   string `json:"execution_dtype,omitempty" description:"actual model execution dtype"`
 }
 
 type SubmitScoreInputWithSignature struct {
@@ -65,6 +67,7 @@ func SubmitScore(c *gin.Context, in *SubmitScoreInputWithSignature) (*response.R
 	}
 
 	task.Score = in.Score
+	task.ExecutionDType = strings.ToLower(strings.TrimSpace(in.ExecutionDType))
 	for range 3 {
 		err = service.SetTaskStatusScoreReady(c.Request.Context(), config.GetDB(), task)
 		if err == nil {
