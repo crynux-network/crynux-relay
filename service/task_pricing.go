@@ -239,7 +239,22 @@ func computeTaskVRAMWeight(task *models.InferenceTask) float64 {
 	return float64(vramDemand) / float64(baseVRAM)
 }
 
+func FreezeTaskModelExecutionConfig(task *models.InferenceTask) error {
+	config, err := models.ExtractModelExecutionConfig(task.TaskArgs, task.TaskType)
+	if err != nil {
+		return fmt.Errorf("extract model execution config: %w", err)
+	}
+	task.ModelName = config.ModelName
+	task.ModelVariant = config.ModelVariant
+	task.RequestedDType = config.RequestedDType
+	task.QuantizeBits = config.QuantizeBits
+	return nil
+}
+
 func ApplyTaskPricing(task *models.InferenceTask) error {
+	if err := FreezeTaskModelExecutionConfig(task); err != nil {
+		return err
+	}
 	switch task.TaskType {
 	case models.TaskTypeSD:
 		units, err := computeSDPricingUnits(task.TaskArgs)

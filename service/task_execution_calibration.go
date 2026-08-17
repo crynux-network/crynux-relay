@@ -18,13 +18,22 @@ import (
 )
 
 type gpuCalibrationKey struct {
-	name string
-	vram uint64
+	taskType       models.TaskType
+	name           string
+	vram           uint64
+	modelName      string
+	modelVariant   string
+	executionDType string
+	quantizeBits   uint64
 }
 
 type taskPricingKey struct {
-	taskType   models.TaskType
-	vramDemand uint64
+	taskType       models.TaskType
+	vramDemand     uint64
+	modelName      string
+	modelVariant   string
+	requestedDType string
+	quantizeBits   uint64
 }
 
 type executionParameters struct {
@@ -120,10 +129,36 @@ func InitTaskPricing(ctx context.Context, db *gorm.DB) error {
 			globalTaskPricing.version++
 			cached.dirtyVersion = globalTaskPricing.version
 		}
-		globalTaskPricing.records[gpuCalibrationKey{name: record.GPUName, vram: record.GPUVram}] = cached
+		globalTaskPricing.records[keyFromRecord(record)] = cached
 	}
 	publishTaskPricingMetricsLocked()
 	return nil
+}
+
+func keyFromRecord(record models.GPUExecutionCalibration) gpuCalibrationKey {
+	return gpuCalibrationKey{
+		taskType: record.TaskType, name: record.GPUName, vram: record.GPUVram,
+		modelName: record.ModelName, modelVariant: record.ModelVariant,
+		executionDType: record.ExecutionDType, quantizeBits: record.QuantizeBits,
+	}
+}
+
+func executionDTypeForSample(task *models.InferenceTask) string {
+	if task.ExecutionDType != "" {
+		return task.ExecutionDType
+	}
+	if task.RequestedDType != "" {
+		return task.RequestedDType
+	}
+	return models.AutoExecutionDType
+}
+
+func taskCalibrationKey(task *models.InferenceTask, gpuName string, gpuVram uint64) gpuCalibrationKey {
+	return gpuCalibrationKey{
+		taskType: task.TaskType, name: gpuName, vram: gpuVram,
+		modelName: task.ModelName, modelVariant: task.ModelVariant,
+		executionDType: executionDTypeForSample(task), quantizeBits: task.QuantizeBits,
+	}
 }
 
 func parametersFromRecord(record *models.GPUExecutionCalibration) executionParameters {
@@ -168,20 +203,94 @@ func calibrationHasSamples(record *models.GPUExecutionCalibration, taskType mode
 	return record.LLMSuccessSamples > 0
 }
 
-func aggregateParametersLocked(taskType models.TaskType, vram uint64, exactVRAM bool) executionParameters {
-	var total executionParameters
-	var count float64
+func recordMatchesTaskConfig(record *models.GPUExecutionCalibration, task *models.InferenceTask) bool {
+	if record.TaskType != task.TaskType || record.ModelName != task.ModelName ||
+		record.ModelVariant != task.ModelVariant || record.QuantizeBits != task.QuantizeBits {
+		return false
+	}
+	requested := task.RequestedDType
+	if requested == "" {
+		requested = models.AutoExecutionDType
+	}
+	return requested == models.AutoExecutionDType || record.ExecutionDType == requested
+}
+
+func vramIntervalDistance(record *models.GPUExecutionCalibration, minVRAM uint64) uint64 {
+	if minVRAM < record.MinVRAMRequirement {
+		return record.MinVRAMRequirement - minVRAM
+	}
+	if minVRAM > record.MaxVRAMRequirement {
+		return minVRAM - record.MaxVRAMRequirement
+	}
+	return 0
+}
+
+func candidateCalibrationsLocked(task *models.InferenceTask, gpuName string, gpuVram uint64, sampledOnly bool) []*cachedGPUCalibration {
+	hardware := make([]*cachedGPUCalibration, 0)
+	exactGPU := make([]*cachedGPUCalibration, 0)
 	for key, cached := range globalTaskPricing.records {
-		if exactVRAM {
-			if key.vram != vram {
+		if key.taskType != task.TaskType || (sampledOnly && !calibrationHasSamples(&cached.record, task.TaskType)) {
+			continue
+		}
+		if gpuName == "" {
+			if key.vram < task.MinVRAM {
 				continue
 			}
-		} else if key.vram < vram {
+		} else if key.vram != gpuVram {
 			continue
 		}
-		if !calibrationHasSamples(&cached.record, taskType) {
-			continue
+		hardware = append(hardware, cached)
+		if key.name == gpuName {
+			exactGPU = append(exactGPU, cached)
 		}
+	}
+	matching := make([]*cachedGPUCalibration, 0)
+	matchingExact := make([]*cachedGPUCalibration, 0)
+	for _, cached := range hardware {
+		if recordMatchesTaskConfig(&cached.record, task) {
+			matching = append(matching, cached)
+			if cached.record.GPUName == gpuName {
+				matchingExact = append(matchingExact, cached)
+			}
+		}
+	}
+	if gpuName != "" && len(matchingExact) > 0 {
+		exactReady := true
+		for _, cached := range matchingExact {
+			if !calibrationReady(&cached.record, task.TaskType) {
+				exactReady = false
+				break
+			}
+		}
+		if sampledOnly || exactReady {
+			return matchingExact
+		}
+	}
+	if len(matching) > 0 {
+		return matching
+	}
+	if len(exactGPU) > 0 {
+		hardware = exactGPU
+	}
+	nearest := make([]*cachedGPUCalibration, 0)
+	minDistance := ^uint64(0)
+	for _, cached := range hardware {
+		distance := vramIntervalDistance(&cached.record, task.MinVRAM)
+		if distance < minDistance {
+			minDistance = distance
+			nearest = nearest[:0]
+		}
+		if distance == minDistance {
+			nearest = append(nearest, cached)
+		}
+	}
+	return nearest
+}
+
+func meanParameters(records []*cachedGPUCalibration, taskType models.TaskType) executionParameters {
+	var total executionParameters
+	var count float64
+	for _, cached := range records {
 		parameters := parametersFromRecord(&cached.record)
 		if taskType == models.TaskTypeSD {
 			total.sdRate += parameters.sdRate
@@ -211,26 +320,29 @@ func aggregateParametersLocked(taskType models.TaskType, vram uint64, exactVRAM 
 }
 
 func createExactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
-	sd := aggregateParametersLocked(models.TaskTypeSD, key.vram, true)
-	llm := aggregateParametersLocked(models.TaskTypeLLM, key.vram, true)
+	initial := initialExecutionParameters()
 	cached := &cachedGPUCalibration{record: models.GPUExecutionCalibration{
+		TaskType:                 key.taskType,
 		GPUName:                  key.name,
 		GPUVram:                  key.vram,
-		SecondsPerSDPixelStep:    sd.sdRate,
-		LLMConstantSeconds:       llm.llm.constantSeconds,
-		LLMSecondsPerInputByte:   llm.llm.secondsPerInputByte,
-		LLMSecondsPerOutputToken: llm.llm.secondsPerOutputToken,
-		LLMModelSwitchSeconds:    llm.llm.modelSwitchSeconds,
-		LLMSecondsPerImage:       llm.llm.secondsPerImage,
-		LLMSecondsPerMegapixel:   llm.llm.secondsPerMegapixel,
+		ModelName:                key.modelName,
+		ModelVariant:             key.modelVariant,
+		ExecutionDType:           key.executionDType,
+		QuantizeBits:             key.quantizeBits,
+		SecondsPerSDPixelStep:    initial.sdRate,
+		LLMConstantSeconds:       initial.llm.constantSeconds,
+		LLMSecondsPerInputByte:   initial.llm.secondsPerInputByte,
+		LLMSecondsPerOutputToken: initial.llm.secondsPerOutputToken,
+		LLMModelSwitchSeconds:    initial.llm.modelSwitchSeconds,
+		LLMSecondsPerImage:       initial.llm.secondsPerImage,
+		LLMSecondsPerMegapixel:   initial.llm.secondsPerMegapixel,
 		LLMFormulaVersion:        llmFormulaVersion,
 	}}
 	globalTaskPricing.records[key] = cached
 	return cached
 }
 
-func exactCalibrationLocked(gpuName string, gpuVram uint64) *cachedGPUCalibration {
-	key := gpuCalibrationKey{name: gpuName, vram: gpuVram}
+func exactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
 	if cached, ok := globalTaskPricing.records[key]; ok {
 		return cached
 	}
@@ -240,16 +352,19 @@ func exactCalibrationLocked(gpuName string, gpuVram uint64) *cachedGPUCalibratio
 func getTaskPricingParameters(task *models.InferenceTask) executionParameters {
 	globalTaskPricing.mu.Lock()
 	defer globalTaskPricing.mu.Unlock()
+	var parameters executionParameters
 	if task.RequiredGPU != "" {
-		parameters := parametersFromRecord(&exactCalibrationLocked(task.RequiredGPU, task.RequiredGPUVRAM).record)
-		publishTaskPricingMetricsLocked()
+		parameters = meanParameters(candidateCalibrationsLocked(task, task.RequiredGPU, task.RequiredGPUVRAM, true), task.TaskType)
 		return parameters
 	}
-	key := taskPricingKey{taskType: task.TaskType, vramDemand: task.MinVRAM}
+	key := taskPricingKey{
+		taskType: task.TaskType, vramDemand: task.MinVRAM, modelName: task.ModelName,
+		modelVariant: task.ModelVariant, requestedDType: task.RequestedDType, quantizeBits: task.QuantizeBits,
+	}
 	if parameters, ok := globalTaskPricing.aggregates[key]; ok {
 		return parameters
 	}
-	parameters := aggregateParametersLocked(task.TaskType, task.MinVRAM, false)
+	parameters = meanParameters(candidateCalibrationsLocked(task, "", 0, true), task.TaskType)
 	globalTaskPricing.aggregates[key] = parameters
 	publishTaskPricingMetricsLocked()
 	return parameters
@@ -303,8 +418,21 @@ func markDirtyLocked(cached *cachedGPUCalibration) {
 func recomputeAggregatesLocked(taskType models.TaskType, changedGPUVram uint64) {
 	for key := range globalTaskPricing.aggregates {
 		if key.taskType == taskType && key.vramDemand <= changedGPUVram {
-			globalTaskPricing.aggregates[key] = aggregateParametersLocked(taskType, key.vramDemand, false)
+			task := &models.InferenceTask{
+				TaskType: key.taskType, MinVRAM: key.vramDemand, ModelName: key.modelName,
+				ModelVariant: key.modelVariant, RequestedDType: key.requestedDType, QuantizeBits: key.quantizeBits,
+			}
+			globalTaskPricing.aggregates[key] = meanParameters(candidateCalibrationsLocked(task, "", 0, true), taskType)
 		}
+	}
+}
+
+func updateVRAMRequirement(record *models.GPUExecutionCalibration, minVRAM uint64) {
+	if record.MinVRAMRequirement == 0 || minVRAM < record.MinVRAMRequirement {
+		record.MinVRAMRequirement = minVRAM
+	}
+	if minVRAM > record.MaxVRAMRequirement {
+		record.MaxVRAMRequirement = minVRAM
 	}
 }
 
@@ -323,7 +451,7 @@ func CalibrateValidatedSDTask(task *models.InferenceTask) error {
 	if !ok {
 		return nil
 	}
-	cached := exactCalibrationLocked(snapshot.GPUName, snapshot.GPUVram)
+	cached := exactCalibrationLocked(taskCalibrationKey(task, snapshot.GPUName, snapshot.GPUVram))
 	sample := task.ScoreReadyTime.Time.Sub(task.StartTime.Time).Seconds() - config.GetConfig().TaskPricing.OverheadSeconds
 	if sample < 0 {
 		sample = 0
@@ -332,6 +460,7 @@ func CalibrateValidatedSDTask(task *models.InferenceTask) error {
 	alpha := config.GetConfig().TaskPricing.CalibrationAlpha
 	cached.record.SecondsPerSDPixelStep = alpha*sample + (1-alpha)*cached.record.SecondsPerSDPixelStep
 	cached.record.SDSuccessSamples++
+	updateVRAMRequirement(&cached.record, task.MinVRAM)
 	markDirtyLocked(cached)
 	recomputeAggregatesLocked(models.TaskTypeSD, snapshot.GPUVram)
 	publishTaskPricingMetricsLocked()
@@ -432,7 +561,7 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 	if !ok {
 		return nil
 	}
-	cached := exactCalibrationLocked(snapshot.GPUName, snapshot.GPUVram)
+	cached := exactCalibrationLocked(taskCalibrationKey(task, snapshot.GPUName, snapshot.GPUVram))
 	modelSwitched := 0.0
 	if task.ModelSwtiched {
 		modelSwitched = 1
@@ -473,6 +602,7 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 	}
 	setLLMFitState(&next, matrix, yValues)
 	next.LLMSuccessSamples++
+	updateVRAMRequirement(&next, task.MinVRAM)
 	if err := fitLLMParameters(&next); err != nil {
 		return err
 	}
@@ -518,6 +648,14 @@ func ComputeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVram
 
 type ExecutionTimeoutDescription struct {
 	ColdStart                  bool
+	ModelName                  string
+	ModelVariant               string
+	RequestedDType             string
+	QuantizeBits               uint64
+	SelectedExecutionDType     string
+	MinVRAMRequirement         uint64
+	MaxVRAMRequirement         uint64
+	FallbackUsed               bool
 	PredictedExecutionSeconds  float64
 	TimeoutMultiplier          float64
 	MinExecutionTimeoutSeconds uint64
@@ -537,6 +675,10 @@ type ExecutionTimeoutDescription struct {
 func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVram uint64) (ExecutionTimeoutDescription, error) {
 	cfg := config.GetConfig().TaskPricing
 	description := ExecutionTimeoutDescription{
+		ModelName:                  task.ModelName,
+		ModelVariant:               task.ModelVariant,
+		RequestedDType:             task.RequestedDType,
+		QuantizeBits:               task.QuantizeBits,
 		TimeoutMultiplier:          cfg.TimeoutMultiplier,
 		MinExecutionTimeoutSeconds: cfg.MinExecutionTimeoutSeconds,
 		MaxExecutionTimeoutSeconds: cfg.MaxExecutionTimeoutSeconds,
@@ -547,37 +689,43 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 	}
 	globalTaskPricing.mu.Lock()
 	defer globalTaskPricing.mu.Unlock()
-	target := exactCalibrationLocked(gpuName, gpuVram)
-	var prediction float64
-	var err error
-	if calibrationReady(&target.record, task.TaskType) {
-		description.ColdStart = false
-		parameters := parametersFromRecord(&target.record)
-		prediction, err = computeEstimatedNodeSeconds(task, parameters, task.ModelSwtiched)
-		setLLMTimeoutContributions(&description, task, parameters.llm)
-	} else {
-		description.ColdStart = true
-		selectedParameters := initialExecutionParameters()
-		prediction, err = computeEstimatedNodeSeconds(task, selectedParameters, task.ModelSwtiched)
-		for key, cached := range globalTaskPricing.records {
-			if err != nil || key.vram != gpuVram || key.name == gpuName || !calibrationReady(&cached.record, task.TaskType) {
-				continue
-			}
-			candidateParameters := parametersFromRecord(&cached.record)
-			candidate, candidateErr := computeEstimatedNodeSeconds(task, candidateParameters, task.ModelSwtiched)
-			if candidateErr != nil {
-				return ExecutionTimeoutDescription{}, candidateErr
-			}
-			if candidate > prediction {
-				prediction = candidate
-				selectedParameters = candidateParameters
-			}
-		}
-		setLLMTimeoutContributions(&description, task, selectedParameters.llm)
-	}
+	candidates := candidateCalibrationsLocked(task, gpuName, gpuVram, false)
+	selectedParameters := initialExecutionParameters()
+	prediction, err := computeEstimatedNodeSeconds(task, selectedParameters, task.ModelSwtiched)
 	if err != nil {
 		return ExecutionTimeoutDescription{}, err
 	}
+	allCandidatesReady := len(candidates) > 0
+	for _, cached := range candidates {
+		if !calibrationReady(&cached.record, task.TaskType) {
+			allCandidatesReady = false
+			break
+		}
+	}
+	description.ColdStart = !allCandidatesReady
+	selectedReadyCandidate := false
+	for _, cached := range candidates {
+		if !recordMatchesTaskConfig(&cached.record, task) {
+			description.FallbackUsed = true
+		}
+		if !calibrationReady(&cached.record, task.TaskType) {
+			continue
+		}
+		candidateParameters := parametersFromRecord(&cached.record)
+		candidate, candidateErr := computeEstimatedNodeSeconds(task, candidateParameters, task.ModelSwtiched)
+		if candidateErr != nil {
+			return ExecutionTimeoutDescription{}, candidateErr
+		}
+		if (allCandidatesReady && !selectedReadyCandidate) || candidate >= prediction {
+			prediction = candidate
+			selectedParameters = candidateParameters
+			description.SelectedExecutionDType = cached.record.ExecutionDType
+			description.MinVRAMRequirement = cached.record.MinVRAMRequirement
+			description.MaxVRAMRequirement = cached.record.MaxVRAMRequirement
+		}
+		selectedReadyCandidate = true
+	}
+	setLLMTimeoutContributions(&description, task, selectedParameters.llm)
 	description.PredictedExecutionSeconds = prediction
 	timeout := prediction * cfg.TimeoutMultiplier
 	timeout = math.Max(timeout, float64(cfg.MinExecutionTimeoutSeconds))
@@ -617,7 +765,7 @@ func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
 	if len(dirty) == 0 {
 		return nil
 	}
-	// The upsert resolves rows only by the (gpu_name, gpu_vram) unique key.
+	// The upsert resolves rows only by the model execution configuration key.
 	// Primary keys and timestamps are stripped before the insert, and database
 	// IDs are never copied back into the cache: batch-upsert ID reporting is
 	// unreliable on MySQL, and a wrong cached ID would make a later flush
@@ -630,7 +778,10 @@ func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
 		records[i].UpdatedAt = time.Time{}
 	}
 	err := db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "gpu_name"}, {Name: "gpu_vram"}},
+		Columns: []clause.Column{
+			{Name: "task_type"}, {Name: "gpu_name"}, {Name: "gpu_vram"}, {Name: "model_name"},
+			{Name: "model_variant"}, {Name: "execution_dtype"}, {Name: "quantize_bits"},
+		},
 		UpdateAll: true,
 	}).Create(&records).Error
 	if err != nil {
@@ -639,7 +790,7 @@ func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
 	globalTaskPricing.mu.Lock()
 	defer globalTaskPricing.mu.Unlock()
 	for i := range dirty {
-		key := gpuCalibrationKey{name: dirty[i].record.GPUName, vram: dirty[i].record.GPUVram}
+		key := keyFromRecord(dirty[i].record)
 		if cached, ok := globalTaskPricing.records[key]; ok && cached.dirtyVersion == dirty[i].version {
 			cached.dirtyVersion = 0
 		}
@@ -689,16 +840,29 @@ func StartTaskPricingCalibrationFlush(ctx context.Context, db *gorm.DB) {
 func publishTaskPricingMetricsLocked() {
 	metrics.ResetTaskPricingCalibrationMetrics()
 	for key, parameters := range globalTaskPricing.aggregates {
-		metrics.SetTaskPricingCalibration(metrics.TaskTypeLabel(key.taskType), key.vramDemand, parameters.sdRate, parameters.llm.values())
+		metrics.SetTaskPricingCalibration(
+			metrics.TaskTypeLabel(key.taskType), key.modelName, key.modelVariant, key.requestedDType,
+			key.quantizeBits, key.vramDemand, parameters.sdRate, parameters.llm.values(),
+		)
 	}
 	for key, cached := range globalTaskPricing.records {
+		samples := cached.record.SDSuccessSamples
+		if key.taskType == models.TaskTypeLLM {
+			samples = cached.record.LLMSuccessSamples
+		}
 		metrics.SetGPUExecutionCalibration(
+			metrics.TaskTypeLabel(key.taskType),
 			key.name,
 			key.vram,
+			key.modelName,
+			key.modelVariant,
+			key.executionDType,
+			key.quantizeBits,
+			cached.record.MinVRAMRequirement,
+			cached.record.MaxVRAMRequirement,
 			cached.record.SecondsPerSDPixelStep,
 			parametersFromRecord(&cached.record).llm.values(),
-			cached.record.SDSuccessSamples,
-			cached.record.LLMSuccessSamples,
+			samples,
 		)
 	}
 }

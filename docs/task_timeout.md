@@ -21,7 +21,7 @@ Queue priority affects dispatch order only. It MUST NOT alter `CreateTime + queu
 
 Creators MUST NOT supply the execution Timeout for normal SD or LLM tasks. Relay MUST ignore a supplied legacy value for these task types.
 
-After Relay selects the node and exact GPU variant, Relay MUST calculate normal-task `Timeout` from the exact GPU execution parameters defined in [task_execution_parameters.md](./task_execution_parameters.md).
+After Relay selects the node and exact GPU variant, Relay MUST calculate normal-task `Timeout` from the frozen model execution configuration and in-memory records defined in [task_execution_parameters.md](./task_execution_parameters.md). Requested `auto` MUST compare complete predictions from `auto` and reported actual dtype records. Unknown-model fallback MUST use the nearest task `MinVRAM` interval, prefer exact-GPU records over other GPU names with the same VRAM, and use the maximum complete prediction among equal-distance records.
 
 For SD:
 
@@ -53,7 +53,7 @@ Timeout = ceil(clamp(
 
 After selecting the node and before calculating Timeout, Relay MUST compare the node's current in-use base models with the task's required base models exactly once. Relay MUST pass that result into Timeout calculation and persist the same value in `model_swtiched`. The switch term MUST affect dispatch Timeout only and MUST NOT change queue priority.
 
-If the selected GPU variant has not completed cold start, Relay MUST use the conservative same-VRAM prediction defined in [task_execution_parameters.md](./task_execution_parameters.md) before applying `timeout_multiplier`, ceiling, and min/max clamp.
+If any selected record has not completed cold start, Relay MUST exclude its incomplete fitted parameters and use the maximum of the configured initial prediction and every selected ready record's complete prediction before applying `timeout_multiplier`, ceiling, and min/max clamp.
 
 Relay MUST write selected node, `StartTime`, computed `Timeout`, and `TaskStarted` in the same database update. Parameter lookup and normal Timeout calculation MUST use the in-memory cache and MUST NOT query the calibration database.
 

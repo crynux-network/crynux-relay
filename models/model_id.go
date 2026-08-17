@@ -2,8 +2,69 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
+
+const AutoExecutionDType = "auto"
+
+type ModelExecutionConfig struct {
+	ModelName      string
+	ModelVariant   string
+	RequestedDType string
+	QuantizeBits   uint64
+}
+
+func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecutionConfig, error) {
+	if strings.TrimSpace(taskArgs) == "" {
+		taskArgs = "{}"
+	}
+	decoder := json.NewDecoder(strings.NewReader(taskArgs))
+	decoder.UseNumber()
+	var args map[string]interface{}
+	if err := decoder.Decode(&args); err != nil {
+		return ModelExecutionConfig{}, err
+	}
+	config := ModelExecutionConfig{RequestedDType: AutoExecutionDType}
+	if dtype, ok := args["dtype"].(string); ok && dtype != "" {
+		config.RequestedDType = strings.ToLower(dtype)
+	}
+	if bits, ok := args["quantize_bits"].(json.Number); ok {
+		value, err := bits.Int64()
+		if err != nil || value < 0 {
+			return ModelExecutionConfig{}, fmt.Errorf("invalid quantize_bits")
+		}
+		config.QuantizeBits = uint64(value)
+	}
+	switch taskType {
+	case TaskTypeSD:
+		switch baseModel := args["base_model"].(type) {
+		case string:
+			config.ModelName = NormalizeModelName(baseModel)
+		case map[string]interface{}:
+			if name, ok := baseModel["name"].(string); ok {
+				config.ModelName = NormalizeModelName(name)
+			}
+			if variant, ok := baseModel["variant"].(string); ok {
+				config.ModelVariant = strings.ToLower(variant)
+			}
+		}
+	case TaskTypeLLM:
+		if model, ok := args["model"].(string); ok {
+			config.ModelName = NormalizeModelName(model)
+		}
+	case TaskTypeSDFTLora:
+		if model, ok := args["model"].(map[string]interface{}); ok {
+			if name, ok := model["name"].(string); ok {
+				config.ModelName = NormalizeModelName(name)
+			}
+			if variant, ok := model["variant"].(string); ok {
+				config.ModelVariant = strings.ToLower(variant)
+			}
+		}
+	}
+	return config, nil
+}
 
 func NormalizeModelID(modelID string) string {
 	return strings.ToLower(modelID)
