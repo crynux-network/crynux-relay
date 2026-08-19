@@ -20,12 +20,38 @@ import (
 )
 
 const (
-	defaultSDNumImages      = uint64(6)
-	defaultSDImageWidth     = uint64(512)
-	defaultSDImageHeight    = uint64(512)
-	defaultSDSteps          = uint64(1)
-	minEstimatedNodeSeconds = 1.0
+	defaultSDNumImages          = uint64(6)
+	defaultSDImageWidth         = uint64(512)
+	defaultSDImageHeight        = uint64(512)
+	defaultSDSteps              = uint64(1)
+	minEstimatedNodeSeconds     = 1.0
+	llmInputBytesPerPublicToken = 4
 )
+
+type TaskExecutionTimeQuery struct {
+	TaskType       models.TaskType
+	ModelName      string
+	ModelVariant   string
+	RequestedDType string
+	QuantizeBits   uint64
+	MinVRAM        uint64
+	GPUName        string
+	GPUVRAM        uint64
+}
+
+type SDExecutionTimeCoefficients struct {
+	OverheadSeconds       float64
+	SecondsPerSDPixelStep float64
+}
+
+type LLMExecutionTimeCoefficients struct {
+	ConstantSeconds       float64
+	SecondsPerInputToken  float64
+	SecondsPerOutputToken float64
+	ModelSwitchSeconds    float64
+	SecondsPerImage       float64
+	SecondsPerMegapixel   float64
+}
 
 type sdPricingTaskConfig struct {
 	NumImages   *uint64 `json:"num_images"`
@@ -318,4 +344,47 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 	task.VRAMWeight = vramWeight
 	task.Priority = models.BigInt{Int: *priority}
 	return nil
+}
+
+func executionTimeLookupTask(query TaskExecutionTimeQuery) *models.InferenceTask {
+	requestedDType := strings.ToLower(query.RequestedDType)
+	if requestedDType == "" {
+		requestedDType = models.AutoExecutionDType
+	}
+	task := &models.InferenceTask{
+		TaskType:       query.TaskType,
+		ModelName:      models.NormalizeModelName(query.ModelName),
+		ModelVariant:   strings.ToLower(query.ModelVariant),
+		RequestedDType: requestedDType,
+		QuantizeBits:   query.QuantizeBits,
+	}
+	if query.GPUName != "" {
+		task.RequiredGPU = models.NormalizeGPUName(query.GPUName)
+		task.RequiredGPUVRAM = query.GPUVRAM
+		return task
+	}
+	task.MinVRAM = query.MinVRAM
+	return task
+}
+
+func GetSDExecutionTimeCoefficients(query TaskExecutionTimeQuery) SDExecutionTimeCoefficients {
+	query.TaskType = models.TaskTypeSD
+	parameters := getTaskPricingParameters(executionTimeLookupTask(query))
+	return SDExecutionTimeCoefficients{
+		OverheadSeconds:       config.GetConfig().TaskPricing.OverheadSeconds,
+		SecondsPerSDPixelStep: parameters.sdRate,
+	}
+}
+
+func GetLLMExecutionTimeCoefficients(query TaskExecutionTimeQuery) LLMExecutionTimeCoefficients {
+	query.TaskType = models.TaskTypeLLM
+	parameters := getTaskPricingParameters(executionTimeLookupTask(query))
+	return LLMExecutionTimeCoefficients{
+		ConstantSeconds:       parameters.llm.constantSeconds,
+		SecondsPerInputToken:  parameters.llm.secondsPerInputByte * llmInputBytesPerPublicToken,
+		SecondsPerOutputToken: parameters.llm.secondsPerOutputToken,
+		ModelSwitchSeconds:    parameters.llm.modelSwitchSeconds,
+		SecondsPerImage:       parameters.llm.secondsPerImage,
+		SecondsPerMegapixel:   parameters.llm.secondsPerMegapixel,
+	}
 }
