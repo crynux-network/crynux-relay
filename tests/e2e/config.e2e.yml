@@ -98,7 +98,7 @@ task:
   history_retention_days: 0
   history_cleanup_batch_size: 2000
 task_pricing:
-  overhead_seconds: 30
+  initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001

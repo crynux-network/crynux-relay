@@ -1,7 +1,6 @@
 package service
 
 import (
-	"crynux_relay/config"
 	"crynux_relay/models"
 	"math"
 	"testing"
@@ -19,12 +18,12 @@ func TestGetSDExecutionTimeCoefficientsMinVRAMMatchesPricing(t *testing.T) {
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "A", GPUVram: 24,
 		ModelName: model, ExecutionDType: models.AutoExecutionDType,
-		SecondsPerSDPixelStep: 0.1, SDSuccessSamples: 1,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.1, SDSuccessSamples: 1,
 	})
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "B", GPUVram: 48,
 		ModelName: model, ExecutionDType: models.AutoExecutionDType,
-		SecondsPerSDPixelStep: 0.3, SDSuccessSamples: 1,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.3, SDSuccessSamples: 1,
 	})
 
 	query := TaskExecutionTimeQuery{ModelName: model, MinVRAM: 24}
@@ -35,8 +34,8 @@ func TestGetSDExecutionTimeCoefficientsMinVRAMMatchesPricing(t *testing.T) {
 	if got.SecondsPerSDPixelStep != want.sdRate {
 		t.Fatalf("expected sd rate %g, got %g", want.sdRate, got.SecondsPerSDPixelStep)
 	}
-	if got.OverheadSeconds != config.GetConfig().TaskPricing.OverheadSeconds {
-		t.Fatalf("expected overhead %g, got %g", config.GetConfig().TaskPricing.OverheadSeconds, got.OverheadSeconds)
+	if got.OverheadSeconds != want.sdOverhead {
+		t.Fatalf("expected overhead %g, got %g", want.sdOverhead, got.OverheadSeconds)
 	}
 }
 
@@ -47,12 +46,12 @@ func TestGetSDExecutionTimeCoefficientsGPUMatchesPricing(t *testing.T) {
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: gpuName, GPUVram: 24,
 		ModelName: model, ExecutionDType: models.AutoExecutionDType,
-		SecondsPerSDPixelStep: 0.2, SDSuccessSamples: 1,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.2, SDSuccessSamples: 1,
 	})
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "Other", GPUVram: 24,
 		ModelName: model, ExecutionDType: models.AutoExecutionDType,
-		SecondsPerSDPixelStep: 0.8, SDSuccessSamples: 1,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.8, SDSuccessSamples: 1,
 	})
 
 	query := TaskExecutionTimeQuery{ModelName: model, GPUName: gpuName, GPUVRAM: 24}
@@ -64,15 +63,17 @@ func TestGetSDExecutionTimeCoefficientsGPUMatchesPricing(t *testing.T) {
 	if got.SecondsPerSDPixelStep != want.sdRate {
 		t.Fatalf("expected sd rate %g, got %g", want.sdRate, got.SecondsPerSDPixelStep)
 	}
+	if got.OverheadSeconds != want.sdOverhead {
+		t.Fatalf("expected overhead %g, got %g", want.sdOverhead, got.OverheadSeconds)
+	}
 }
 
 func TestGetExecutionTimeCoefficientsUnknownModelUsesInitial(t *testing.T) {
 	initTaskPricingTestStore(t)
 	initial := initialExecutionParameters()
-	cfg := config.GetConfig().TaskPricing
 
 	sd := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: "unknown/sd", MinVRAM: 24})
-	if sd.OverheadSeconds != cfg.OverheadSeconds || sd.SecondsPerSDPixelStep != initial.sdRate {
+	if sd.OverheadSeconds != initial.sdOverhead || sd.SecondsPerSDPixelStep != initial.sdRate {
 		t.Fatalf("unexpected unknown SD coefficients: %+v", sd)
 	}
 
@@ -120,12 +121,12 @@ func TestGetSDExecutionTimeCoefficientsExplicitDTypeMatchesOnlyThatRecord(t *tes
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "A", GPUVram: 24,
 		ModelName: model, ExecutionDType: "float16",
-		SecondsPerSDPixelStep: 0.1, SDSuccessSamples: 1,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.1, SDSuccessSamples: 1,
 	})
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "A", GPUVram: 24,
 		ModelName: model, ExecutionDType: "bfloat16",
-		SecondsPerSDPixelStep: 0.5, SDSuccessSamples: 1,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.5, SDSuccessSamples: 1,
 	})
 
 	explicit := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{

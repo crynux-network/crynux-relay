@@ -231,8 +231,8 @@ func checkTaskConfig() error {
 
 func checkTaskPricingConfig() error {
 	pricing := appConfig.TaskPricing
-	if pricing.OverheadSeconds <= 0 {
-		return errors.New("task_pricing.overhead_seconds is not set")
+	if pricing.InitialSDOverheadSeconds <= 0 {
+		return errors.New("task_pricing.initial_sd_overhead_seconds is not set")
 	}
 	if pricing.InitialSecondsPerSDPixelStep <= 0 {
 		return errors.New("task_pricing.initial_seconds_per_sd_pixel_step is not set")

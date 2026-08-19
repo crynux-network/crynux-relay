@@ -32,14 +32,36 @@ func initTaskPricingTestStore(t *testing.T) {
 }
 
 func testSDRate(gpuName string, gpuVram uint64) float64 {
+	_, secondsPer512 := testSDCoefficients(gpuName, gpuVram)
+	return secondsPer512 / (512 * 512)
+}
+
+func testSDCoefficients(gpuName string, gpuVram uint64) (overhead, secondsPer512 float64) {
 	globalTaskPricing.mu.RLock()
 	defer globalTaskPricing.mu.RUnlock()
 	for _, cached := range globalTaskPricing.records {
 		if cached.record.TaskType == models.TaskTypeSD && cached.record.GPUName == gpuName && cached.record.GPUVram == gpuVram {
-			return cached.record.SecondsPerSDPixelStep
+			return cached.record.SDOverheadSeconds, cached.record.SecondsPerSDPixelStep * 512 * 512
 		}
 	}
-	return 0
+	return 0, 0
+}
+
+func calibrateTestSDSample(t *testing.T, taskID string, units uint64, seconds float64, gpuName string, gpuVram uint64) {
+	t.Helper()
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	task := &models.InferenceTask{
+		TaskIDCommitment: taskID,
+		TaskType:         models.TaskTypeSD,
+		Status:           models.TaskValidated,
+		SDUnits:          &units,
+		StartTime:        sql.NullTime{Time: start, Valid: true},
+		ScoreReadyTime:   sql.NullTime{Time: start.Add(time.Duration(seconds * float64(time.Second))), Valid: true},
+	}
+	CaptureTaskExecutionGPUSnapshot(taskID, gpuName, gpuVram)
+	if err := CalibrateValidatedSDTask(task); err != nil {
+		t.Fatalf("calibrate SD sample: %v", err)
+	}
 }
 
 func setTestLLMWorkload(task *models.InferenceTask, textInputBytes *uint64) {
@@ -374,58 +396,31 @@ func TestCalibrateUploadedLLMTaskRequiresTerminalSuccessStatus(t *testing.T) {
 	}
 }
 
-func TestUpdateTaskPricingCalibrationEWMA(t *testing.T) {
+func TestCalibrateValidatedSDTaskFitsOverheadAndRateFromTwoWorkloads(t *testing.T) {
 	initTaskPricingTestStore(t)
-
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	units := uint64(6 * 512 * 512)
-	task := &models.InferenceTask{
-		TaskIDCommitment: "task-1",
-		TaskType:         models.TaskTypeSD,
-		Status:           models.TaskValidated,
-		SDUnits:          &units,
-		StartTime:        sql.NullTime{Time: start, Valid: true},
-		ScoreReadyTime:   sql.NullTime{Time: start.Add(90 * time.Second), Valid: true},
+	small := uint64(512 * 512)
+	large := uint64(25 * 512 * 512)
+	for i := 0; i < 40; i++ {
+		calibrateTestSDSample(t, fmt.Sprintf("sd-small-%d", i), small, 60, "A100", 40)
+		calibrateTestSDSample(t, fmt.Sprintf("sd-large-%d", i), large, 540, "A100", 40)
 	}
-	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
-	if err := CalibrateValidatedSDTask(task); err != nil {
-		t.Fatalf("calibrate sd task: %v", err)
+	overhead, secondsPer512 := testSDCoefficients("A100", 40)
+	if math.Abs(overhead-40) > 5 {
+		t.Fatalf("expected overhead near 40, got %f", overhead)
 	}
-
-	if got := testSDRate("A100", 40) * 512 * 512; math.Abs(got-10) > 1e-9 {
-		t.Fatalf("expected calibrated sd unit seconds 10, got %f", got)
-	}
-
-	task.ScoreReadyTime = sql.NullTime{Time: start.Add(150 * time.Second), Valid: true}
-	if err := CalibrateValidatedSDTask(task); err != nil {
-		t.Fatalf("calibrate sd task: %v", err)
-	}
-
-	if got := testSDRate("A100", 40) * 512 * 512; math.Abs(got-11) > 1e-9 {
-		t.Fatalf("expected calibrated sd unit seconds 11, got %f", got)
+	if math.Abs(secondsPer512-20) > 5 {
+		t.Fatalf("expected 512x512 rate near 20, got %f", secondsPer512)
 	}
 }
 
-func TestUpdateTaskPricingCalibrationSkipsExecutionBelowOverhead(t *testing.T) {
+func TestCalibrateValidatedSDTaskTracksDurationWithSingleWorkload(t *testing.T) {
 	initTaskPricingTestStore(t)
-
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	units := uint64(6 * 512 * 512)
-	task := &models.InferenceTask{
-		TaskIDCommitment: "task-2",
-		TaskType:         models.TaskTypeSD,
-		Status:           models.TaskValidated,
-		SDUnits:          &units,
-		StartTime:        sql.NullTime{Time: start, Valid: true},
-		ScoreReadyTime:   sql.NullTime{Time: start.Add(10 * time.Second), Valid: true},
-	}
-	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
-	if err := CalibrateValidatedSDTask(task); err != nil {
-		t.Fatalf("calibrate sd task: %v", err)
-	}
-
-	if got := testSDRate("A100", 40) * 512 * 512; math.Abs(got-9) > 1e-9 {
-		t.Fatalf("expected calibrated sd unit seconds 9, got %f", got)
+	calibrateTestSDSample(t, "sd-short", units, 10, "A100", 40)
+	overhead, secondsPer512 := testSDCoefficients("A100", 40)
+	predicted := overhead + 6*secondsPer512
+	if predicted > 80 {
+		t.Fatalf("expected prediction to move toward 10s sample, got %f (overhead=%f rate512=%f)", predicted, overhead, secondsPer512)
 	}
 }
 
@@ -433,10 +428,10 @@ func TestTaskPricingAggregationUsesSimpleGPUAverage(t *testing.T) {
 	initTaskPricingTestStore(t)
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[gpuCalibrationKey{name: "A", vram: 40}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
-		GPUName: "A", GPUVram: 40, SecondsPerSDPixelStep: 10.0 / (512 * 512), SDSuccessSamples: 100,
+		GPUName: "A", GPUVram: 40, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 10.0 / (512 * 512), SDSuccessSamples: 100,
 	}}
 	globalTaskPricing.records[gpuCalibrationKey{name: "B", vram: 80}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
-		GPUName: "B", GPUVram: 80, SecondsPerSDPixelStep: 30.0 / (512 * 512), SDSuccessSamples: 1,
+		GPUName: "B", GPUVram: 80, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 30.0 / (512 * 512), SDSuccessSamples: 1,
 	}}
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
@@ -456,7 +451,7 @@ func TestRequiredGPUUsesExactParametersWithoutAggregateKey(t *testing.T) {
 	initTaskPricingTestStore(t)
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[gpuCalibrationKey{name: "B", vram: 40}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
-		GPUName: "B", GPUVram: 40, SecondsPerSDPixelStep: 20.0 / (512 * 512), SDSuccessSamples: 1,
+		GPUName: "B", GPUVram: 40, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 20.0 / (512 * 512), SDSuccessSamples: 1,
 	}}
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
@@ -482,10 +477,10 @@ func TestComputeExecutionTimeoutColdStartUsesSlowestReadySameVRAM(t *testing.T) 
 	initTaskPricingTestStore(t)
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[gpuCalibrationKey{name: "target", vram: 40}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
-		GPUName: "target", GPUVram: 40, SecondsPerSDPixelStep: 1.0 / (512 * 512), SDSuccessSamples: 2,
+		GPUName: "target", GPUVram: 40, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 1.0 / (512 * 512), SDSuccessSamples: 2,
 	}}
 	globalTaskPricing.records[gpuCalibrationKey{name: "slow", vram: 40}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
-		GPUName: "slow", GPUVram: 40, SecondsPerSDPixelStep: 100.0 / (512 * 512), SDSuccessSamples: 10,
+		GPUName: "slow", GPUVram: 40, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 100.0 / (512 * 512), SDSuccessSamples: 10,
 	}}
 	globalTaskPricing.mu.Unlock()
 	units := uint64(512 * 512)
@@ -522,7 +517,7 @@ func TestComputeExecutionTimeoutUsesReadyCalibrationBelowInitialPrediction(t *te
 	rate := 1.0 / float64(units)
 	record := models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "target", GPUVram: 40,
-		SecondsPerSDPixelStep: rate, SDSuccessSamples: 10,
+		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: rate, SDSuccessSamples: 10,
 	}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
@@ -533,7 +528,7 @@ func TestComputeExecutionTimeoutUsesReadyCalibrationBelowInitialPrediction(t *te
 	if err != nil {
 		t.Fatalf("describe timeout: %v", err)
 	}
-	expected := config.GetConfig().TaskPricing.OverheadSeconds + 1
+	expected := config.GetConfig().TaskPricing.InitialSDOverheadSeconds + 1
 	if math.Abs(description.PredictedExecutionSeconds-expected) > 1e-9 {
 		t.Fatalf("predicted seconds = %f, want ready calibration %f", description.PredictedExecutionSeconds, expected)
 	}
@@ -840,7 +835,7 @@ func TestInitTaskPricingResetsOldLLMFormulaAndPreservesSD(t *testing.T) {
 		t.Fatalf("migrate calibrations: %v", err)
 	}
 	record := models.GPUExecutionCalibration{
-		GPUName: "A100", GPUVram: 40, SecondsPerSDPixelStep: 0.25, SDSuccessSamples: 7,
+		GPUName: "A100", GPUVram: 40, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.25, SDSuccessSamples: 7,
 		LLMConstantSeconds: 1, LLMSecondsPerInputByte: 2, LLMSecondsPerOutputToken: 3,
 		LLMFormulaVersion: 1, LLMSuccessSamples: 9, LLMXTX00: 1, LLMXTY0: 1,
 	}
@@ -853,13 +848,138 @@ func TestInitTaskPricingResetsOldLLMFormulaAndPreservesSD(t *testing.T) {
 	globalTaskPricing.mu.RLock()
 	cached := globalTaskPricing.records[gpuCalibrationKey{name: "A100", vram: 40}]
 	globalTaskPricing.mu.RUnlock()
-	if cached.record.SecondsPerSDPixelStep != 0.25 || cached.record.SDSuccessSamples != 7 {
+	if cached.record.SDOverheadSeconds != 30 || cached.record.SecondsPerSDPixelStep != 0.25 || cached.record.SDSuccessSamples != 7 {
 		t.Fatalf("SD calibration changed: %+v", cached.record)
 	}
 	if cached.record.LLMFormulaVersion != llmFormulaVersion || cached.record.LLMSuccessSamples != 0 ||
 		cached.record.LLMConstantSeconds != config.GetConfig().TaskPricing.InitialLLMConstantSeconds ||
 		cached.dirtyVersion == 0 {
 		t.Fatalf("old LLM formula was not reset: %+v", cached)
+	}
+}
+
+func TestInitTaskPricingResetsOldSDFormulaAndPreservesLLM(t *testing.T) {
+	initServiceTestConfig(t)
+	db := config.GetDB()
+	if err := db.AutoMigrate(&models.GPUExecutionCalibration{}); err != nil {
+		t.Fatalf("migrate calibrations: %v", err)
+	}
+	record := models.GPUExecutionCalibration{
+		GPUName: "A100", GPUVram: 40, SecondsPerSDPixelStep: 0.25, SDSuccessSamples: 7,
+		LLMConstantSeconds: 12, LLMSecondsPerInputByte: 0.002, LLMSecondsPerOutputToken: 0.2,
+		LLMFormulaVersion: llmFormulaVersion, LLMSuccessSamples: 9, LLMXTX00: 1, LLMXTY0: 1,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatalf("seed old calibration: %v", err)
+	}
+	if err := InitTaskPricing(context.Background(), db); err != nil {
+		t.Fatalf("init task pricing: %v", err)
+	}
+	globalTaskPricing.mu.RLock()
+	cached := globalTaskPricing.records[gpuCalibrationKey{name: "A100", vram: 40}]
+	globalTaskPricing.mu.RUnlock()
+	initial := initialExecutionParameters()
+	if cached.record.SDFormulaVersion != sdFormulaVersion || cached.record.SDSuccessSamples != 0 ||
+		cached.record.SDOverheadSeconds != initial.sdOverhead ||
+		cached.record.SecondsPerSDPixelStep != initial.sdRate ||
+		cached.dirtyVersion == 0 {
+		t.Fatalf("old SD formula was not reset: %+v", cached)
+	}
+	if cached.record.LLMSuccessSamples != 9 || cached.record.LLMConstantSeconds != 12 || cached.record.LLMXTX00 != 1 {
+		t.Fatalf("LLM calibration changed: %+v", cached.record)
+	}
+}
+
+func TestTaskPricingAggregationAveragesSDOverhead(t *testing.T) {
+	initTaskPricingTestStore(t)
+	globalTaskPricing.mu.Lock()
+	globalTaskPricing.records[gpuCalibrationKey{name: "A", vram: 40}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
+		GPUName: "A", GPUVram: 40, SDOverheadSeconds: 10, SDFormulaVersion: sdFormulaVersion,
+		SecondsPerSDPixelStep: 10.0 / (512 * 512), SDSuccessSamples: 10,
+	}}
+	globalTaskPricing.records[gpuCalibrationKey{name: "B", vram: 80}] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
+		GPUName: "B", GPUVram: 80, SDOverheadSeconds: 50, SDFormulaVersion: sdFormulaVersion,
+		SecondsPerSDPixelStep: 10.0 / (512 * 512), SDSuccessSamples: 10,
+	}}
+	globalTaskPricing.mu.Unlock()
+	task := &models.InferenceTask{
+		TaskType: models.TaskTypeSD,
+		TaskArgs: `{"task_config":{"num_images":1,"image_width":512,"image_height":512,"steps":1}}`,
+		MinVRAM:  32,
+	}
+	if err := ApplyTaskPricing(task); err != nil {
+		t.Fatalf("apply task pricing: %v", err)
+	}
+	if math.Abs(task.EstimatedNodeSeconds-40) > 1e-9 {
+		t.Fatalf("expected averaged overhead estimate 40, got %f", task.EstimatedNodeSeconds)
+	}
+}
+
+func TestCalibrateValidatedSDTaskTruncatesPositiveResidual(t *testing.T) {
+	initTaskPricingTestStore(t)
+	units := uint64(512 * 512)
+	calibrateTestSDSample(t, "sd-outlier", units, 10_000, "A100", 40)
+	overhead, secondsPer512 := testSDCoefficients("A100", 40)
+	predicted := overhead + secondsPer512
+	if predicted > 200 {
+		t.Fatalf("expected truncated residual, got prediction %f", predicted)
+	}
+}
+
+func TestCalibrateValidatedSDTaskDoesNotCommitWhenFitFails(t *testing.T) {
+	initTaskPricingTestStore(t)
+	cfg := config.GetConfig()
+	originalRegularization := cfg.TaskPricing.CalibrationRegularization
+	cfg.TaskPricing.CalibrationRegularization = 0
+	t.Cleanup(func() {
+		cfg.TaskPricing.CalibrationRegularization = originalRegularization
+	})
+
+	key := gpuCalibrationKey{taskType: models.TaskTypeSD, name: "A100", vram: 40, executionDType: models.AutoExecutionDType}
+	globalTaskPricing.mu.Lock()
+	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
+		TaskType:              models.TaskTypeSD,
+		GPUName:               "A100",
+		GPUVram:               40,
+		ExecutionDType:        models.AutoExecutionDType,
+		SDOverheadSeconds:     30,
+		SecondsPerSDPixelStep: 0.00003814697265625,
+		SDFormulaVersion:      sdFormulaVersion,
+		SDXTX00:               -1,
+		SDSuccessSamples:      4,
+	}}
+	globalTaskPricing.mu.Unlock()
+
+	units := uint64(512 * 512)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	task := &models.InferenceTask{
+		TaskIDCommitment: "sd-fit-fail",
+		TaskType:         models.TaskTypeSD,
+		Status:           models.TaskValidated,
+		SDUnits:          &units,
+		StartTime:        sql.NullTime{Time: start, Valid: true},
+		ScoreReadyTime:   sql.NullTime{Time: start.Add(20 * time.Second), Valid: true},
+	}
+	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
+	if err := CalibrateValidatedSDTask(task); err == nil {
+		t.Fatal("expected fit failure")
+	} else if !strings.Contains(err.Error(), "does not produce a positive finite scale") {
+		t.Fatalf("unexpected fit failure: %v", err)
+	}
+
+	globalTaskPricing.mu.RLock()
+	cached := globalTaskPricing.records[key]
+	record := cached.record
+	dirty := cached.dirtyVersion != 0
+	globalTaskPricing.mu.RUnlock()
+	if record.SDSuccessSamples != 4 {
+		t.Fatalf("SDSuccessSamples = %d, want 4", record.SDSuccessSamples)
+	}
+	if record.SDOverheadSeconds != 30 || record.SDXTX00 != -1 || record.SDXTY0 != 0 {
+		t.Fatalf("coefficients changed after failed fit: %+v", record)
+	}
+	if dirty {
+		t.Fatal("failed fit marked record dirty")
 	}
 }
 
@@ -983,7 +1103,7 @@ func TestAutoPricingAveragesReportedDTypes(t *testing.T) {
 		record := models.GPUExecutionCalibration{
 			TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "model",
 			ExecutionDType: item.dtype, MinVRAMRequirement: 8, MaxVRAMRequirement: 24,
-			SecondsPerSDPixelStep: item.rate / (512 * 512), SDSuccessSamples: 10,
+			SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: item.rate / (512 * 512), SDSuccessSamples: 10,
 		}
 		globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
 	}
@@ -1003,8 +1123,8 @@ func TestUnknownModelUsesNearestVRAMInterval(t *testing.T) {
 	initTaskPricingTestStore(t)
 	globalTaskPricing.mu.Lock()
 	for _, record := range []models.GPUExecutionCalibration{
-		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "small", ExecutionDType: "auto", MinVRAMRequirement: 8, MaxVRAMRequirement: 12, SecondsPerSDPixelStep: 100.0 / (512 * 512), SDSuccessSamples: 10},
-		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "large", ExecutionDType: "auto", MinVRAMRequirement: 20, MaxVRAMRequirement: 24, SecondsPerSDPixelStep: 20.0 / (512 * 512), SDSuccessSamples: 10},
+		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "small", ExecutionDType: "auto", MinVRAMRequirement: 8, MaxVRAMRequirement: 12, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 100.0 / (512 * 512), SDSuccessSamples: 10},
+		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "large", ExecutionDType: "auto", MinVRAMRequirement: 20, MaxVRAMRequirement: 24, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 20.0 / (512 * 512), SDSuccessSamples: 10},
 	} {
 		globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
 	}
@@ -1026,7 +1146,7 @@ func TestUnknownModelTimeoutUsesMaximumAtEqualDistance(t *testing.T) {
 			TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40,
 			ModelName: fmt.Sprintf("model-%v", rate), ExecutionDType: "auto",
 			MinVRAMRequirement: 16, MaxVRAMRequirement: 16,
-			SecondsPerSDPixelStep: rate / (512 * 512), SDSuccessSamples: 10,
+			SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: rate / (512 * 512), SDSuccessSamples: 10,
 		}
 		globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
 	}

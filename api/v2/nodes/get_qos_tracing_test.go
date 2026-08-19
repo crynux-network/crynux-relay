@@ -37,7 +37,7 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"  passive_slash_mode: true\n" +
 		"  history_cleanup_batch_size: 2000\n" +
 		"task_pricing:\n" +
-		"  overhead_seconds: 30\n" +
+		"  initial_sd_overhead_seconds: 30\n" +
 		"  initial_seconds_per_sd_pixel_step: 0.00003814697265625\n" +
 		"  initial_llm_constant_seconds: 30\n" +
 		"  initial_llm_seconds_per_input_byte: 0.0001\n" +

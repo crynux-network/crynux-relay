@@ -62,7 +62,7 @@ func initExecutionTimeAPITest(t *testing.T) {
 		"staking_score:\n" +
 		"  locked_emission_coefficient: 1.0\n" +
 		"task_pricing:\n" +
-		"  overhead_seconds: 30\n" +
+		"  initial_sd_overhead_seconds: 30\n" +
 		"  initial_seconds_per_sd_pixel_step: 0.00003814697265625\n" +
 		"  initial_llm_constant_seconds: 30\n" +
 		"  initial_llm_seconds_per_input_byte: 0.0001\n" +
@@ -160,11 +160,49 @@ func TestGetSDExecutionTimeSuccess(t *testing.T) {
 		t.Fatalf("GetSDExecutionTime failed: %v", err)
 	}
 	cfg := config.GetConfig().TaskPricing
-	if resp.Data.OverheadSeconds != cfg.OverheadSeconds {
+	if resp.Data.OverheadSeconds != cfg.InitialSDOverheadSeconds {
 		t.Fatalf("unexpected overhead_seconds: %g", resp.Data.OverheadSeconds)
 	}
 	if resp.Data.SecondsPerSDPixelStep != cfg.InitialSecondsPerSDPixelStep {
 		t.Fatalf("unexpected seconds_per_sd_pixel_step: %g", resp.Data.SecondsPerSDPixelStep)
+	}
+}
+
+func TestGetSDExecutionTimeReturnsFittedOverhead(t *testing.T) {
+	initExecutionTimeAPITest(t)
+	model := "stabilityai/stable-diffusion-xl-base-1.0"
+	record := dbmodels.GPUExecutionCalibration{
+		TaskType:              dbmodels.TaskTypeSD,
+		GPUName:               "A100",
+		GPUVram:               40,
+		ModelName:             model,
+		ExecutionDType:        "auto",
+		MinVRAMRequirement:    8,
+		MaxVRAMRequirement:    40,
+		SDOverheadSeconds:     42,
+		SDFormulaVersion:      1,
+		SecondsPerSDPixelStep: 0.0001,
+		SDSuccessSamples:      10,
+		LLMFormulaVersion:     2,
+	}
+	if err := config.GetDB().Create(&record).Error; err != nil {
+		t.Fatalf("seed fitted calibration: %v", err)
+	}
+	if err := service.InitTaskPricing(context.Background(), config.GetDB()); err != nil {
+		t.Fatalf("reload task pricing: %v", err)
+	}
+	resp, err := GetSDExecutionTime(testExecutionTimeContext(), &GetSDExecutionTimeInput{
+		Model:   model,
+		MinVRAM: uint64Ptr(24),
+	})
+	if err != nil {
+		t.Fatalf("GetSDExecutionTime failed: %v", err)
+	}
+	if resp.Data.OverheadSeconds != 42 {
+		t.Fatalf("expected fitted overhead_seconds 42, got %g", resp.Data.OverheadSeconds)
+	}
+	if resp.Data.SecondsPerSDPixelStep != 0.0001 {
+		t.Fatalf("expected fitted seconds_per_sd_pixel_step 0.0001, got %g", resp.Data.SecondsPerSDPixelStep)
 	}
 }
 

@@ -20,6 +20,13 @@ type GPUExecutionCalibration struct {
 	MinVRAMRequirement       uint64   `gorm:"column:min_vram_requirement;not null"`
 	MaxVRAMRequirement       uint64   `gorm:"column:max_vram_requirement;not null"`
 	SecondsPerSDPixelStep    float64  `gorm:"not null"`
+	SDOverheadSeconds        float64  `gorm:"not null"`
+	SDFormulaVersion         uint64   `gorm:"not null"`
+	SDXTX00                  float64  `gorm:"column:sd_xtx_00;not null"`
+	SDXTX01                  float64  `gorm:"column:sd_xtx_01;not null"`
+	SDXTX11                  float64  `gorm:"column:sd_xtx_11;not null"`
+	SDXTY0                   float64  `gorm:"column:sd_xty_0;not null"`
+	SDXTY1                   float64  `gorm:"column:sd_xty_1;not null"`
 	SDSuccessSamples         uint64   `gorm:"not null"`
 	LLMConstantSeconds       float64  `gorm:"not null"`
 	LLMSecondsPerInputByte   float64  `gorm:"not null"`

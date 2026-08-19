@@ -86,7 +86,7 @@ SD:
 }
 ```
 
-`overhead_seconds` MUST equal configured `task_pricing.overhead_seconds`. It MUST NOT be fitted per GPU. `seconds_per_sd_pixel_step` MUST come from the selected calibration records, or from the configured initial SD rate when no record is selected.
+`overhead_seconds` and `seconds_per_sd_pixel_step` MUST come from the selected calibration records, or from the configured initial SD overhead and initial SD rate when no record is selected.
 
 LLM:
 

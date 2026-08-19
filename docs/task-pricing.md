@@ -29,6 +29,8 @@ estimated_node_seconds =
     + SDUnits * seconds_per_sd_pixel_step
 ```
 
+`overhead_seconds` and `seconds_per_sd_pixel_step` MUST come from the selected or aggregated calibration records specified above. Task creation MUST NOT read a configured fixed SD overhead.
+
 For LLM, Relay MUST compute:
 
 ```

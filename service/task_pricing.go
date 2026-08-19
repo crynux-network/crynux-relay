@@ -220,7 +220,7 @@ func computeEstimatedNodeSeconds(task *models.InferenceTask, parameters executio
 		if task.SDUnits == nil {
 			return 0, errors.New("sd_units is not set")
 		}
-		return config.GetConfig().TaskPricing.OverheadSeconds + float64(*task.SDUnits)*parameters.sdRate, nil
+		return parameters.sdOverhead + float64(*task.SDUnits)*parameters.sdRate, nil
 	case models.TaskTypeLLM:
 		if task.LLMTextInputBytes == nil {
 			return 0, errors.New("llm_text_input_bytes is not set")
@@ -371,7 +371,7 @@ func GetSDExecutionTimeCoefficients(query TaskExecutionTimeQuery) SDExecutionTim
 	query.TaskType = models.TaskTypeSD
 	parameters := getTaskPricingParameters(executionTimeLookupTask(query))
 	return SDExecutionTimeCoefficients{
-		OverheadSeconds:       config.GetConfig().TaskPricing.OverheadSeconds,
+		OverheadSeconds:       parameters.sdOverhead,
 		SecondsPerSDPixelStep: parameters.sdRate,
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"errors"
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -37,11 +36,15 @@ type taskPricingKey struct {
 }
 
 type executionParameters struct {
-	sdRate float64
-	llm    llmExecutionParameters
+	sdOverhead float64
+	sdRate     float64
+	llm        llmExecutionParameters
 }
 
-const llmFormulaVersion uint64 = 2
+const (
+	sdFormulaVersion  uint64 = 1
+	llmFormulaVersion uint64 = 2
+)
 
 type llmExecutionParameters struct {
 	constantSeconds       float64
@@ -98,7 +101,8 @@ var globalTaskPricing taskPricingStore
 func initialExecutionParameters() executionParameters {
 	cfg := config.GetConfig().TaskPricing
 	return executionParameters{
-		sdRate: cfg.InitialSecondsPerSDPixelStep,
+		sdOverhead: cfg.InitialSDOverheadSeconds,
+		sdRate:     cfg.InitialSecondsPerSDPixelStep,
 		llm: llmExecutionParameters{
 			constantSeconds:       cfg.InitialLLMConstantSeconds,
 			secondsPerInputByte:   cfg.InitialLLMSecondsPerInputByte,
@@ -124,6 +128,11 @@ func InitTaskPricing(ctx context.Context, db *gorm.DB) error {
 	for i := range records {
 		record := records[i]
 		cached := &cachedGPUCalibration{record: record}
+		if record.SDFormulaVersion != sdFormulaVersion {
+			resetSDCalibration(&cached.record)
+			globalTaskPricing.version++
+			cached.dirtyVersion = globalTaskPricing.version
+		}
 		if record.LLMFormulaVersion != llmFormulaVersion {
 			resetLLMCalibration(&cached.record)
 			globalTaskPricing.version++
@@ -163,7 +172,8 @@ func taskCalibrationKey(task *models.InferenceTask, gpuName string, gpuVram uint
 
 func parametersFromRecord(record *models.GPUExecutionCalibration) executionParameters {
 	return executionParameters{
-		sdRate: record.SecondsPerSDPixelStep,
+		sdOverhead: record.SDOverheadSeconds,
+		sdRate:     record.SecondsPerSDPixelStep,
 		llm: llmExecutionParameters{
 			constantSeconds:       record.LLMConstantSeconds,
 			secondsPerInputByte:   record.LLMSecondsPerInputByte,
@@ -173,6 +183,16 @@ func parametersFromRecord(record *models.GPUExecutionCalibration) executionParam
 			secondsPerMegapixel:   record.LLMSecondsPerMegapixel,
 		},
 	}
+}
+
+func resetSDCalibration(record *models.GPUExecutionCalibration) {
+	initial := initialExecutionParameters()
+	record.SDOverheadSeconds = initial.sdOverhead
+	record.SecondsPerSDPixelStep = initial.sdRate
+	record.SDFormulaVersion = sdFormulaVersion
+	record.SDXTX00, record.SDXTX01, record.SDXTX11 = 0, 0, 0
+	record.SDXTY0, record.SDXTY1 = 0, 0
+	record.SDSuccessSamples = 0
 }
 
 func resetLLMCalibration(record *models.GPUExecutionCalibration) {
@@ -293,6 +313,7 @@ func meanParameters(records []*cachedGPUCalibration, taskType models.TaskType) e
 	for _, cached := range records {
 		parameters := parametersFromRecord(&cached.record)
 		if taskType == models.TaskTypeSD {
+			total.sdOverhead += parameters.sdOverhead
 			total.sdRate += parameters.sdRate
 		} else {
 			totalValues := total.llm.values()
@@ -308,6 +329,7 @@ func meanParameters(records []*cachedGPUCalibration, taskType models.TaskType) e
 		return initialExecutionParameters()
 	}
 	if taskType == models.TaskTypeSD {
+		total.sdOverhead /= count
 		total.sdRate /= count
 	} else {
 		values := total.llm.values()
@@ -329,7 +351,9 @@ func createExactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
 		ModelVariant:             key.modelVariant,
 		ExecutionDType:           key.executionDType,
 		QuantizeBits:             key.quantizeBits,
+		SDOverheadSeconds:        initial.sdOverhead,
 		SecondsPerSDPixelStep:    initial.sdRate,
+		SDFormulaVersion:         sdFormulaVersion,
 		LLMConstantSeconds:       initial.llm.constantSeconds,
 		LLMSecondsPerInputByte:   initial.llm.secondsPerInputByte,
 		LLMSecondsPerOutputToken: initial.llm.secondsPerOutputToken,
@@ -452,19 +476,61 @@ func CalibrateValidatedSDTask(task *models.InferenceTask) error {
 		return nil
 	}
 	cached := exactCalibrationLocked(taskCalibrationKey(task, snapshot.GPUName, snapshot.GPUVram))
-	sample := task.ScoreReadyTime.Time.Sub(task.StartTime.Time).Seconds() - config.GetConfig().TaskPricing.OverheadSeconds
-	if sample < 0 {
-		sample = 0
+	x := [2]float64{1, float64(*task.SDUnits)}
+	actual := task.ScoreReadyTime.Time.Sub(task.StartTime.Time).Seconds()
+	parameters := parametersFromRecord(&cached.record)
+	prediction := parameters.sdOverhead + x[1]*parameters.sdRate
+	if prediction > 0 {
+		maxActual := prediction * (1 + config.GetConfig().TaskPricing.CalibrationMaxPositiveResidualMultiple)
+		if actual > maxActual {
+			actual = maxActual
+		}
 	}
-	sample /= float64(*task.SDUnits)
-	alpha := config.GetConfig().TaskPricing.CalibrationAlpha
-	cached.record.SecondsPerSDPixelStep = alpha*sample + (1-alpha)*cached.record.SecondsPerSDPixelStep
-	cached.record.SDSuccessSamples++
-	updateVRAMRequirement(&cached.record, task.MinVRAM)
+	next := cached.record
+	matrix := sdXTX(&next)
+	yValues := [2]float64{next.SDXTY0, next.SDXTY1}
+	accumulateWeightedSample(matrix, yValues[:], x[:], actual, config.GetConfig().TaskPricing.CalibrationAlpha)
+	setSDFitState(&next, matrix, yValues)
+	next.SDSuccessSamples++
+	updateVRAMRequirement(&next, task.MinVRAM)
+	if err := fitSDParameters(&next); err != nil {
+		return err
+	}
+	cached.record = next
 	markDirtyLocked(cached)
 	recomputeAggregatesLocked(models.TaskTypeSD, snapshot.GPUVram)
 	publishTaskPricingMetricsLocked()
 	return nil
+}
+
+func sdXTX(record *models.GPUExecutionCalibration) *mat.SymDense {
+	matrix := mat.NewSymDense(2, nil)
+	matrix.SetSym(0, 0, record.SDXTX00)
+	matrix.SetSym(0, 1, record.SDXTX01)
+	matrix.SetSym(1, 1, record.SDXTX11)
+	return matrix
+}
+
+func fitSDParameters(record *models.GPUExecutionCalibration) error {
+	initial := initialExecutionParameters()
+	values, err := fitRidgeLeastSquares(
+		sdXTX(record),
+		[]float64{record.SDXTY0, record.SDXTY1},
+		[]float64{initial.sdOverhead, initial.sdRate},
+		config.GetConfig().TaskPricing.CalibrationRegularization,
+	)
+	if err != nil {
+		return err
+	}
+	record.SDOverheadSeconds = values[0]
+	record.SecondsPerSDPixelStep = values[1]
+	record.SDFormulaVersion = sdFormulaVersion
+	return nil
+}
+
+func setSDFitState(record *models.GPUExecutionCalibration, matrix *mat.SymDense, y [2]float64) {
+	record.SDXTX00, record.SDXTX01, record.SDXTX11 = matrix.At(0, 0), matrix.At(0, 1), matrix.At(1, 1)
+	record.SDXTY0, record.SDXTY1 = y[0], y[1]
 }
 
 func llmXTX(record *models.GPUExecutionCalibration) *mat.SymDense {
@@ -494,46 +560,19 @@ func llmXTX(record *models.GPUExecutionCalibration) *mat.SymDense {
 }
 
 func fitLLMParameters(record *models.GPUExecutionCalibration) error {
-	matrix := llmXTX(record)
-	regularization := config.GetConfig().TaskPricing.CalibrationRegularization
-	initial := initialExecutionParameters().llm.values()
-	yValues := [6]float64{
+	yValues := []float64{
 		record.LLMXTY0, record.LLMXTY1, record.LLMXTY2,
 		record.LLMXTY3, record.LLMXTY4, record.LLMXTY5,
 	}
-	for i := 0; i < 6; i++ {
-		matrix.SetSym(i, i, matrix.At(i, i)+regularization)
-		yValues[i] += regularization * initial[i]
-	}
-	scale := [6]float64{}
-	for i := range scale {
-		scale[i] = math.Sqrt(matrix.At(i, i))
-		if scale[i] <= 0 || math.IsNaN(scale[i]) || math.IsInf(scale[i], 0) {
-			return fmt.Errorf("LLM fit matrix diagonal %d does not produce a positive finite scale", i)
-		}
-	}
-	scaledMatrix := mat.NewSymDense(6, nil)
-	scaledYValues := [6]float64{}
-	for i := range scale {
-		for j := i; j < len(scale); j++ {
-			scaledMatrix.SetSym(i, j, matrix.At(i, j)/(scale[i]*scale[j]))
-		}
-		scaledYValues[i] = yValues[i] / scale[i]
-	}
-	scaledY := mat.NewVecDense(6, scaledYValues[:])
-	var coefficients mat.VecDense
-	if err := coefficients.SolveVec(scaledMatrix, scaledY); err != nil {
+	initial := initialExecutionParameters().llm.values()
+	values, err := fitRidgeLeastSquares(
+		llmXTX(record),
+		yValues,
+		initial[:],
+		config.GetConfig().TaskPricing.CalibrationRegularization,
+	)
+	if err != nil {
 		return err
-	}
-	values := [6]float64{}
-	for i := range values {
-		values[i] = coefficients.AtVec(i) / scale[i]
-		if math.IsNaN(values[i]) || math.IsInf(values[i], 0) {
-			return errors.New("fitted LLM coefficient is not finite")
-		}
-		if values[i] < 0 {
-			values[i] = 0
-		}
 	}
 	record.LLMConstantSeconds = values[0]
 	record.LLMSecondsPerInputByte = values[1]
@@ -586,20 +625,13 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 			actual = maxActual
 		}
 	}
-	alpha := config.GetConfig().TaskPricing.CalibrationAlpha
-	decay := 1 - alpha
 	next := cached.record
 	matrix := llmXTX(&next)
 	yValues := [6]float64{
 		next.LLMXTY0, next.LLMXTY1, next.LLMXTY2,
 		next.LLMXTY3, next.LLMXTY4, next.LLMXTY5,
 	}
-	for i := range x {
-		for j := i; j < len(x); j++ {
-			matrix.SetSym(i, j, decay*matrix.At(i, j)+alpha*x[i]*x[j])
-		}
-		yValues[i] = decay*yValues[i] + alpha*x[i]*actual
-	}
+	accumulateWeightedSample(matrix, yValues[:], x[:], actual, config.GetConfig().TaskPricing.CalibrationAlpha)
 	setLLMFitState(&next, matrix, yValues)
 	next.LLMSuccessSamples++
 	updateVRAMRequirement(&next, task.MinVRAM)
@@ -629,7 +661,7 @@ func setLLMFitState(record *models.GPUExecutionCalibration, matrix *mat.SymDense
 func calibrationReady(record *models.GPUExecutionCalibration, taskType models.TaskType) bool {
 	warmup := config.GetConfig().TaskPricing.CalibrationWarmupSuccessSamples
 	if taskType == models.TaskTypeSD {
-		return record.SDSuccessSamples >= warmup
+		return record.SDSuccessSamples >= warmup && record.SDFormulaVersion == sdFormulaVersion
 	}
 	return record.LLMSuccessSamples >= warmup && record.LLMFormulaVersion == llmFormulaVersion
 }
@@ -661,6 +693,7 @@ type ExecutionTimeoutDescription struct {
 	MinExecutionTimeoutSeconds uint64
 	MaxExecutionTimeoutSeconds uint64
 	ComputedTimeout            uint64
+	OverheadSeconds            float64
 	ConstantSeconds            float64
 	TextInputSeconds           float64
 	OutputTokenSeconds         float64
@@ -725,6 +758,7 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 		}
 		selectedReadyCandidate = true
 	}
+	setSDTimeoutContributions(&description, task, selectedParameters)
 	setLLMTimeoutContributions(&description, task, selectedParameters.llm)
 	description.PredictedExecutionSeconds = prediction
 	timeout := prediction * cfg.TimeoutMultiplier
@@ -732,6 +766,13 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 	timeout = math.Min(timeout, float64(cfg.MaxExecutionTimeoutSeconds))
 	description.ComputedTimeout = uint64(math.Ceil(timeout))
 	return description, nil
+}
+
+func setSDTimeoutContributions(description *ExecutionTimeoutDescription, task *models.InferenceTask, parameters executionParameters) {
+	if task.TaskType != models.TaskTypeSD {
+		return
+	}
+	description.OverheadSeconds = parameters.sdOverhead
 }
 
 func setLLMTimeoutContributions(description *ExecutionTimeoutDescription, task *models.InferenceTask, parameters llmExecutionParameters) {
@@ -842,7 +883,7 @@ func publishTaskPricingMetricsLocked() {
 	for key, parameters := range globalTaskPricing.aggregates {
 		metrics.SetTaskPricingCalibration(
 			metrics.TaskTypeLabel(key.taskType), key.modelName, key.modelVariant, key.requestedDType,
-			key.quantizeBits, key.vramDemand, parameters.sdRate, parameters.llm.values(),
+			key.quantizeBits, key.vramDemand, parameters.sdOverhead, parameters.sdRate, parameters.llm.values(),
 		)
 	}
 	for key, cached := range globalTaskPricing.records {
@@ -860,6 +901,7 @@ func publishTaskPricingMetricsLocked() {
 			key.quantizeBits,
 			cached.record.MinVRAMRequirement,
 			cached.record.MaxVRAMRequirement,
+			cached.record.SDOverheadSeconds,
 			cached.record.SecondsPerSDPixelStep,
 			parametersFromRecord(&cached.record).llm.values(),
 			samples,
