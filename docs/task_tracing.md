@@ -45,7 +45,7 @@ Target trace data:
   - Timestamp: task start time.
   - Details: selected node information, including address, card/GPU name, VRAM, version, operator staking, delegated staking summary, QoS score, health score inputs when available, status, delegator share/count, and all other persisted node base information useful for diagnosis.
   - Details: selected node model cache snapshot, including authoritative node-reported models present on disk and base models currently in memory or in use. Task start MUST NOT create missing model rows or emit model downloads.
-  - Details: exact execution `GPUName` and `GPUVram`, persisted `model_switched`, execution parameter cold-start state, predicted execution seconds, the constant, text-input, output-token, model-switch, image-count, and image-megapixel contributions, multiplier and clamp inputs, stored execution `Timeout`, waiting party `node`, current phase `execution`, and current execution deadline.
+  - Details: exact execution `GPUName` and `GPUVram`, persisted `model_switched`, execution parameter cold-start state, predicted execution seconds, the SD overhead contribution, the constant, text-input, output-token, model-switch, image-count, and image-megapixel contributions, multiplier and clamp inputs, stored execution `Timeout`, waiting party `node`, current phase `execution`, and current execution deadline.
   - Details: calibration selection MUST expose model name, variant, requested dtype, quantization, selected execution dtype, selected minimum and maximum VRAM requirements, and whether unknown-model fallback was used.
   - Duration: queue waiting time MUST also be present on this step for easy reading.
 - Score submission:

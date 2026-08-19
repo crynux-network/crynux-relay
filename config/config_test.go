@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -82,7 +83,7 @@ task:
   passive_slash_mode: true
   history_cleanup_batch_size: 2000
 task_pricing:
-  overhead_seconds: 30
+  initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001
@@ -168,6 +169,27 @@ func TestInitConfigRequiresPassiveSlashMode(t *testing.T) {
 	}
 }
 
+func TestInitConfigRequiresInitialSDOverheadSeconds(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := writeConfigTestFiles(t, true, true)
+	configPath := filepath.Join(dir, "config.yml")
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(content), "  initial_sd_overhead_seconds: 30\n", "", 1)
+	if updated == string(content) {
+		t.Fatal("expected to remove initial_sd_overhead_seconds from test config")
+	}
+	writeTestFile(t, configPath, updated)
+	if err := InitConfig(dir); err == nil {
+		t.Fatal("expected missing task_pricing.initial_sd_overhead_seconds to fail config initialization")
+	}
+}
+
 func TestInitConfigRequiresQosTracingMaxTaskEvents(t *testing.T) {
 	t.Cleanup(func() {
 		appConfig = nil
@@ -209,7 +231,7 @@ task:
   passive_slash_mode: true
   history_cleanup_batch_size: 2000
 task_pricing:
-  overhead_seconds: 30
+  initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001
@@ -339,7 +361,7 @@ task:
   passive_slash_mode: true
   history_cleanup_batch_size: 2000
 task_pricing:
-  overhead_seconds: 30
+  initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001
@@ -428,7 +450,7 @@ stats:
 network_flops:
   gpu_flops_file: "config/gpu_flops.json"
 task_pricing:
-  overhead_seconds: 30
+  initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001

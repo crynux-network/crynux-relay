@@ -28,7 +28,9 @@ An LLM calibration sample MUST use the actual `usage.completion_tokens` from the
 
 Relay MUST maintain one parameter record for each exact `(TaskType, GPUName, GPUVram, ModelName, ModelVariant, ExecutionDType, QuantizeBits)` key. The record MUST contain:
 
+- SD `overhead_seconds`.
 - SD `seconds_per_sd_pixel_step`.
+- SD formula version.
 - LLM `constant_seconds`.
 - LLM `seconds_per_input_byte`.
 - LLM `seconds_per_output_token`.
@@ -37,7 +39,8 @@ Relay MUST maintain one parameter record for each exact `(TaskType, GPUName, GPU
 - LLM `seconds_per_megapixel`.
 - LLM formula version.
 - Independent SD and LLM cumulative successful-sample counts.
-- The persisted LLM weighted least-squares matrices.
+- The persisted SD two-dimensional weighted least-squares matrices.
+- The persisted LLM six-dimensional weighted least-squares matrices.
 - The minimum and maximum task `MinVRAM` observed across valid samples in the record.
 
 Each valid sample MUST update both VRAM bounds without creating another row for a different `MinVRAM`. Model architecture, scheduler, and auxiliary models MUST NOT be calibration-key fields.
@@ -82,14 +85,16 @@ LLM calibration MUST occur only after verified result upload:
 
 If the group representative does not upload a verified result, `TaskEndGroupRefund` tasks MUST NOT provide LLM samples. A refund task with a different score MUST NOT use the uploaded completion-token count.
 
-`TaskEndInvalidated`, `TaskEndAborted`, `TaskErrorReported`, failed validation, execution timeout, and any task without verifiable LLM completion tokens MUST NOT update execution parameters, sample counts, or LLM fitting matrices.
+`TaskEndInvalidated`, `TaskEndAborted`, `TaskErrorReported`, failed validation, execution timeout, and any task without verifiable LLM completion tokens MUST NOT update execution parameters, sample counts, or SD or LLM fitting matrices.
 
 ## Parameter Updates
 
-For SD, Relay MUST subtract configured fixed overhead from actual execution duration, divide the non-negative remainder by `SDUnits`, and update the rate with:
+For SD, Relay MUST fit:
 
 ```
-new_rate = calibration_alpha * sample_rate + (1 - calibration_alpha) * old_rate
+actual_execution_seconds =
+    overhead_seconds
+    + seconds_per_sd_pixel_step * SDUnits
 ```
 
 For LLM, Relay MUST fit:
@@ -104,11 +109,11 @@ actual_execution_seconds =
     + seconds_per_megapixel * (image_pixels / 1000000)
 ```
 
-Relay MUST update the six-dimensional LLM `XᵀX` and `Xᵀy` state by multiplying prior state by `1 - calibration_alpha` and adding the new sample contribution multiplied by `calibration_alpha`. The ridge equation MUST add `regularization * configured_initial_parameters` to `Xᵀy` and `regularization` to the matrix diagonal. Relay MUST solve a temporary scaled copy of the regularized equation. Each dimension's scale MUST be the positive square root of its regularized diagonal entry; Relay MUST divide the corresponding matrix row and column and the corresponding `Xᵀy` entry by that scale, then divide the solved coefficient by the same scale to restore the coefficient to its base unit. A diagonal entry that cannot produce a positive finite scale MUST make the solve fail. The scaling MUST NOT modify the persisted `XᵀX` or `Xᵀy` state: text input MUST remain measured in bytes, output in tokens, image count in images, and image size in megapixels. Unobserved image or model-switch dimensions MUST therefore remain at their configured positive initial values. All fitted coefficients MUST be non-negative. When the current predicted execution seconds is greater than `0`, a sample's positive residual above the configured maximum residual multiple MUST be truncated before it updates shared parameters. When the current predicted execution seconds is not greater than `0`, Relay MUST NOT truncate that sample. Relay MUST solve for finite coefficients from the updated matrices before committing the sample. If the solve fails or any coefficient is not finite, Relay MUST leave the previous coefficients, matrices, and successful-sample count unchanged.
+Relay MUST update the SD two-dimensional and LLM six-dimensional `XᵀX` and `Xᵀy` state by multiplying prior state by `1 - calibration_alpha` and adding the new sample contribution multiplied by `calibration_alpha`. The ridge equation MUST add `regularization * configured_initial_parameters` to `Xᵀy` and `regularization` to the matrix diagonal. Relay MUST solve a temporary scaled copy of the regularized equation. Each dimension's scale MUST be the positive square root of its regularized diagonal entry; Relay MUST divide the corresponding matrix row and column and the corresponding `Xᵀy` entry by that scale, then divide the solved coefficient by the same scale to restore the coefficient to its base unit. A diagonal entry that cannot produce a positive finite scale MUST make the solve fail. The scaling MUST NOT modify the persisted `XᵀX` or `Xᵀy` state: SD pixel-step work MUST remain measured in `SDUnits`, LLM text input MUST remain measured in bytes, output in tokens, image count in images, and image size in megapixels. Unobserved LLM image or model-switch dimensions MUST therefore remain at their configured positive initial values. All fitted coefficients MUST be non-negative. When the current predicted execution seconds is greater than `0`, a sample's positive residual above the configured maximum residual multiple MUST be truncated before it updates shared parameters. When the current predicted execution seconds is not greater than `0`, Relay MUST NOT truncate that sample. The current predicted execution seconds MUST be the complete prediction from every coefficient in that task type's formula. Relay MUST solve for finite coefficients from the updated matrices before committing the sample. If the solve fails or any coefficient is not finite, Relay MUST leave the previous coefficients, matrices, and successful-sample count unchanged.
 
-`calibration_alpha` MUST be greater than `0` and less than `1`. SD EWMA and LLM exponentially weighted least squares MUST use the same configured value.
+`calibration_alpha` MUST be greater than `0` and less than `1`. SD and LLM exponentially weighted least squares MUST use the same configured value.
 
-Every runtime configuration template MUST explicitly define positive SD and LLM initial parameters, fixed overhead, `calibration_warmup_success_samples`, a one-hour calibration flush interval, LLM regularization, and the maximum positive residual multiple. LLM warmup samples MUST be at least `3`. Missing or invalid values MUST prevent Relay startup.
+Every runtime configuration template MUST explicitly define positive SD initial overhead, positive SD and LLM initial parameters, `calibration_warmup_success_samples`, a one-hour calibration flush interval, regularization, and the maximum positive residual multiple. LLM warmup samples MUST be at least `3`. Missing or invalid values MUST prevent Relay startup.
 
 ## Initialization and Cold Start
 
@@ -116,13 +121,13 @@ For a known model configuration, Relay MUST select records with the same task ty
 
 If no record matches the model configuration, Relay MUST compare the task `MinVRAM` with every candidate record interval. Distance MUST be `0` when the interval contains `MinVRAM`; otherwise distance MUST be the difference to the nearest interval boundary. For a selected GPU, Relay MUST first use nearest records for the exact GPU name and VRAM, and MUST use other GPU names with the same VRAM only when the exact GPU has no records. Equal-distance priority candidates MUST be averaged with equal weight. Equal-distance Timeout candidates MUST use the maximum complete prediction. If no candidate exists, Relay MUST use configured initial parameters.
 
-Inherited parameters MUST NOT increase the target variant's own successful-sample count and MUST NOT populate its own LLM fitting matrices. Cumulative successful-sample counts MUST be used only to determine whether a record has samples and whether the exact GPU variant has completed cold start.
+Inherited parameters MUST NOT increase the target variant's own successful-sample count and MUST NOT populate its own SD or LLM fitting matrices. Cumulative successful-sample counts MUST be used only to determine whether a record has samples and whether the exact GPU variant has completed cold start.
 
-An SD calibration record completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples`.
+An SD calibration record completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples` and its record uses the current SD formula version. Full rank across both SD dimensions MUST NOT be required.
 
 An LLM calibration record completes cold start only when its own successful-sample count reaches `calibration_warmup_success_samples` and its record uses the current LLM formula version. Full rank across all six dimensions MUST NOT be required.
 
-Before cold start completes, Relay MUST calculate the current task's full predicted duration from configured initial parameters and from every selected same-VRAM record that has completed cold start. Relay MUST use the maximum complete prediction. For LLM, Relay MUST compare complete predictions and MUST NOT combine the maximum of individual coefficients. An incomplete fitted record MUST NOT participate. If no selected record has completed cold start, Relay MUST use the configured initial prediction.
+Before cold start completes, Relay MUST calculate the current task's full predicted duration from configured initial parameters and from every selected same-VRAM record that has completed cold start. Relay MUST use the maximum complete prediction. Relay MUST compare complete predictions and MUST NOT combine the maximum of individual coefficients. An incomplete fitted record MUST NOT participate. If no selected record has completed cold start, Relay MUST use the configured initial prediction.
 
 After cold start completes, Relay MUST use the exact GPU variant's own parameters. Relay restart MUST produce the same readiness decision from persisted sample counts and fitting matrices.
 
@@ -130,13 +135,16 @@ After cold start completes, Relay MUST use the exact GPU variant's own parameter
 
 Relay MUST load all persisted GPU execution parameter records once at startup. Runtime reads and updates MUST use the in-memory cache. Task creation, candidate filtering, node selection, dispatch, and execution-time calculation MUST NOT query the calibration table.
 
-When a persisted record has an older LLM formula version, Relay MUST preserve its SD parameter and SD sample count, reset its LLM fitting state and LLM sample count, initialize all six LLM coefficients from required production configuration, assign the current formula version, and mark the record dirty for the normal flush process.
+When a persisted record has an older SD formula version, Relay MUST preserve its LLM coefficients, LLM fitting state, and LLM sample count, reset its SD fitting state and SD sample count, initialize SD `overhead_seconds` and `seconds_per_sd_pixel_step` from required production configuration, assign the current SD formula version, and mark the record dirty for the normal flush process.
+
+When a persisted record has an older LLM formula version, Relay MUST preserve its SD coefficients, SD fitting state, and SD sample count, reset its LLM fitting state and LLM sample count, initialize all six LLM coefficients from required production configuration, assign the current LLM formula version, and mark the record dirty for the normal flush process.
 
 Each valid sample MUST update in-memory parameters, fitting state, successful-sample count, and a dirty version. Relay MUST batch-upsert dirty records at the configured flush interval of one hour and MUST perform one bounded flush during normal shutdown. A failed flush MUST retain dirty records for retry. A concurrent update during a flush MUST remain dirty after that flush completes.
 
 Relay metrics MUST expose base units:
 
-- SD: seconds per pixel-step.
+- SD overhead: seconds.
+- SD pixel-step coefficient: seconds per pixel-step.
 - LLM constant: seconds.
 - LLM text input coefficient: seconds per input byte.
 - LLM output coefficient: seconds per output token.
@@ -146,6 +154,6 @@ Relay metrics MUST expose base units:
 
 The sample-count metric MUST expose cumulative successful samples by the complete calibration key. Calibration metrics MUST include the model configuration and VRAM interval labels so distinct records MUST NOT overwrite one Prometheus series. Sample counts MUST NOT be used as aggregation weights.
 
-Grafana MUST display the LLM text input and output coefficients as seconds per 5,000 units by multiplying the base metrics by `5000`. The model-switch, image-count, and image-megapixel coefficients MUST be displayed in their base units. Grafana MUST display the SD coefficient as seconds per 512×512 image-step by multiplying the base metric by `512 * 512`. Relay storage, calculation, and `/metrics` output MUST remain in base units.
+Grafana MUST display the LLM text input and output coefficients as seconds per 5,000 units by multiplying the base metrics by `5000`. The model-switch, image-count, and image-megapixel coefficients MUST be displayed in their base units. Grafana MUST display the SD overhead coefficient in seconds without unit conversion. Grafana MUST display the SD pixel-step coefficient as seconds per 512×512 image-step by multiplying the base metric by `512 * 512`. Relay storage, calculation, and `/metrics` output MUST remain in base units.
 
 Queue ordering MUST read these parameters as specified in [task-pricing.md](./task-pricing.md). Execution Timeout calculation MUST read these parameters as specified in [task_timeout.md](./task_timeout.md).

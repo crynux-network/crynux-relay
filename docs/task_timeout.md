@@ -34,6 +34,8 @@ Timeout = ceil(clamp(
 ))
 ```
 
+`overhead_seconds` and `seconds_per_sd_pixel_step` MUST come from the selected in-memory records. Timeout calculation MUST NOT read a configured fixed SD overhead.
+
 For LLM:
 
 ```

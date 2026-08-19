@@ -50,7 +50,7 @@ func initServiceTestConfig(t *testing.T) {
 const taskPricingMatchingTestConfigYAML = "staking_score:\n" +
 	"  locked_emission_coefficient: 1.0\n" +
 	"task_pricing:\n" +
-	"  overhead_seconds: 30\n" +
+	"  initial_sd_overhead_seconds: 30\n" +
 	"  initial_seconds_per_sd_pixel_step: 0.00003814697265625\n" +
 	"  initial_llm_constant_seconds: 30\n" +
 	"  initial_llm_seconds_per_input_byte: 0.0001\n" +

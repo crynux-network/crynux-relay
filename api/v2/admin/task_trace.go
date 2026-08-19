@@ -448,6 +448,7 @@ func (b *taskTraceBuilder) addTaskStarted() {
 				details["timeout_multiplier"] = description.TimeoutMultiplier
 				details["min_execution_timeout_seconds"] = description.MinExecutionTimeoutSeconds
 				details["max_execution_timeout_seconds"] = description.MaxExecutionTimeoutSeconds
+				details["overhead_seconds"] = description.OverheadSeconds
 				details["constant_seconds"] = description.ConstantSeconds
 				details["text_input_seconds"] = description.TextInputSeconds
 				details["output_token_seconds"] = description.OutputTokenSeconds

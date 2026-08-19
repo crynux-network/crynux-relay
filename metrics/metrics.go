@@ -101,6 +101,11 @@ var (
 		Help: "Number of nodes whose last task poll was within the last 2 minutes.",
 	})
 
+	TaskPricingSDOverheadSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_sd_overhead_seconds",
+		Help: "Aggregated stable diffusion execution overhead seconds.",
+	}, []string{"model_name", "model_variant", "requested_dtype", "quantize_bits", "vram_demand"})
+
 	TaskPricingSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_task_pricing_seconds_per_sd_pixel_step",
 		Help: "Aggregated stable diffusion execution seconds per pixel-step.",
@@ -110,6 +115,11 @@ var (
 		Name: "relay_task_pricing_llm_coefficient",
 		Help: "Aggregated LLM execution coefficient in its base unit.",
 	}, []string{"coefficient", "model_name", "model_variant", "requested_dtype", "quantize_bits", "vram_demand"})
+
+	GPUExecutionSDOverheadSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_gpu_execution_sd_overhead_seconds",
+		Help: "Stable diffusion execution overhead seconds for an exact GPU variant.",
+	}, []string{"task_type", "gpu_name", "gpu_vram", "model_name", "model_variant", "execution_dtype", "quantize_bits", "min_vram_requirement", "max_vram_requirement"})
 
 	GPUExecutionSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_gpu_execution_seconds_per_sd_pixel_step",
@@ -175,8 +185,10 @@ func init() {
 		Nodes,
 		NodesFailing30m,
 		NodesAlive,
+		TaskPricingSDOverheadSeconds,
 		TaskPricingSecondsPerSDPixelStep,
 		TaskPricingLLMCoefficient,
+		GPUExecutionSDOverheadSeconds,
 		GPUExecutionSecondsPerSDPixelStep,
 		GPUExecutionLLMCoefficient,
 		GPUExecutionCalibrationSamples,
@@ -189,17 +201,20 @@ func init() {
 }
 
 func ResetTaskPricingCalibrationMetrics() {
+	TaskPricingSDOverheadSeconds.Reset()
 	TaskPricingSecondsPerSDPixelStep.Reset()
 	TaskPricingLLMCoefficient.Reset()
+	GPUExecutionSDOverheadSeconds.Reset()
 	GPUExecutionSecondsPerSDPixelStep.Reset()
 	GPUExecutionLLMCoefficient.Reset()
 	GPUExecutionCalibrationSamples.Reset()
 }
 
-func SetTaskPricingCalibration(taskType, modelName, modelVariant, requestedDType string, quantizeBits, vramDemand uint64, sdRate float64, llm [6]float64) {
+func SetTaskPricingCalibration(taskType, modelName, modelVariant, requestedDType string, quantizeBits, vramDemand uint64, sdOverhead, sdRate float64, llm [6]float64) {
 	vram := fmt.Sprint(vramDemand)
 	labels := []string{modelName, modelVariant, requestedDType, fmt.Sprint(quantizeBits), vram}
 	if taskType == "sd" {
+		TaskPricingSDOverheadSeconds.WithLabelValues(labels...).Set(sdOverhead)
 		TaskPricingSecondsPerSDPixelStep.WithLabelValues(labels...).Set(sdRate)
 		return
 	}
@@ -210,8 +225,9 @@ func SetTaskPricingCalibration(taskType, modelName, modelVariant, requestedDType
 	}
 }
 
-func SetGPUExecutionCalibration(taskType, gpuName string, gpuVram uint64, modelName, modelVariant, executionDType string, quantizeBits, minVRAM, maxVRAM uint64, sdRate float64, llm [6]float64, samples uint64) {
+func SetGPUExecutionCalibration(taskType, gpuName string, gpuVram uint64, modelName, modelVariant, executionDType string, quantizeBits, minVRAM, maxVRAM uint64, sdOverhead, sdRate float64, llm [6]float64, samples uint64) {
 	labels := []string{taskType, gpuName, fmt.Sprint(gpuVram), modelName, modelVariant, executionDType, fmt.Sprint(quantizeBits), fmt.Sprint(minVRAM), fmt.Sprint(maxVRAM)}
+	GPUExecutionSDOverheadSeconds.WithLabelValues(labels...).Set(sdOverhead)
 	GPUExecutionSecondsPerSDPixelStep.WithLabelValues(labels...).Set(sdRate)
 	for i, name := range []string{"constant", "text_input", "output", "model_switch", "image_count", "image_megapixel"} {
 		GPUExecutionLLMCoefficient.WithLabelValues(append([]string{name}, labels...)...).Set(llm[i])

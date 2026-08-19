@@ -151,7 +151,7 @@ type AppConfig struct {
 	} `mapstructure:"task"`
 
 	TaskPricing struct {
-		OverheadSeconds                        float64 `mapstructure:"overhead_seconds"`
+		InitialSDOverheadSeconds               float64 `mapstructure:"initial_sd_overhead_seconds"`
 		InitialSecondsPerSDPixelStep           float64 `mapstructure:"initial_seconds_per_sd_pixel_step"`
 		InitialLLMConstantSeconds              float64 `mapstructure:"initial_llm_constant_seconds"`
 		InitialLLMSecondsPerInputByte          float64 `mapstructure:"initial_llm_seconds_per_input_byte"`

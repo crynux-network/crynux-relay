@@ -26,6 +26,18 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(modelapi.GetLoadedModels, 200))
 
+	modelsGroup := v2g.Group("models", "models", "Model APIs")
+	modelsGroup.GET("/sd/execution-time", []fizz.OperationOption{
+		fizz.ID("sd_execution_time_v2"),
+		fizz.Summary("Get SD execution-time coefficients"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(modelapi.GetSDExecutionTime, 200))
+	modelsGroup.GET("/llm/execution-time", []fizz.OperationOption{
+		fizz.ID("llm_execution_time_v2"),
+		fizz.Summary("Get LLM execution-time coefficients"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(modelapi.GetLLMExecutionTime, 200))
+
 	incentiveGroup := v2g.Group("incentive", "incentive", "incentive statistics related APIs")
 
 	incentiveGroup.GET("/nodes", []fizz.OperationOption{
