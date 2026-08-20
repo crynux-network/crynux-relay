@@ -303,12 +303,21 @@ Each funding network entry under `blockchains` and `deposit_withdraw_networks` c
 | `GET` | `/v1/client/:address/task_fee` | Query task fee records |
 | `GET` | `/v2/relay_account/:address/vesting/locked` | Query locked vesting amount |
 | `GET` | `/v2/relay_account/:address/vesting/list` | Query vesting records with pagination |
+| `GET` | `/v2/relay_account/:address/balance` | Query relay account balance for the authenticated address |
 | `GET` | `/v1/network/withdraw_config` | Query withdraw fee and limit config of all funding networks: `network`, `token_type`, `withdrawal_fee`, `withdrawal_min`, `withdrawal_fee_tiers`, and `max_withdrawals_per_day` |
 
-`GET /v2/relay_account/:address/vesting/locked` and `GET /v2/relay_account/:address/vesting/list` MUST allow access when either authentication method succeeds:
+`GET /v2/relay_account/:address/balance`, `GET /v2/relay_account/:address/vesting/locked`, and `GET /v2/relay_account/:address/vesting/list` MUST allow access when either authentication method succeeds:
 
 - JWT authentication: the JWT address MUST equal `:address`.
 - Signature authentication: the recovered signer address MUST equal `:address`. The signature payload MUST contain only `address`.
+
+### Admin APIs
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v2/admin/relay_account/:address/balance` | Query any relay account balance with admin auth |
+
+`GET /v2/admin/relay_account/:address/balance` MUST require admin authentication through the existing admin auth token query parameter. The endpoint MUST return the relay account balance for `:address` without requiring wallet ownership of that address.
 
 ### Wallet APIs
 

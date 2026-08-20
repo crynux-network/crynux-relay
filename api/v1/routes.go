@@ -117,12 +117,6 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(nodes.GetNodeTask, 200))
 
-	balanceGroup := v1g.Group("balance", "balance", "balance related APIs")
-	balanceGroup.GET("/:address", []fizz.OperationOption{
-		fizz.Summary("Get balance of account"),
-		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
-	}, tonic.Handler(relayaccount.GetBalance, 200))
-
 	stakingGroup := v1g.Group("staking", "staking", "staking related APIs")
 	stakingGroup.GET("/:address", []fizz.OperationOption{
 		fizz.Summary("Get staking of node"),
