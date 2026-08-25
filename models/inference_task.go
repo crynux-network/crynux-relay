@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -283,6 +284,62 @@ func GetQueuedTaskCount(ctx context.Context, db *gorm.DB) (int64, error) {
 		return 0, err
 	}
 	return res, nil
+}
+
+// QueuedTaskPriorityRange is the highest, median, and lowest priority among
+// all TaskQueued rows ordered by priority DESC, id ASC.
+type QueuedTaskPriorityRange struct {
+	Count   int64
+	Highest *BigInt
+	Median  *BigInt
+	Lowest  *BigInt
+}
+
+func GetQueuedTaskPriorityRange(ctx context.Context, db *gorm.DB) (*QueuedTaskPriorityRange, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var count int64
+	if err := db.WithContext(dbCtx).Model(&InferenceTask{}).Where("status = ?", TaskQueued).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	result := &QueuedTaskPriorityRange{Count: count}
+	if count == 0 {
+		return result, nil
+	}
+
+	readPriorityAtOffset := func(offset int) (*BigInt, error) {
+		var task InferenceTask
+		err := db.WithContext(dbCtx).Model(&InferenceTask{}).
+			Select("priority").
+			Where("status = ?", TaskQueued).
+			Order("priority DESC, id ASC").
+			Offset(offset).
+			Limit(1).
+			Take(&task).Error
+		if err != nil {
+			return nil, err
+		}
+		return &BigInt{Int: *new(big.Int).Set(&task.Priority.Int)}, nil
+	}
+
+	highest, err := readPriorityAtOffset(0)
+	if err != nil {
+		return nil, err
+	}
+	median, err := readPriorityAtOffset(int(count / 2))
+	if err != nil {
+		return nil, err
+	}
+	lowest, err := readPriorityAtOffset(int(count - 1))
+	if err != nil {
+		return nil, err
+	}
+
+	result.Highest = highest
+	result.Median = median
+	result.Lowest = lowest
+	return result, nil
 }
 
 func GetTimeoutAbortedNodeCount(ctx context.Context, db *gorm.DB, since time.Time) (int64, error) {

@@ -95,6 +95,7 @@ task_pricing:
   timeout_multiplier: 2
   min_execution_timeout_seconds: 60
   max_execution_timeout_seconds: 7200
+  queued_task_priority_snapshot_interval_seconds: 300
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2

@@ -79,6 +79,9 @@ func main() {
 	if err := service.InitCurrentEmissionEstimateSnapshot(context.Background(), config.GetDB(), conf.Dao.MainnetStartTime); err != nil {
 		log.Fatalln(err)
 	}
+	if err := service.InitQueuedTaskPrioritySnapshot(ctx, config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
 
 	tm := blockchain.NewTransactionManager(config.GetDB())
 	tm.Start(context.Background())
@@ -104,6 +107,7 @@ func main() {
 	go tasks.StartDelegatedStakingNodeListSnapshotRefresh(context.Background())
 	go tasks.StartDelegationTaskFeeLeaderboardRefresh(context.Background())
 	go tasks.StartCurrentEmissionEstimateSnapshotRefresh(context.Background())
+	go tasks.StartQueuedTaskPrioritySnapshotRefresh(ctx)
 
 	if conf.Metrics.Enabled {
 		metrics.InitVramTiers(conf.Metrics.VramTiers)

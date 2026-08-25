@@ -58,6 +58,7 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"  timeout_multiplier: 2\n" +
 		"  min_execution_timeout_seconds: 60\n" +
 		"  max_execution_timeout_seconds: 7200\n" +
+		"  queued_task_priority_snapshot_interval_seconds: 300\n" +
 		"task_matching:\n" +
 		"  batch_size: 100\n" +
 		"  tick_interval_seconds: 2\n" +

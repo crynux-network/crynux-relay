@@ -104,6 +104,7 @@ task_pricing:
   timeout_multiplier: 2
   min_execution_timeout_seconds: 60
   max_execution_timeout_seconds: 7200
+  queued_task_priority_snapshot_interval_seconds: 300
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2
@@ -190,6 +191,70 @@ func TestInitConfigRequiresInitialSDOverheadSeconds(t *testing.T) {
 	}
 }
 
+func TestInitConfigRequiresQueuedTaskPrioritySnapshotIntervalSeconds(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := writeConfigTestFiles(t, true, true)
+	configPath := filepath.Join(dir, "config.yml")
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(content), "  queued_task_priority_snapshot_interval_seconds: 300\n", "", 1)
+	if updated == string(content) {
+		t.Fatal("expected to remove queued_task_priority_snapshot_interval_seconds from test config")
+	}
+	writeTestFile(t, configPath, updated)
+	if err := InitConfig(dir); err == nil {
+		t.Fatal("expected missing queued_task_priority_snapshot_interval_seconds to fail config initialization")
+	}
+}
+
+func TestInitConfigRejectsZeroQueuedTaskPrioritySnapshotIntervalSeconds(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := writeConfigTestFiles(t, true, true)
+	configPath := filepath.Join(dir, "config.yml")
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(
+		string(content),
+		"  queued_task_priority_snapshot_interval_seconds: 300\n",
+		"  queued_task_priority_snapshot_interval_seconds: 0\n",
+		1,
+	)
+	if updated == string(content) {
+		t.Fatal("expected to replace queued_task_priority_snapshot_interval_seconds in test config")
+	}
+	writeTestFile(t, configPath, updated)
+	if err := InitConfig(dir); err == nil {
+		t.Fatal("expected zero queued_task_priority_snapshot_interval_seconds to fail config initialization")
+	}
+}
+
+func TestInitConfigLoadsQueuedTaskPrioritySnapshotIntervalSeconds(t *testing.T) {
+	t.Cleanup(func() {
+		appConfig = nil
+	})
+
+	dir := writeConfigTestFiles(t, true, true)
+	if err := InitConfig(dir); err != nil {
+		t.Fatalf("failed to init config: %v", err)
+	}
+	if GetConfig().TaskPricing.QueuedTaskPrioritySnapshotIntervalSeconds != 300 {
+		t.Fatalf(
+			"expected queued_task_priority_snapshot_interval_seconds 300, got %d",
+			GetConfig().TaskPricing.QueuedTaskPrioritySnapshotIntervalSeconds,
+		)
+	}
+}
+
 func TestInitConfigRequiresQosTracingMaxTaskEvents(t *testing.T) {
 	t.Cleanup(func() {
 		appConfig = nil
@@ -252,6 +317,7 @@ task_pricing:
   timeout_multiplier: 2
   min_execution_timeout_seconds: 60
   max_execution_timeout_seconds: 7200
+  queued_task_priority_snapshot_interval_seconds: 300
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2
@@ -382,6 +448,7 @@ task_pricing:
   timeout_multiplier: 2
   min_execution_timeout_seconds: 60
   max_execution_timeout_seconds: 7200
+  queued_task_priority_snapshot_interval_seconds: 300
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2
@@ -471,6 +538,7 @@ task_pricing:
   timeout_multiplier: 2
   min_execution_timeout_seconds: 60
   max_execution_timeout_seconds: 7200
+  queued_task_priority_snapshot_interval_seconds: 300
 task_matching:
   batch_size: 100
   tick_interval_seconds: 2

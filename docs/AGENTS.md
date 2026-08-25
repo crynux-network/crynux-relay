@@ -5,7 +5,7 @@
 | [architecture.md](./architecture.md) | Single Relay service boundary, configured blockchain networks, node current blockchain network, and terminology rules |
 | [task_execution_parameters.md](./task_execution_parameters.md) | SD and LLM workload fields, exact GPU execution parameter calibration, cold start, persistence, and base-unit metrics |
 | [task_execution_time.md](./task_execution_time.md) | Public SD and LLM execution-time coefficient APIs, min_vram and exact-GPU selection, and token-unit conversion |
-| [task-pricing.md](./task-pricing.md) | Queue execution-time estimate, VRAM weighting, immutable task priority, parameter aggregation, and dispatch ordering |
+| [task-pricing.md](./task-pricing.md) | Queue execution-time estimate, VRAM weighting, immutable task priority, parameter aggregation, dispatch ordering, and the public queued-task priority snapshot API |
 | [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, base-model readiness handling, in-round reservation, and dispatch consistency |
 | [node_selection.md](./node_selection.md) | Qualification filters, base-model gate, staking and QoS weight, in-memory locality, and weighted sampling |
 | [qos.md](./qos.md) | Long-term performance score (`Q_long`) and short-term reliability factor (`H`) that compose the runtime QoS |

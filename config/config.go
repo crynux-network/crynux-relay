@@ -294,6 +294,9 @@ func checkTaskPricingConfig() error {
 	if pricing.MaxExecutionTimeoutSeconds < pricing.MinExecutionTimeoutSeconds {
 		return errors.New("task_pricing.max_execution_timeout_seconds must be at least min_execution_timeout_seconds")
 	}
+	if pricing.QueuedTaskPrioritySnapshotIntervalSeconds == 0 {
+		return errors.New("task_pricing.queued_task_priority_snapshot_interval_seconds is not set")
+	}
 	return nil
 }
 

@@ -90,6 +90,51 @@ If the current fetched batch contains only expired or temporarily undispatchable
 
 Priority changes dispatch order only. It MUST NOT extend or shorten the queue deadline defined in [task_timeout.md](./task_timeout.md).
 
+## Queued Task Priority Snapshot
+
+Relay MUST maintain one in-memory snapshot of the current queued-task priority range for public callers.
+
+The snapshot MUST cover every `TaskQueued` task. It MUST NOT filter by task type. Soft-deleted rows MUST be excluded by the ordinary GORM soft-delete scope.
+
+Relay MUST refresh the snapshot on startup before the HTTP server begins listening. After startup, Relay MUST refresh the snapshot every `task_pricing.queued_task_priority_snapshot_interval_seconds` seconds. Every runtime configuration template MUST set that value to `300`. Configuration loading MUST fail when the value is missing or not greater than zero.
+
+Each refresh MUST:
+
+1. Count the current queued tasks.
+2. When the count is zero, store `queued_task_count = 0` and store null for the three priority fields.
+3. When the count is greater than zero, read only the highest, median, and lowest priority values from the existing `(status, priority DESC, id ASC)` index ordering. Relay MUST NOT load every queued priority into memory.
+4. Replace the in-memory snapshot atomically after the refresh succeeds.
+5. Set `as_of` to the UTC Unix second of the successful refresh.
+
+The median MUST use zero-based index `count / 2` in the descending priority order. For the even-length queue `[100, 80, 60, 40]`, the median MUST be `60`. The selected median MUST be the priority of one real queued task.
+
+When a refresh fails, Relay MUST keep the previous successful snapshot and MUST NOT change `as_of`.
+
+Relay MUST expose:
+
+```text
+GET /v2/tasks/queued/priority
+```
+
+The endpoint MUST be public and MUST NOT require authentication. The handler MUST return only the in-memory snapshot. It MUST NOT query the database.
+
+The response body MUST use the standard Relay v2 response envelope:
+
+```json
+{
+  "message": "success",
+  "data": {
+    "as_of": 1787623200,
+    "queued_task_count": 4,
+    "highest_priority_gwei": "57",
+    "median_priority_gwei": "33",
+    "lowest_priority_gwei": "25"
+  }
+}
+```
+
+Relay MUST keep the stored task `priority` in wei per weighted node second. The API MUST convert each selected priority to Gwei by integer division by `10^9` and MUST discard any remainder below one Gwei. The three priority fields MUST be JSON strings of non-negative integers. When `queued_task_count` is `0`, the three priority fields MUST be `null`.
+
 ## Trace and Metrics
 
 Task trace output MUST expose stored `priority`, `estimated_node_seconds`, `vram_weight`, `VRAMDemand`, and the stored task workload field.

@@ -157,6 +157,11 @@ func InitRoutes(r *fizz.Fizz) {
 	}, middleware.JWTAuthMiddleware(), tonic.Handler(relayaccount.GetEmissionChart, 200))
 
 	taskGroup := v2g.Group("tasks", "tasks", "Task APIs")
+	taskGroup.GET("/queued/priority", []fizz.OperationOption{
+		fizz.ID("queued_task_priority_v2"),
+		fizz.Summary("Get queued task priority snapshot"),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, tonic.Handler(tasks.GetQueuedTaskPriority, 200))
 	taskGroup.POST("/:task_id_commitment/node_error", []fizz.OperationOption{
 		fizz.ID("task_node_error_v2"),
 		fizz.Summary("Report a node task execution diagnostic"),
