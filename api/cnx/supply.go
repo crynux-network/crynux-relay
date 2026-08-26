@@ -30,7 +30,7 @@ func GetTotalSupply(c *gin.Context) {
 }
 
 func GetCirculatingSupply(c *gin.Context) {
-	supply, err := service.GetCNXCirculatingSupply(time.Now().UTC(), config.GetConfig().Dao.MainnetStartTime)
+	supply, err := service.GetCNXCirculatingSupply(c.Request.Context(), config.GetDB(), time.Now().UTC(), config.GetConfig().Dao.MainnetStartTime)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return

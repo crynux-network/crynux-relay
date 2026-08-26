@@ -16,6 +16,7 @@ type VestingStatus int8
 const (
 	VestingStatusActive VestingStatus = iota
 	VestingStatusCompleted
+	VestingStatusDeprecated
 )
 
 const (
@@ -72,6 +73,9 @@ func ComputeVestingShouldReleased(totalAmount *big.Int, startTime time.Time, dur
 }
 
 func (v *VestingRecord) LockedAmountAt(now time.Time) *big.Int {
+	if v.Status == VestingStatusDeprecated {
+		return big.NewInt(0)
+	}
 	shouldReleased := ComputeVestingShouldReleased(&v.TotalAmount.Int, v.StartTime, v.DurationDays, now)
 	locked := big.NewInt(0).Sub(&v.TotalAmount.Int, shouldReleased)
 	if locked.Sign() < 0 {
@@ -144,6 +148,7 @@ func ListVestingRecordsByAddressAndStartTimeRange(ctx context.Context, db *gorm.
 	if err := db.WithContext(dbCtx).
 		Model(&VestingRecord{}).
 		Where("address = ?", address).
+		Where("status != ?", VestingStatusDeprecated).
 		Where("start_time >= ? AND start_time < ?", startTime, endTime).
 		Find(&records).Error; err != nil {
 		return nil, err
@@ -160,6 +165,7 @@ func ListVestingRecordsByAddressAndTypeAndStartTimeRange(ctx context.Context, db
 		Model(&VestingRecord{}).
 		Where("address = ?", address).
 		Where("type = ?", vestingType).
+		Where("status != ?", VestingStatusDeprecated).
 		Where("start_time >= ? AND start_time < ?", startTime, endTime).
 		Find(&records).Error; err != nil {
 		return nil, err
@@ -174,6 +180,7 @@ func ListVestingRecordsByAddressAndTypesAndStartTimeRange(ctx context.Context, d
 	query := db.WithContext(dbCtx).
 		Model(&VestingRecord{}).
 		Where("address = ?", address).
+		Where("status != ?", VestingStatusDeprecated).
 		Where("start_time >= ? AND start_time < ?", startTime, endTime)
 	if len(vestingTypes) > 0 {
 		query = query.Where("type IN (?)", vestingTypes)

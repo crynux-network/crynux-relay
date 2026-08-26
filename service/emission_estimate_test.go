@@ -30,9 +30,9 @@ func setupEmissionEstimateTestDB(t *testing.T) *gorm.DB {
 
 func TestRefreshCurrentEmissionEstimateSnapshotAggregatesCurrentWeek(t *testing.T) {
 	db := setupEmissionEstimateTestDB(t)
-	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
-	currentWeekDay := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
-	previousWeekDay := time.Date(2026, 1, 7, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	currentWeekDay := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	previousWeekDay := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
 
 	nodeEarnings := []models.NodeEarning{
 		{
@@ -92,11 +92,11 @@ func TestRefreshCurrentEmissionEstimateSnapshotAggregatesCurrentWeek(t *testing.
 		t.Fatalf("create user staking earnings: %v", err)
 	}
 
-	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-01-01T00:00:00Z"); err != nil {
+	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-06-17T00:00:00Z"); err != nil {
 		t.Fatalf("refresh estimate snapshot: %v", err)
 	}
 
-	pool := big.NewInt(9280212)
+	pool := big.NewInt(1350649)
 	totalTaskFee := big.NewInt(70)
 	assertEstimate := func(name string, got EmissionEstimateResult, taskFee int64) {
 		t.Helper()
@@ -104,10 +104,10 @@ func TestRefreshCurrentEmissionEstimateSnapshotAggregatesCurrentWeek(t *testing.
 		if got.EstimatedEmission.Cmp(expected) != 0 {
 			t.Fatalf("%s expected %s, got %s", name, expected, got.EstimatedEmission)
 		}
-		if got.EmissionWeekStart != time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC).Unix() {
+		if got.EmissionWeekStart != time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC).Unix() {
 			t.Fatalf("%s unexpected week start %d", name, got.EmissionWeekStart)
 		}
-		if got.EmissionWeekEnd != time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC).Unix() {
+		if got.EmissionWeekEnd != time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC).Unix() {
 			t.Fatalf("%s unexpected week end %d", name, got.EmissionWeekEnd)
 		}
 		if got.EstimateUpdatedAt != now.Unix() {
@@ -128,8 +128,8 @@ func TestRefreshCurrentEmissionEstimateSnapshotAggregatesCurrentWeek(t *testing.
 
 func TestGetNodeDelegationWeeklyTaskFeeEstimateScalesByElapsedWeekTime(t *testing.T) {
 	db := setupEmissionEstimateTestDB(t)
-	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
-	currentWeekDay := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	currentWeekDay := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 
 	if err := db.Create(&models.NodeEarning{
 		NodeAddress:      "0xnode-a",
@@ -140,14 +140,14 @@ func TestGetNodeDelegationWeeklyTaskFeeEstimateScalesByElapsedWeekTime(t *testin
 		t.Fatalf("create node earning: %v", err)
 	}
 
-	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-01-01T00:00:00Z"); err != nil {
+	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-06-17T00:00:00Z"); err != nil {
 		t.Fatalf("refresh estimate snapshot: %v", err)
 	}
 
-	// Week start is Jan 8, elapsed 2.5 days: 30 * 7 / 2.5 = 84.
+	// The week has elapsed for 1.5 days: 30 * 7 / 1.5 = 140.
 	got := GetNodeDelegationWeeklyTaskFeeEstimate("0xnode-a")
-	if got.Cmp(big.NewInt(84)) != 0 {
-		t.Fatalf("expected 84, got %s", got)
+	if got.Cmp(big.NewInt(140)) != 0 {
+		t.Fatalf("expected 140, got %s", got)
 	}
 
 	missing := GetNodeDelegationWeeklyTaskFeeEstimate("0xnode-missing")
@@ -199,8 +199,8 @@ func TestRefreshCurrentEmissionEstimateSnapshotReturnsZeroWithNoTaskFee(t *testi
 
 func TestUpdateDelegatedStakingNodeListEmissionEstimates(t *testing.T) {
 	db := setupEmissionEstimateTestDB(t)
-	now := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
-	currentWeekDay := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	currentWeekDay := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 
 	nodeEarnings := []models.NodeEarning{
 		{
@@ -231,7 +231,7 @@ func TestUpdateDelegatedStakingNodeListEmissionEstimates(t *testing.T) {
 		t.Fatalf("create snapshots: %v", err)
 	}
 
-	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-01-01T00:00:00Z"); err != nil {
+	if err := RefreshCurrentEmissionEstimateSnapshot(context.Background(), db, now, "2026-06-17T00:00:00Z"); err != nil {
 		t.Fatalf("refresh estimate snapshot: %v", err)
 	}
 	if err := UpdateDelegatedStakingNodeListEmissionEstimates(context.Background(), db); err != nil {
@@ -242,8 +242,8 @@ func TestUpdateDelegatedStakingNodeListEmissionEstimates(t *testing.T) {
 	if err := db.Where("node_address = ?", "0xnode-a").First(&nodeA).Error; err != nil {
 		t.Fatalf("load node-a snapshot: %v", err)
 	}
-	expected := big.NewInt(0).Div(big.NewInt(0).Mul(big.NewInt(30), big.NewInt(9280212)), big.NewInt(60))
-	expectedOperator := big.NewInt(0).Div(big.NewInt(0).Mul(big.NewInt(20), big.NewInt(9280212)), big.NewInt(60))
+	expected := big.NewInt(0).Div(big.NewInt(0).Mul(big.NewInt(30), big.NewInt(1350649)), big.NewInt(60))
+	expectedOperator := big.NewInt(0).Div(big.NewInt(0).Mul(big.NewInt(20), big.NewInt(1350649)), big.NewInt(60))
 	if nodeA.EstimatedUpcomingOperatorEmission.Int.Cmp(expectedOperator) != 0 {
 		t.Fatalf("expected node-a operator estimate %s, got %s", expectedOperator, &nodeA.EstimatedUpcomingOperatorEmission.Int)
 	}

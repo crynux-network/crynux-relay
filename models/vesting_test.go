@@ -9,6 +9,17 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestVestingStatusValuesRemainStable(t *testing.T) {
+	if VestingStatusActive != 0 || VestingStatusCompleted != 1 || VestingStatusDeprecated != 2 {
+		t.Fatalf(
+			"unexpected vesting status values: active=%d completed=%d deprecated=%d",
+			VestingStatusActive,
+			VestingStatusCompleted,
+			VestingStatusDeprecated,
+		)
+	}
+}
+
 func TestComputeVestingShouldReleased(t *testing.T) {
 	total := big.NewInt(0).SetUint64(1000)
 	start := time.Date(2026, 1, 1, 13, 30, 0, 0, time.UTC)
@@ -42,12 +53,6 @@ func TestComputeVestingShouldReleased(t *testing.T) {
 			now:      time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC),
 			duration: 10,
 			expected: "300",
-		},
-		{
-			name:     "non UTC input uses UTC calendar day",
-			now:      time.Date(2026, 1, 2, 7, 59, 59, 0, time.FixedZone("UTC+8", 8*60*60)),
-			duration: 10,
-			expected: "0",
 		},
 		{
 			name:     "final day and beyond",

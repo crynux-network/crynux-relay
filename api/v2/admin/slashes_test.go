@@ -296,6 +296,16 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 			AdminSignature: "0xsig",
 			Status:         models.VestingStatusActive,
 		},
+		{
+			Address:        nodeAddress,
+			TotalAmount:    models.BigInt{Int: *big.NewInt(3000)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(600)},
+			StartTime:      time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC),
+			DurationDays:   10,
+			Type:           models.VestingTypeOther,
+			AdminSignature: "0xsig",
+			Status:         models.VestingStatusDeprecated,
+		},
 	}
 	if err := db.Create(&records).Error; err != nil {
 		t.Fatalf("failed to create vesting records: %v", err)
@@ -305,8 +315,8 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 	if err != nil {
 		t.Fatalf("query slash vesting records failed: %v", err)
 	}
-	if total != 2 || len(result) != 2 {
-		t.Fatalf("expected two vesting records, total=%d len=%d", total, len(result))
+	if total != 3 || len(result) != 3 {
+		t.Fatalf("expected three vesting records, total=%d len=%d", total, len(result))
 	}
 	recordsByType := make(map[string]SlashVestingRecord)
 	for _, record := range result {
@@ -328,5 +338,15 @@ func TestQuerySlashVestingRecordsReturnsAllAddressVestingsWithSlashedLockedAmoun
 	}
 	if delegationVesting.LockedAmount != "1000" {
 		t.Fatalf("expected delegation locked amount 1000, got %s", delegationVesting.LockedAmount)
+	}
+	deprecatedVesting := recordsByType[models.VestingTypeOther]
+	if deprecatedVesting.Status != models.VestingStatusDeprecated {
+		t.Fatalf("expected deprecated status, got %d", deprecatedVesting.Status)
+	}
+	if deprecatedVesting.Amount != "3000" || deprecatedVesting.ReleasedAmount != "600" {
+		t.Fatalf("deprecated audit amounts changed: %+v", deprecatedVesting)
+	}
+	if deprecatedVesting.LockedAmount != "0" {
+		t.Fatalf("expected deprecated locked amount 0, got %s", deprecatedVesting.LockedAmount)
 	}
 }

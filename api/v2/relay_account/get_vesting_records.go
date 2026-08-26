@@ -100,7 +100,8 @@ func queryAddressVestingRecords(ctx context.Context, db *gorm.DB, dbAddress stri
 
 	query := db.WithContext(dbCtx).
 		Model(&models.VestingRecord{}).
-		Where("address = ?", dbAddress)
+		Where("address = ?", dbAddress).
+		Where("status != ?", models.VestingStatusDeprecated)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

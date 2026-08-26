@@ -10,13 +10,37 @@ import (
 	"gorm.io/gorm"
 )
 
+func createVestingDetailParentRecords(t *testing.T, db *gorm.DB, count int) {
+	t.Helper()
+	for i := 1; i <= count; i++ {
+		record := VestingRecord{
+			Model:          gorm.Model{ID: uint(i)},
+			Address:        "0xparent" + string(rune('a'+i)),
+			TotalAmount:    BigInt{Int: *big.NewInt(1000)},
+			ReleasedAmount: BigInt{Int: *big.NewInt(0)},
+			StartTime:      time.Date(2026, 1, 1, i, 0, 0, 0, time.UTC),
+			DurationDays:   180,
+			Type:           VestingTypeDelegation,
+			AdminSignature: "0xsig",
+			Status:         VestingStatusActive,
+		}
+		if err := db.Create(&record).Error; err != nil {
+			t.Fatalf("create parent vesting %d: %v", i, err)
+		}
+	}
+}
+
 func TestListVestingDelegationEmissionDetailsByUserNodeNetworkAndStartTimeRangeScopesNetwork(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&VestingDelegationEmissionDetail{}); err != nil {
+	if err := db.AutoMigrate(&VestingRecord{}, &VestingDelegationEmissionDetail{}); err != nil {
 		t.Fatalf("failed to migrate vesting delegation emission detail: %v", err)
+	}
+	createVestingDetailParentRecords(t, db, 4)
+	if err := db.Model(&VestingRecord{}).Where("id = ?", 4).Update("status", VestingStatusDeprecated).Error; err != nil {
+		t.Fatalf("deprecate parent vesting: %v", err)
 	}
 
 	start := time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC)
@@ -47,6 +71,15 @@ func TestListVestingDelegationEmissionDetailsByUserNodeNetworkAndStartTimeRangeS
 			TaskFee:         BigInt{Int: *big.NewInt(30)},
 			EmissionAmount:  BigInt{Int: *big.NewInt(300)},
 			StartTime:       start.Add(14 * 24 * time.Hour),
+		},
+		{
+			VestingRecordID: 4,
+			UserAddress:     "0xuser",
+			NodeAddress:     "0xnode",
+			Network:         "base",
+			TaskFee:         BigInt{Int: *big.NewInt(40)},
+			EmissionAmount:  BigInt{Int: *big.NewInt(400)},
+			StartTime:       start.Add(time.Hour),
 		},
 	}
 	if err := db.Create(&details).Error; err != nil {
@@ -79,9 +112,10 @@ func TestListVestingDelegationEmissionDetailsByNodeAndStartTimeRange(t *testing.
 	if err != nil {
 		t.Fatalf("failed to open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&VestingDelegationEmissionDetail{}); err != nil {
+	if err := db.AutoMigrate(&VestingRecord{}, &VestingDelegationEmissionDetail{}); err != nil {
 		t.Fatalf("failed to migrate vesting delegation emission detail: %v", err)
 	}
+	createVestingDetailParentRecords(t, db, 4)
 
 	start := time.Date(2026, 1, 12, 0, 0, 0, 0, time.UTC)
 	details := []VestingDelegationEmissionDetail{

@@ -1,12 +1,15 @@
 package service
 
 import (
+	"context"
+	"crynux_relay/models"
 	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
 	"crynux_relay/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -16,12 +19,16 @@ const (
 	maxChartWeeks        = 260
 	emissionWeekDuration = 7 * 24 * time.Hour
 
-	cnxTotalSupplyCNX          = 8617333262
-	year0EmissionCNX           = 1723466646
-	year0NodeAllocationPercent = 70
-	year0VestingDurationDays   = 365
-	nodeVestingDurationDays    = 180
-	vestingDayDuration         = 24 * time.Hour
+	cnxTotalSupplyCNX                     = 8617333262
+	year0TreasuryAllocationPercent        = 6
+	bootstrapNodeAllocationPercent        = 80
+	bootstrapTreasuryAllocationPercent    = 20
+	year1NodeBootstrapTargetCNX           = 74318067
+	year1NodeReleasedBeforeTransitionCNX  = 16240159
+	year1TransitionFirstEmissionWeekIndex = 9
+	year1TransitionEmissionCount          = emissionWeeksPerYear - year1TransitionFirstEmissionWeekIndex
+	year1TransitionTimeRFC3339            = "2026-08-26T00:00:00Z"
+	bootstrapFinalWeekRemainderCNX        = 24
 )
 
 var (
@@ -32,12 +39,12 @@ var (
 	ErrInvalidChartWeeks       = errors.New("weeks must be between 1 and 260")
 )
 
-// weeklyEmissionCNXByYear stores tokenomics weekly emissions for Year 1 to Year 20.
+// weeklyEmissionCNXByYear stores bootstrap mining weekly emissions for Year 1 to Year 20.
 var weeklyEmissionCNXByYear = []int64{
-	13257447, 12171771, 11175003, 10259862, 9419664,
-	8648271, 7940049, 7289824, 6692848, 6144758,
-	5641553, 5179556, 4755393, 4365966, 4008429,
-	3680172, 3378796, 3102100, 2848064, 2614832,
+	1786492, 2727986, 3042483, 3101410, 3010312,
+	2827694, 2592055, 2330245, 2061165, 1797889,
+	1549089, 1320097, 1113750, 931051, 771710,
+	634560, 517890, 419687, 337827, 270197,
 }
 
 type EmissionWeekInfo struct {
@@ -75,9 +82,9 @@ func GetPreviousEmissionWeekInfo(now time.Time, mainnetStartTime string) (*Emiss
 
 	weekStart := startDate.Add(time.Duration(weekIndex) * emissionWeekDuration)
 	weekEnd := weekStart.Add(emissionWeekDuration)
-	weeklyEmission := weeklyEmissionCNXByYear[yearIndex-1]
+	weeklyEmission := weeklyBootstrapEmissionCNX(weekIndex)
 
-	nodeEmissionPool := weeklyEmission * nodeAllocationPercent(yearIndex) / 100
+	nodeEmissionPool := nodeBootstrapEmissionCNX(weekIndex)
 
 	return &EmissionWeekInfo{
 		WeekIndex:           weekIndex,
@@ -107,8 +114,8 @@ func GetCurrentEmissionWeekInfo(now time.Time, mainnetStartTime string) (*Emissi
 
 	weekStart := startDate.Add(time.Duration(elapsedWeeks) * emissionWeekDuration)
 	weekEnd := weekStart.Add(emissionWeekDuration)
-	weeklyEmission := weeklyEmissionCNXByYear[yearIndex-1]
-	nodeEmissionPool := weeklyEmission * nodeAllocationPercent(yearIndex) / 100
+	weeklyEmission := weeklyBootstrapEmissionCNX(elapsedWeeks)
+	nodeEmissionPool := nodeBootstrapEmissionCNX(elapsedWeeks)
 
 	return &EmissionWeekInfo{
 		WeekIndex:           elapsedWeeks,
@@ -124,7 +131,7 @@ func GetCNXTotalSupply() *big.Int {
 	return cnxToWei(cnxTotalSupplyCNX)
 }
 
-func GetCNXCirculatingSupply(now time.Time, mainnetStartTime string) (*big.Int, error) {
+func GetCNXCirculatingSupply(ctx context.Context, db *gorm.DB, now time.Time, mainnetStartTime string) (*big.Int, error) {
 	startDate, err := parseMainnetStartDate(mainnetStartTime)
 	if err != nil {
 		return nil, err
@@ -137,11 +144,9 @@ func GetCNXCirculatingSupply(now time.Time, mainnetStartTime string) (*big.Int, 
 
 	circulating := big.NewInt(0)
 
-	year0Emission := cnxToWei(year0EmissionCNX)
-	year0NodeVesting := cnxToWei(year0EmissionCNX * year0NodeAllocationPercent / 100)
-	year0Unlocked := big.NewInt(0).Sub(year0Emission, year0NodeVesting)
+	totalSupply := GetCNXTotalSupply()
+	year0Unlocked := supplyPercent(totalSupply, year0TreasuryAllocationPercent)
 	circulating.Add(circulating, year0Unlocked)
-	circulating.Add(circulating, releasedVestingAmount(year0NodeVesting, startDate, year0VestingDurationDays, nowUTC))
 
 	completedWeeks := int(nowUTC.Sub(startDate) / emissionWeekDuration)
 	maxWeeks := maxEmissionYear * emissionWeeksPerYear
@@ -149,19 +154,22 @@ func GetCNXCirculatingSupply(now time.Time, mainnetStartTime string) (*big.Int, 
 		completedWeeks = maxWeeks
 	}
 
+	var vestingRecords []models.VestingRecord
+	if err := db.WithContext(ctx).
+		Model(&models.VestingRecord{}).
+		Select("released_amount").
+		Find(&vestingRecords).Error; err != nil {
+		return nil, err
+	}
+	for _, record := range vestingRecords {
+		circulating.Add(circulating, &record.ReleasedAmount.Int)
+	}
 	for weekIndex := 0; weekIndex < completedWeeks; weekIndex++ {
-		yearIndex := weekIndex/emissionWeeksPerYear + 1
-		weeklyEmissionCNX := weeklyEmissionCNXByYear[yearIndex-1]
-		weeklyEmission := cnxToWei(weeklyEmissionCNX)
-		nodeVesting := cnxToWei(weeklyEmissionCNX * nodeAllocationPercent(yearIndex) / 100)
-
-		circulating.Add(circulating, big.NewInt(0).Sub(weeklyEmission, nodeVesting))
-
-		vestingStart := startDate.Add(time.Duration(weekIndex+1) * emissionWeekDuration)
-		circulating.Add(circulating, releasedVestingAmount(nodeVesting, vestingStart, nodeVestingDurationDays, nowUTC))
+		weeklyEmissionCNX := weeklyBootstrapEmissionCNX(weekIndex)
+		treasuryEmissionCNX := weeklyEmissionCNX * bootstrapTreasuryAllocationPercent / 100
+		circulating.Add(circulating, cnxToWei(treasuryEmissionCNX))
 	}
 
-	totalSupply := GetCNXTotalSupply()
 	if circulating.Cmp(totalSupply) > 0 {
 		return totalSupply, nil
 	}
@@ -243,30 +251,48 @@ func parseMainnetStartDate(raw string) (time.Time, error) {
 	return ParseMainnetAlignedWeekStart(raw)
 }
 
-func nodeAllocationPercent(yearIndex int) int64 {
-	if yearIndex == 1 {
-		return 70
+func nodeBootstrapEmissionCNX(weekIndex int) int64 {
+	yearIndex := weekIndex/emissionWeeksPerYear + 1
+	if yearIndex < 1 || yearIndex > maxEmissionYear {
+		return 0
 	}
-	return 80
+	if yearIndex == 1 {
+		if weekIndex < year1TransitionFirstEmissionWeekIndex {
+			return 0
+		}
+		remaining := int64(year1NodeBootstrapTargetCNX - year1NodeReleasedBeforeTransitionCNX)
+		emissionCount := int64(year1TransitionEmissionCount)
+		base := remaining / emissionCount
+		if weekIndex == emissionWeeksPerYear-1 {
+			return base + remaining%emissionCount
+		}
+		return base
+	}
+	return weeklyBootstrapEmissionCNX(weekIndex) * bootstrapNodeAllocationPercent / 100
+}
+
+func weeklyBootstrapEmissionCNX(weekIndex int) int64 {
+	yearIndex := weekIndex/emissionWeeksPerYear + 1
+	if yearIndex < 1 || yearIndex > maxEmissionYear {
+		return 0
+	}
+	weeklyEmission := weeklyEmissionCNXByYear[yearIndex-1]
+	if weekIndex == maxEmissionYear*emissionWeeksPerYear-1 {
+		weeklyEmission += bootstrapFinalWeekRemainderCNX
+	}
+	return weeklyEmission
+}
+
+func year1TransitionTime() time.Time {
+	transitionTime, _ := time.Parse(time.RFC3339, year1TransitionTimeRFC3339)
+	return transitionTime
+}
+
+func supplyPercent(totalSupply *big.Int, percent int64) *big.Int {
+	amount := big.NewInt(0).Mul(totalSupply, big.NewInt(percent))
+	return amount.Div(amount, big.NewInt(100))
 }
 
 func cnxToWei(amount int64) *big.Int {
 	return utils.EtherToWei(big.NewInt(amount))
-}
-
-func releasedVestingAmount(totalAmount *big.Int, startTime time.Time, durationDays int, now time.Time) *big.Int {
-	if durationDays <= 0 || !now.After(startTime) {
-		return big.NewInt(0)
-	}
-
-	elapsedDays := int(now.Sub(startTime) / vestingDayDuration)
-	if elapsedDays <= 0 {
-		return big.NewInt(0)
-	}
-	if elapsedDays >= durationDays {
-		return big.NewInt(0).Set(totalAmount)
-	}
-
-	released := big.NewInt(0).Mul(totalAmount, big.NewInt(int64(elapsedDays)))
-	return released.Div(released, big.NewInt(int64(durationDays)))
 }

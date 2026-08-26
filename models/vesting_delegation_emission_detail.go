@@ -27,11 +27,13 @@ func ListVestingDelegationEmissionDetailsByUserNodeNetworkAndStartTimeRange(ctx 
 	var details []VestingDelegationEmissionDetail
 	if err := db.WithContext(dbCtx).
 		Model(&VestingDelegationEmissionDetail{}).
-		Where("user_address = ?", userAddress).
-		Where("node_address = ?", nodeAddress).
-		Where("network = ?", network).
-		Where("start_time >= ? AND start_time < ?", startTime, endTime).
-		Order("start_time ASC").
+		Joins("INNER JOIN vesting_records ON vesting_records.id = vesting_delegation_emission_details.vesting_record_id AND vesting_records.deleted_at IS NULL").
+		Where("vesting_records.status != ?", VestingStatusDeprecated).
+		Where("vesting_delegation_emission_details.user_address = ?", userAddress).
+		Where("vesting_delegation_emission_details.node_address = ?", nodeAddress).
+		Where("vesting_delegation_emission_details.network = ?", network).
+		Where("vesting_delegation_emission_details.start_time >= ? AND vesting_delegation_emission_details.start_time < ?", startTime, endTime).
+		Order("vesting_delegation_emission_details.start_time ASC").
 		Find(&details).Error; err != nil {
 		return nil, err
 	}
@@ -45,9 +47,11 @@ func ListVestingDelegationEmissionDetailsByNodeAndStartTimeRange(ctx context.Con
 	var details []VestingDelegationEmissionDetail
 	if err := db.WithContext(dbCtx).
 		Model(&VestingDelegationEmissionDetail{}).
-		Where("node_address = ?", nodeAddress).
-		Where("start_time >= ? AND start_time < ?", startTime, endTime).
-		Order("start_time ASC").
+		Joins("INNER JOIN vesting_records ON vesting_records.id = vesting_delegation_emission_details.vesting_record_id AND vesting_records.deleted_at IS NULL").
+		Where("vesting_records.status != ?", VestingStatusDeprecated).
+		Where("vesting_delegation_emission_details.node_address = ?", nodeAddress).
+		Where("vesting_delegation_emission_details.start_time >= ? AND vesting_delegation_emission_details.start_time < ?", startTime, endTime).
+		Order("vesting_delegation_emission_details.start_time ASC").
 		Find(&details).Error; err != nil {
 		return nil, err
 	}

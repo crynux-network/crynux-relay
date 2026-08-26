@@ -58,10 +58,16 @@ Relay MUST compute the previous complete emission week from `dao.mainnet_start_t
 
 The CSV MUST include task fee participants from the selected week. Relay MUST compute the node emission pool from the tokenomics weekly emission schedule:
 
-- Year 1 MUST use 70 percent of weekly emission as the node emission pool.
-- Years 2 through 20 MUST use 80 percent of weekly emission as the node emission pool.
+- The calendar schedule MUST represent bootstrap mining only. Task mining MUST NOT be added to this calendar schedule.
+- The Year 1 node bootstrap target MUST be `74,318,067 CNX`.
+- At the `2026-08-26T00:00:00Z` transition, Relay MUST retain the `16,240,159 CNX` already released to nodes and MUST allocate the remaining `58,077,908 CNX` through emission weeks 10 through 52.
+- Emission weeks 10 through 51 MUST each use a `1,350,649 CNX` node pool. Emission week 52 MUST use a `1,350,650 CNX` node pool.
+- Years 2 through 20 MUST allocate 80 percent of each weekly bootstrap mining release to the node pool.
+- The final Year 20 bootstrap week MUST include the `24 CNX` schedule rounding remainder before applying the 80 percent node allocation.
 - Year selection MUST use the zero-based internal emission week index divided by 52.
 - Emission weeks outside Years 1 through 20 MUST be rejected.
+
+Relay MUST NOT create vesting records or relay-account events for the 20 percent treasury share of bootstrap mining. The existing DAO task-fee share applies only to user-paid task fees and MUST NOT be used for token emission.
 
 Relay MUST allocate the node emission pool across all node and delegation participants in proportion to each row's task fee. Relay MUST allocate emission in integer CNX units:
 
@@ -97,6 +103,8 @@ Relay MUST validate the admin signature against the configured `admin.vesting_si
 
 Relay MUST store created records in `vesting_records` with `released_amount = 0` and `status = active`. Relay MUST create a `VestingCreated` relay account event with zero amount for each created record. `VestingCreated` MUST anchor the signed vesting schedule and MUST NOT change relay account balance.
 
+The vesting status values MUST be `active = 0`, `completed = 1`, and `deprecated = 2`. Transitioned grants MUST remain stored with their original amount, released amount, schedule, signature, delegation details, and historical relay-account events.
+
 The `(type, address, start_time)` tuple MUST identify a vesting item and MUST remain unique.
 
 For `type = delegation`, the admin submitter MUST create one signed aggregate vesting item per wallet-level group and attach the original delegation CSV rows as `delegation_details`. Relay MUST reject `type = delegation` items with an empty `delegation_details` list. Each delegation detail MUST contain `node_address`, `network`, `task_fee`, `emission_amount`, and `start_time`; it MUST NOT contain `user_address`. Relay MUST derive the detail user address from the aggregate item `address`. Relay MUST validate that every detail has non-empty `node_address`, non-empty `network`, positive `task_fee`, positive `emission_amount`, and the same `start_time` as the aggregate item. Relay MUST reject duplicate delegation details with the same `(address, node_address, network, start_time)` tuple. Relay MUST reject the aggregate item unless the sum of `delegation_details.emission_amount` equals `total_amount`.
@@ -126,11 +134,13 @@ The `VestingRelease` event and the vesting record update MUST be committed in on
 
 Slashed vesting records MUST NOT release and MUST NOT contribute to relay account locked amount calculations. Slashing MUST NOT change `released_amount`, `start_time`, `duration_days`, `total_amount`, or `type`.
 
+Deprecated vesting records MUST NOT release and MUST contribute zero locked amount. Release and locked-amount queries MUST select by status and MUST NOT use a date boundary to identify deprecated records.
+
 The admin endpoint `POST /v2/admin/vesting/restore` MUST restore slashed vesting records for the submitted `node_address` by setting `slashed = false` across all vesting types. Restore MUST keep the original schedule and `released_amount`. After restore, the next release run MUST release the catch-up delta when the schedule requires `should_released > released_amount`.
 
 ## Emission Chart Aggregation
 
-Emission chart APIs MUST aggregate from original grant amounts. Relay account charts MUST aggregate from `vesting_records.total_amount`. Stakeable node delegation charts MUST read node-level delegation amounts from `node_delegation_emission_weekly_totals.emission_amount`. Chart data represents emission grants by vesting start week, not released vesting balance. Slashed vesting records MUST remain included in emission chart totals because slashing does not remove the historical grant.
+Emission chart APIs MUST aggregate from original current grant amounts. Relay account charts MUST aggregate from `vesting_records.total_amount` while excluding deprecated records. Stakeable node delegation charts MUST read node-level delegation amounts from `node_delegation_emission_weekly_totals.emission_amount`. Chart data represents emission grants by vesting start week, not released vesting balance. Slashed vesting records MUST remain included in emission chart totals because slashing does not remove the historical grant.
 
 Each vesting record MUST be assigned to the emission week containing `vesting_records.start_time`, using the exact `emission_week_anchor + n * 7 days` week boundaries. Vesting records before the emission week anchor MUST be excluded from emission chart buckets.
 
@@ -156,6 +166,8 @@ The endpoint MUST require JWT authentication and MUST reject address mismatch. T
 
 The relay account vesting list endpoint MUST include slashed records and MUST expose the `slashed` boolean field. Clients MUST display a slashed record as inactive before applying the numeric release status label.
 
+The relay account vesting list and its pagination total MUST exclude deprecated records. Administrative vesting audit responses MUST retain deprecated records and their original total and released amounts, expose the deprecated status, and return zero locked amount. Historical relay-account event loading MUST continue to resolve deprecated vesting records.
+
 The stakeable node chart endpoint is:
 
 ```text
@@ -169,6 +181,14 @@ The endpoint MUST be accessible only for a node that exists and has active deleg
 - `delegation_emission_income`: node delegation emission totals per week
 
 Chart aggregation MUST use only the canonical vesting types. The relay account chart MUST include only `type = node` and `type = delegation`. The stakeable node chart `node_emission_income` series MUST include only `type = node`. The stakeable node chart `delegation_emission_income` series MUST be served from `node_delegation_emission_weekly_totals` and MUST NOT scan `vesting_delegation_emission_details` at request time. Chart aggregation MUST NOT include `type = other`, `type = delegator`, or any other non-canonical type.
+
+All current-value queries over `vesting_records`, including relay-account charts, operator charts, four-week operator emission, locked amounts, and release processing, MUST exclude deprecated records by status. Queries over `vesting_delegation_emission_details`, including delegation charts, four-week delegation emission, and historical delegation APR, MUST join the owning vesting record and exclude deprecated owners by status. The transition migration MUST clear `node_delegation_emission_weekly_totals` before replacement grants are created because that table does not retain a vesting status reference.
+
+## Circulating Supply
+
+Relay MUST calculate circulating node emission from the sum of `vesting_records.released_amount` across active, completed, and deprecated records. This database value MUST be the only source for released node vesting and therefore MUST include preserved Year 0 and pre-transition Year 1 releases exactly once. Relay MUST NOT separately calculate theoretical releases from deprecated schedules.
+
+Relay MUST additionally include the 6 percent Year 0 treasury allocation and the 20 percent treasury share for each completed bootstrap week. The treasury amounts MUST be calculated from the bootstrap calendar and MUST NOT be represented as vesting or relay-account events. Year 0 treasury, bootstrap treasury, and actual released vesting MUST each enter circulating supply exactly once.
 
 ## Relationship Summary
 

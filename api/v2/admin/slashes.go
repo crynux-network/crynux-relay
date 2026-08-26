@@ -547,7 +547,7 @@ func querySlashVestingRecords(ctx context.Context, db *gorm.DB, nodeAddress stri
 
 func buildSlashVestingRecord(record models.VestingRecord, now time.Time) SlashVestingRecord {
 	lockedAmount := record.LockedAmountAt(now)
-	if record.Slashed {
+	if record.Slashed || record.Status == models.VestingStatusDeprecated {
 		lockedAmount = big.NewInt(0)
 	}
 

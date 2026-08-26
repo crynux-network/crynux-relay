@@ -377,8 +377,10 @@ func getNodeDelegationEmission(ctx context.Context, db *gorm.DB, nodeAddress str
 	if err := db.WithContext(dbCtx).
 		Model(&models.VestingDelegationEmissionDetail{}).
 		Select("SUM(CAST(emission_amount AS DECIMAL(65,0))) as total_emission").
-		Where("node_address = ?", nodeAddress).
-		Where("start_time >= ? AND start_time < ?", start, end).
+		Joins("INNER JOIN vesting_records ON vesting_records.id = vesting_delegation_emission_details.vesting_record_id AND vesting_records.deleted_at IS NULL").
+		Where("vesting_records.status != ?", models.VestingStatusDeprecated).
+		Where("vesting_delegation_emission_details.node_address = ?", nodeAddress).
+		Where("vesting_delegation_emission_details.start_time >= ? AND vesting_delegation_emission_details.start_time < ?", start, end).
 		Scan(&row).Error; err != nil {
 		return nil, err
 	}
@@ -507,10 +509,12 @@ func loadDelegationAPRInputs(ctx context.Context, db *gorm.DB, nodes []*models.N
 	emissionRows := make([]delegationEmissionGrantRow, 0)
 	if err := db.WithContext(dbCtx).
 		Model(&models.VestingDelegationEmissionDetail{}).
-		Select("node_address, SUM(CAST(emission_amount AS DECIMAL(65,0))) as total_emission").
-		Where("node_address IN ?", nodeAddresses).
-		Where("start_time >= ? AND start_time < ?", start, end).
-		Group("node_address").
+		Select("vesting_delegation_emission_details.node_address, SUM(CAST(vesting_delegation_emission_details.emission_amount AS DECIMAL(65,0))) as total_emission").
+		Joins("INNER JOIN vesting_records ON vesting_records.id = vesting_delegation_emission_details.vesting_record_id AND vesting_records.deleted_at IS NULL").
+		Where("vesting_records.status != ?", models.VestingStatusDeprecated).
+		Where("vesting_delegation_emission_details.node_address IN ?", nodeAddresses).
+		Where("vesting_delegation_emission_details.start_time >= ? AND vesting_delegation_emission_details.start_time < ?", start, end).
+		Group("vesting_delegation_emission_details.node_address").
 		Scan(&emissionRows).Error; err != nil {
 		return nil, err
 	}

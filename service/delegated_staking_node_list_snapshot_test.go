@@ -36,7 +36,7 @@ CREATE TABLE node_stakings (
 
 func TestBuildDelegationAPRRangeUsesConfiguredStartTime(t *testing.T) {
 	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
-	start, end, err := buildDelegationAPRRange(now, "2026-07-01T08:30:00+08:00")
+	start, end, err := buildDelegationAPRRange(now, "2026-07-01T08:30:00Z")
 	if err != nil {
 		t.Fatalf("build APR range: %v", err)
 	}
@@ -132,6 +132,26 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 			AdminSignature: "signature",
 			Status:         models.VestingStatusActive,
 		},
+		{
+			Address:        nodeAddress,
+			TotalAmount:    models.BigInt{Int: *big.NewInt(13)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(3)},
+			StartTime:      time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC),
+			DurationDays:   180,
+			Type:           models.VestingTypeNode,
+			AdminSignature: "signature",
+			Status:         models.VestingStatusDeprecated,
+		},
+		{
+			Address:        "0xdeprecated",
+			TotalAmount:    models.BigInt{Int: *big.NewInt(400)},
+			ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
+			StartTime:      time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC),
+			DurationDays:   180,
+			Type:           models.VestingTypeDelegation,
+			AdminSignature: "signature",
+			Status:         models.VestingStatusDeprecated,
+		},
 	}
 	if err := db.Create(&records).Error; err != nil {
 		t.Fatalf("create vesting records: %v", err)
@@ -146,6 +166,17 @@ func TestBuildDelegatedStakingNodeListSnapshotCalculatesSortFields(t *testing.T)
 		StartTime:       time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC),
 	}).Error; err != nil {
 		t.Fatalf("create vesting delegation emission detail: %v", err)
+	}
+	if err := db.Create(&models.VestingDelegationEmissionDetail{
+		VestingRecordID: records[4].ID,
+		UserAddress:     "0xdeprecated",
+		NodeAddress:     nodeAddress,
+		Network:         network,
+		TaskFee:         models.BigInt{Int: *big.NewInt(40)},
+		EmissionAmount:  models.BigInt{Int: *big.NewInt(400)},
+		StartTime:       time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC),
+	}).Error; err != nil {
+		t.Fatalf("create deprecated vesting delegation emission detail: %v", err)
 	}
 	earningTime := now.Add(-24 * time.Hour)
 	if err := db.Create(&models.NodeEarning{

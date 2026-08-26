@@ -129,4 +129,5 @@ func InitMigration(db *gorm.DB) {
 	migrationScripts = append(migrationScripts, migrations.M20260812(db))
 	migrationScripts = append(migrationScripts, migrations.M20260817(db))
 	migrationScripts = append(migrationScripts, migrations.M20260819(db))
+	migrationScripts = append(migrationScripts, migrations.M20260826(db))
 }

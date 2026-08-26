@@ -46,7 +46,7 @@ estimated_upcoming_emission = floor(scope_task_fee * current_week_node_emission_
 
 If `total_task_fee = 0` or `scope_task_fee = 0`, Relay MUST return zero estimated emission.
 
-The current week node emission pool MUST use the tokenomics weekly emission schedule and node allocation percentage defined in `emission.md`.
+The current week node emission pool MUST use the bootstrap mining schedule defined in `emission.md`. Year 1 emission weeks 10 through 51 MUST use `1,350,649 CNX`, Year 1 emission week 52 MUST use `1,350,650 CNX`, and Years 2 through 20 MUST use 80 percent of the weekly bootstrap release. Task mining and the 20 percent treasury share MUST NOT enter the estimate.
 
 ## Snapshot Refresh
 
@@ -65,6 +65,8 @@ Relay MUST build the snapshot with database aggregation queries during refresh. 
 Relay MUST refresh the snapshot on startup and every 4 hours after startup.
 
 After each current emission estimate snapshot refresh, Relay MUST update `delegated_staking_node_list_snapshots.estimated_upcoming_operator_emission` and `delegated_staking_node_list_snapshots.estimated_upcoming_delegator_emission` from the refreshed node estimates. Stakeable node list sorting MUST use these persisted snapshot columns for `sort_by=estimated_upcoming_operator_emission` and `sort_by=estimated_upcoming_delegator_emission`.
+
+The node-list snapshot's four-week emission and historical APR fields MUST exclude deprecated vesting records. Delegation emission inputs MUST join each delegation detail to its owning vesting record and exclude owners with `status = deprecated`. These filters MUST use vesting status and MUST NOT use a fixed transition date.
 
 ## Delegation Status
 

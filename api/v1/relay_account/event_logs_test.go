@@ -63,7 +63,7 @@ func TestGetEventPayloadNonDepositReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestBuildEventPayloadVestingCreatedUsesCreationSnapshot(t *testing.T) {
+func TestBuildEventPayloadVestingCreatedUsesDeprecatedCreationSnapshot(t *testing.T) {
 	startTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	record := models.VestingRecord{
 		Address:        "0xabc",
@@ -73,6 +73,7 @@ func TestBuildEventPayloadVestingCreatedUsesCreationSnapshot(t *testing.T) {
 		DurationDays:   10,
 		Type:           models.VestingTypeNode,
 		AdminSignature: "0xsig",
+		Status:         models.VestingStatusDeprecated,
 	}
 	record.ID = 42
 	payload, err := buildEventPayload(models.RelayAccountEvent{

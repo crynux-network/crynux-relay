@@ -180,3 +180,35 @@ func TestQueryAddressVestingRecordsIncludesSlashedRecords(t *testing.T) {
 		t.Fatalf("expected slashed locked amount 0, got %s", records[0].LockedAmount)
 	}
 }
+
+func TestQueryAddressVestingRecordsExcludesDeprecatedRecordsFromRowsAndTotal(t *testing.T) {
+	db := newVestingRecordsTestDB(t)
+	address := "0xabc"
+	now := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
+	base := models.VestingRecord{
+		Address:        address,
+		TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(100)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Type:           models.VestingTypeNode,
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusActive,
+	}
+	active := createVestingRecord(t, db, base, time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC))
+	deprecated := base
+	deprecated.StartTime = deprecated.StartTime.Add(time.Hour)
+	deprecated.Status = models.VestingStatusDeprecated
+	_ = createVestingRecord(t, db, deprecated, time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC))
+
+	records, total, err := queryAddressVestingRecords(context.Background(), db, address, 1, 20, now)
+	if err != nil {
+		t.Fatalf("query vesting records failed: %v", err)
+	}
+	if total != 1 || len(records) != 1 {
+		t.Fatalf("expected one current record, total=%d len=%d", total, len(records))
+	}
+	if records[0].ID != active.ID {
+		t.Fatalf("expected active record %d, got %d", active.ID, records[0].ID)
+	}
+}

@@ -334,6 +334,48 @@ func TestProcessDueVestingReleasesSkipsSlashedRecords(t *testing.T) {
 	}
 }
 
+func TestProcessDueVestingReleasesSkipsDeprecatedRecords(t *testing.T) {
+	ctx := context.Background()
+	db := newRelayAccountVestingTestDB(t)
+	record := models.VestingRecord{
+		Address:        "0x0000000000000000000000000000000000000001",
+		TotalAmount:    models.BigInt{Int: *big.NewInt(1000)},
+		ReleasedAmount: models.BigInt{Int: *big.NewInt(200)},
+		StartTime:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DurationDays:   10,
+		Type:           models.VestingTypeNode,
+		AdminSignature: "0xsig",
+		Status:         models.VestingStatusDeprecated,
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatalf("failed to create vesting record: %v", err)
+	}
+
+	if err := ProcessDueVestingReleases(ctx, db, record.StartTime.Add(5*24*time.Hour), 100); err != nil {
+		t.Fatalf("release processing failed: %v", err)
+	}
+
+	var updated models.VestingRecord
+	if err := db.First(&updated, record.ID).Error; err != nil {
+		t.Fatalf("failed to load vesting record: %v", err)
+	}
+	if updated.ReleasedAmount.String() != "200" {
+		t.Fatalf("expected released amount to stay 200, got %s", updated.ReleasedAmount.String())
+	}
+	if updated.LockedAmountAt(record.StartTime.Add(5*24*time.Hour)).Sign() != 0 {
+		t.Fatal("expected deprecated locked amount to be zero")
+	}
+	var releaseEventCount int64
+	if err := db.Model(&models.RelayAccountEvent{}).
+		Where("type = ?", models.RelayAccountEventTypeVestingRelease).
+		Count(&releaseEventCount).Error; err != nil {
+		t.Fatalf("failed to count release events: %v", err)
+	}
+	if releaseEventCount != 0 {
+		t.Fatalf("expected no release events, got %d", releaseEventCount)
+	}
+}
+
 func TestRestoredSlashedVestingCatchesUpRelease(t *testing.T) {
 	ctx := context.Background()
 	db := newRelayAccountVestingTestDB(t)
