@@ -102,7 +102,7 @@ func (arr *StringArray) UnmarshalJSON(b []byte) error {
 type InferenceTask struct {
 	gorm.Model
 	TaskArgs         string     `json:"task_args"`
-	TaskIDCommitment string     `json:"task_id_commitment" gorm:"index"`
+	TaskIDCommitment string     `json:"task_id_commitment" gorm:"uniqueIndex"`
 	Creator          string     `json:"creator"`
 	SamplingSeed     string     `json:"sampling_seed"`
 	Nonce            string     `json:"nonce"`
@@ -121,25 +121,29 @@ type InferenceTask struct {
 	TaskFee          BigInt     `json:"task_fee"`
 	// Priority orders queued tasks for dispatch: task_fee divided by the
 	// VRAM-weighted estimated node seconds, floored to an integer.
-	Priority             BigInt          `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`
-	EstimatedNodeSeconds float64         `json:"estimated_node_seconds" gorm:"not null;default:0"`
-	VRAMWeight           float64         `json:"vram_weight" gorm:"column:vram_weight;not null;default:0"`
-	PricingUnits         float64         `json:"pricing_units" gorm:"not null;default:0"`
-	SDUnits              *uint64         `json:"sd_units" gorm:"type:bigint unsigned;null;default:null"`
-	LLMInputBytes        *uint64         `json:"llm_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
-	LLMTextInputBytes    *uint64         `json:"llm_text_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
-	LLMImageCount        *uint64         `json:"llm_image_count" gorm:"type:bigint unsigned;null;default:null"`
-	LLMImagePixels       *uint64         `json:"llm_image_pixels" gorm:"type:bigint unsigned;null;default:null"`
-	LLMMaxNewTokens      *uint64         `json:"llm_max_new_tokens" gorm:"type:bigint unsigned;null;default:null"`
-	TaskSize             uint64          `json:"task_size"`
-	ModelIDs             StringArray     `json:"model_ids" gorm:"type:text"`
-	AbortReason          TaskAbortReason `json:"abort_reason"`
-	TaskError            TaskError       `json:"task_error"`
-	Score                string          `json:"score" gorm:"type:text"`
-	QOSScore             sql.NullInt64   `json:"qos_score"`
-	SelectedNode         string          `json:"selected_node"`
-	TaskID               string          `json:"task_id"`
-	ModelSwtiched        bool            `json:"model_swtiched"`
+	Priority                BigInt          `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`
+	EstimatedNodeSeconds    float64         `json:"estimated_node_seconds" gorm:"not null;default:0"`
+	VRAMWeight              float64         `json:"vram_weight" gorm:"column:vram_weight;not null;default:0"`
+	PricingUnits            float64         `json:"pricing_units" gorm:"not null;default:0"`
+	SDUnits                 *uint64         `json:"sd_units" gorm:"type:bigint unsigned;null;default:null"`
+	LLMInputBytes           *uint64         `json:"llm_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
+	LLMTextInputBytes       *uint64         `json:"llm_text_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
+	LLMImageCount           *uint64         `json:"llm_image_count" gorm:"type:bigint unsigned;null;default:null"`
+	LLMImagePixels          *uint64         `json:"llm_image_pixels" gorm:"type:bigint unsigned;null;default:null"`
+	LLMMaxNewTokens         *uint64         `json:"llm_max_new_tokens" gorm:"type:bigint unsigned;null;default:null"`
+	TaskSize                uint64          `json:"task_size"`
+	ModelIDs                StringArray     `json:"model_ids" gorm:"type:text"`
+	AbortReason             TaskAbortReason `json:"abort_reason"`
+	TaskError               TaskError       `json:"task_error"`
+	Score                   string          `json:"score" gorm:"type:text"`
+	QOSScore                sql.NullInt64   `json:"qos_score"`
+	SelectedNode            string          `json:"selected_node"`
+	ExecutionGPU            string          `json:"execution_gpu" gorm:"column:execution_gpu;size:191;not null;default:''"`
+	ExecutionGPUVRAM        uint64          `json:"execution_gpu_vram" gorm:"column:execution_gpu_vram;not null;default:0"`
+	TaskID                  string          `json:"task_id"`
+	ModelSwtiched           bool            `json:"model_swtiched"`
+	EstimatedCompletionTime sql.NullTime    `json:"estimated_completion_time" gorm:"null;default:null"`
+	DeadlineAt              sql.NullTime    `json:"deadline_at" gorm:"null;default:null"`
 	// time when task is created (get from blockchain)
 	CreateTime sql.NullTime `json:"create_time" gorm:"index;null;default:null"`
 	// time when task is started (get from blockchain)
@@ -228,6 +232,16 @@ func GetTaskByIDCommitment(ctx context.Context, db *gorm.DB, taskIDCommitment st
 		return nil, err
 	}
 	return &task, nil
+}
+
+func GetTasksByCreatorAndCommitments(ctx context.Context, db *gorm.DB, creator string, commitments []string) ([]InferenceTask, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var tasks []InferenceTask
+	err := db.WithContext(dbCtx).
+		Where("creator = ? AND task_id_commitment IN ?", creator, commitments).
+		Find(&tasks).Error
+	return tasks, err
 }
 
 func GetTaskGroupByTaskID(ctx context.Context, db *gorm.DB, taskID string) ([]InferenceTask, error) {

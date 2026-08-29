@@ -139,15 +139,21 @@ type AppConfig struct {
 	DepositWithdrawNetworks map[string]DepositWithdrawNetworkConfig `mapstructure:"deposit_withdraw_networks"`
 
 	Task struct {
-		StakeAmount              uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
-		DistanceThreshold        uint64 `mapstructure:"distance_threshold"`
-		TaskWhitelistEnabled     bool   `mapstructure:"task_whitelist_enabled"`
-		MinimumNodeNameNumber    uint64 `mapstructure:"minimum_node_name_number"`
-		NodeNameWhitelistEnabled bool   `mapstructure:"node_name_whitelist_enabled"`
-		PassiveSlashMode         *bool  `mapstructure:"passive_slash_mode"`
-		TaskTracingDurationDays  uint64 `mapstructure:"task_tracing_duration_days"`
-		HistoryRetentionDays     uint64 `mapstructure:"history_retention_days"`
-		HistoryCleanupBatchSize  int    `mapstructure:"history_cleanup_batch_size"`
+		StakeAmount                uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
+		DistanceThreshold          uint64 `mapstructure:"distance_threshold"`
+		TaskWhitelistEnabled       bool   `mapstructure:"task_whitelist_enabled"`
+		MinimumNodeNameNumber      uint64 `mapstructure:"minimum_node_name_number"`
+		NodeNameWhitelistEnabled   bool   `mapstructure:"node_name_whitelist_enabled"`
+		PassiveSlashMode           *bool  `mapstructure:"passive_slash_mode"`
+		TaskTracingDurationDays    uint64 `mapstructure:"task_tracing_duration_days"`
+		HistoryRetentionDays       uint64 `mapstructure:"history_retention_days"`
+		HistoryCleanupBatchSize    int    `mapstructure:"history_cleanup_batch_size"`
+		BatchCreateMaxItems        int    `mapstructure:"batch_create_max_items"`
+		BatchStatusMaxItems        int    `mapstructure:"batch_status_max_items"`
+		BatchValidateMaxItems      int    `mapstructure:"batch_validate_max_items"`
+		BatchAbortMaxItems         int    `mapstructure:"batch_abort_max_items"`
+		ResultMaxUncompressedBytes int64  `mapstructure:"result_max_uncompressed_bytes"`
+		TimeoutQueryBatchSize      int    `mapstructure:"timeout_query_batch_size"`
 	} `mapstructure:"task"`
 
 	TaskPricing struct {

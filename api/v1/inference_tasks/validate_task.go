@@ -70,6 +70,8 @@ func ValidateTask(c *gin.Context, in *ValidateTaskInputWithSignature) (*response
 		}
 		if err == nil {
 			break
+		} else if errors.Is(err, service.ErrValidationAlreadyApplied) {
+			return &response.Response{}, nil
 		} else if errors.Is(err, models.ErrTaskStatusChanged) || errors.Is(err, models.ErrNodeStatusChanged) {
 			for _, task := range tasks {
 				if err := task.SyncStatus(c.Request.Context(), config.GetDB()); err != nil {

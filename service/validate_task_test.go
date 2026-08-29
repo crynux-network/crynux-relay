@@ -4,6 +4,7 @@ import (
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -27,7 +28,37 @@ func TestGroupHasCreatorValidationTimeout(t *testing.T) {
 	}
 }
 
-func TestSetValidationGroupTaskIDRejectsFreshCreatorValidationTimeout(t *testing.T) {
+func TestRefreshValidationGroupReturnsAlreadyAppliedAfterConcurrentValidation(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
+		t.Fatal(err)
+	}
+	const taskID = "0xvalidated"
+	tasks := make([]*models.InferenceTask, 3)
+	for i := range tasks {
+		stored := models.InferenceTask{
+			TaskIDCommitment: fmt.Sprintf("commitment-%d", i),
+			TaskID:           taskID,
+			Status:           models.TaskEndAborted,
+		}
+		if err := db.Create(&stored).Error; err != nil {
+			t.Fatal(err)
+		}
+		stale := stored
+		stale.TaskID = ""
+		stale.Status = models.TaskScoreReady
+		tasks[i] = &stale
+	}
+	_, err = refreshValidationGroupTasksForFinalUpdate(context.Background(), db, tasks, taskID)
+	if !errors.Is(err, ErrValidationAlreadyApplied) {
+		t.Fatalf("error = %v, want ErrValidationAlreadyApplied", err)
+	}
+}
+
+func TestValidationGroupLockRejectsFreshCreatorValidationTimeoutWithoutTaskIDWrite(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
@@ -36,7 +67,6 @@ func TestSetValidationGroupTaskIDRejectsFreshCreatorValidationTimeout(t *testing
 		t.Fatalf("failed to migrate inference tasks: %v", err)
 	}
 
-	taskID := "0x01"
 	tasks := make([]*models.InferenceTask, 3)
 	for i := range tasks {
 		nonce := []byte{byte(i + 2)}
@@ -59,7 +89,7 @@ func TestSetValidationGroupTaskIDRejectsFreshCreatorValidationTimeout(t *testing
 		tasks[i] = &staleTask
 	}
 
-	_, err = setValidationGroupTaskID(context.Background(), db, tasks, taskID)
+	_, err = refreshValidationGroupTasksForFinalUpdate(context.Background(), db, tasks, "new-task-id")
 	if err == nil || err.Error() != "task group validation expired" {
 		t.Fatalf("expected fresh timeout state to reject validation, got %v", err)
 	}
@@ -106,7 +136,7 @@ func TestRefreshValidationGroupTasksForFinalUpdateRejectsCreatorValidationTimeou
 	}
 
 	err = db.Transaction(func(tx *gorm.DB) error {
-		_, err := refreshValidationGroupTasksForFinalUpdate(context.Background(), tx, tasks)
+		_, err := refreshValidationGroupTasksForFinalUpdate(context.Background(), tx, tasks, "new-task-id")
 		return err
 	})
 	if err == nil || err.Error() != "task group validation expired" {

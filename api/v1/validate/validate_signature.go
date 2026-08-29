@@ -7,16 +7,17 @@ import (
 	log "github.com/sirupsen/logrus"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
 func jsonRemarshal(bytes []byte) ([]byte, error) {
-    var ifce interface{}
-    err := json.Unmarshal(bytes, &ifce)
-    if err != nil {
-        return nil, err
-    }
-    return json.Marshal(ifce)
+	var ifce interface{}
+	err := json.Unmarshal(bytes, &ifce)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(ifce)
 }
 
 func ValidateSignature(data interface{}, timestamp int64, signature string) (bool, string, error) {
@@ -34,6 +35,9 @@ func ValidateSignature(data interface{}, timestamp int64, signature string) (boo
 
 	log.Debugln("signature to verify: " + signature)
 
+	if len(signature) != 132 || !strings.EqualFold(signature[:2], "0x") {
+		return false, "", nil
+	}
 	signatureBytes, err := hex.DecodeString(signature[2:])
 
 	if err != nil {

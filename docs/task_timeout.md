@@ -57,7 +57,9 @@ After selecting the node and before calculating Timeout, Relay MUST compare the 
 
 If any selected record has not completed cold start, Relay MUST exclude its incomplete fitted parameters and use the maximum of the configured initial prediction and every selected ready record's complete prediction before applying `timeout_multiplier`, ceiling, and min/max clamp.
 
-Relay MUST write selected node, `StartTime`, computed `Timeout`, and `TaskStarted` in the same database update. Parameter lookup and normal Timeout calculation MUST use the in-memory cache and MUST NOT query the calibration database.
+Relay MUST write selected node, `StartTime`, selected execution GPU name, selected execution GPU VRAM, estimated execution completion time, computed `Timeout`, and `TaskStarted` in the same database update. The estimated execution completion time MUST equal `StartTime` plus the exact-GPU execution estimate used as the input to Timeout calculation before applying `timeout_multiplier`, ceiling, or min/max clamp. Parameter lookup and normal Timeout calculation MUST use the in-memory cache and MUST NOT query the calibration database.
+
+The persisted execution GPU and estimated completion time MUST remain immutable after task start. The creator-only batch status API specified in [task_batch_api.md](./task_batch_api.md) MUST return these values without reading the selected node's current mutable record.
 
 Execution Timeout covers only the period from `TaskStarted` until score submission or task-error reporting. It MUST NOT include queue waiting, creator validation, or result upload.
 

@@ -19,6 +19,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var ErrValidationAlreadyApplied = errors.New("validation already applied")
+
 func validateTaskID(taskID, nonce, taskIDCommitment string) error {
 	taskIDBytes, err := hexutil.Decode(taskID)
 	if err != nil {
@@ -83,20 +85,23 @@ func validateVRFProof(samplingSeed, vrfProof, publicKey string, creator string, 
 
 func ValidateSingleTask(ctx context.Context, originTask *models.InferenceTask, taskID, vrfProof, publicKey string) error {
 	task := *originTask
-	if !(task.Status == models.TaskScoreReady || task.Status == models.TaskErrorReported) {
-		return errors.New("illegal task state")
-	}
-
 	if err := validateTaskID(taskID, task.Nonce, task.TaskIDCommitment); err != nil {
 		return err
 	}
-	if err := task.Update(ctx, config.GetDB(), map[string]interface{}{"task_id": taskID}); err != nil {
-		return err
-	}
-
 	if err := validateVRFProof(task.SamplingSeed, vrfProof, publicKey, task.Creator, false); err != nil {
 		return err
 	}
+	if task.TaskID != "" && task.TaskID != taskID {
+		return errors.New("task id conflicts with completed validation")
+	}
+	if task.Status == models.TaskValidated || task.Status == models.TaskEndSuccess ||
+		(task.Status == models.TaskEndAborted && task.AbortReason == models.TaskAbortErrorReported) {
+		return ErrValidationAlreadyApplied
+	}
+	if !(task.Status == models.TaskScoreReady || task.Status == models.TaskErrorReported) {
+		return errors.New("illegal task state")
+	}
+	task.TaskID = taskID
 
 	var err error
 	if task.Status == models.TaskScoreReady {
@@ -192,6 +197,7 @@ func persistValidationGroupAbortedTaskQos(ctx context.Context, tx *gorm.DB, task
 	}
 	return task.Update(ctx, tx, map[string]interface{}{
 		"qos_score": task.QOSScore,
+		"task_id":   task.TaskID,
 	})
 }
 
@@ -246,46 +252,28 @@ func lockValidationGroupTasks(ctx context.Context, tx *gorm.DB, tasks []*models.
 	return refreshedTasks, nil
 }
 
-func refreshValidationGroupTasksForFinalUpdate(ctx context.Context, tx *gorm.DB, tasks []*models.InferenceTask) ([]*models.InferenceTask, error) {
+func refreshValidationGroupTasksForFinalUpdate(ctx context.Context, tx *gorm.DB, tasks []*models.InferenceTask, taskID string) ([]*models.InferenceTask, error) {
 	refreshedTasks, err := lockValidationGroupTasks(ctx, tx, tasks)
 	if err != nil {
 		return nil, err
 	}
+	alreadyApplied := true
+	for _, task := range refreshedTasks {
+		if task.TaskID != taskID {
+			alreadyApplied = false
+			break
+		}
+	}
+	if alreadyApplied {
+		return nil, ErrValidationAlreadyApplied
+	}
 	if groupHasCreatorValidationTimeout(refreshedTasks) {
 		return nil, errors.New("task group validation expired")
 	}
-	return refreshedTasks, nil
-}
-
-func setValidationGroupTaskID(ctx context.Context, db *gorm.DB, tasks []*models.InferenceTask, taskID string) ([]*models.InferenceTask, error) {
-	refreshedTasks := make([]*models.InferenceTask, len(tasks))
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		lockedTasks, err := lockValidationGroupTasks(ctx, tx, tasks)
-		if err != nil {
-			return err
+	for _, task := range refreshedTasks {
+		if task.Status != models.TaskScoreReady && task.Status != models.TaskErrorReported && task.Status != models.TaskEndAborted {
+			return nil, errors.New("illegal task state")
 		}
-		if groupHasCreatorValidationTimeout(lockedTasks) {
-			return errors.New("task group validation expired")
-		}
-		for _, task := range lockedTasks {
-			if !(task.Status == models.TaskScoreReady || task.Status == models.TaskErrorReported || task.Status == models.TaskEndAborted) {
-				return errors.New("illegal task state")
-			}
-			if err := validateTaskID(taskID, task.Nonce, task.TaskIDCommitment); err != nil {
-				return err
-			}
-		}
-		for _, task := range lockedTasks {
-			if err := task.Update(ctx, tx, map[string]interface{}{"task_id": taskID}); err != nil {
-				return err
-			}
-			task.TaskID = taskID
-		}
-		copy(refreshedTasks, lockedTasks)
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return refreshedTasks, nil
 }
@@ -323,21 +311,39 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 		return errors.New("task group size is not 3")
 	}
 
-	tasks, err := setValidationGroupTaskID(ctx, config.GetDB(), tasks, taskID)
-	if err != nil {
-		return err
-	}
-
 	// sort tasks by sequence
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].ID < tasks[j].ID
 	})
+	if groupHasCreatorValidationTimeout(tasks) {
+		return errors.New("task group validation expired")
+	}
 	// validate vrf proof
 	samplingSeed := tasks[0].SamplingSeed
 	for _, task := range tasks {
+		if err := validateTaskID(taskID, task.Nonce, task.TaskIDCommitment); err != nil {
+			return err
+		}
 		if err := validateVRFProof(samplingSeed, vrfProof, publicKey, task.Creator, true); err != nil {
 			return err
 		}
+		if task.TaskID != "" && task.TaskID != taskID {
+			return errors.New("task id conflicts with completed validation")
+		}
+	}
+	groupAlreadyApplied := true
+	for _, task := range tasks {
+		if task.TaskID != taskID {
+			groupAlreadyApplied = false
+			break
+		}
+	}
+	if groupAlreadyApplied {
+		return ErrValidationAlreadyApplied
+	}
+
+	for _, task := range tasks {
+		task.TaskID = taskID
 	}
 
 	shouldLogValidationGroup := config.GetTaskValidationGroupLogger() != nil
@@ -352,11 +358,14 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 	}
 	if err := ExecuteNodeStateUpdate(ctx, config.GetDB(), groupNodeAddresses, func() error {
 		return config.GetDB().Transaction(func(tx *gorm.DB) error {
-			refreshedTasks, err := refreshValidationGroupTasksForFinalUpdate(ctx, tx, tasks)
+			refreshedTasks, err := refreshValidationGroupTasksForFinalUpdate(ctx, tx, tasks, taskID)
 			if err != nil {
 				return err
 			}
 			tasks = refreshedTasks
+			for _, task := range tasks {
+				task.TaskID = taskID
+			}
 
 			// sort tasks by time cost
 			sort.Slice(tasks, func(i, j int) bool {

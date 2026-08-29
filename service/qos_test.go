@@ -29,6 +29,12 @@ func initQosTestConfig(t *testing.T) {
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
 		"  history_cleanup_batch_size: 2000\n" +
+		"  batch_create_max_items: 100\n" +
+		"  batch_status_max_items: 500\n" +
+		"  batch_validate_max_items: 100\n" +
+		"  batch_abort_max_items: 100\n" +
+		"  result_max_uncompressed_bytes: 1073741824\n" +
+		"  timeout_query_batch_size: 100\n" +
 		taskPricingMatchingTestConfigYAML +
 		"qos:\n" +
 		"  score_pool_size: 50\n" +

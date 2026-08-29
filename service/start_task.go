@@ -200,8 +200,8 @@ func getTimedOutRunningTasks(ctx context.Context, db *gorm.DB, now time.Time) ([
 func abortTimedOutTask(ctx context.Context, task *models.InferenceTask, abortIssuer string) error {
 	var err error
 	for range 3 {
-		deadline, _, _, abortReason, ok := GetTaskDeadline(task)
-		if !ok || deadline.After(time.Now()) {
+		_, _, _, abortReason, ok := GetTaskDeadline(task)
+		if !ok || !task.DeadlineAt.Valid || task.DeadlineAt.Time.After(time.Now()) {
 			return nil
 		}
 		task.AbortReason = abortReason
@@ -241,9 +241,47 @@ func abortTimedOutTasks(ctx context.Context, tasks []*models.InferenceTask, abor
 	}
 }
 
+type taskDeadlineCursor struct {
+	Status     models.TaskStatus
+	DeadlineAt time.Time
+	ID         uint
+}
+
+func getDueTaskDeadlines(ctx context.Context, db *gorm.DB, now time.Time, limit int, cursor *taskDeadlineCursor) ([]*models.InferenceTask, error) {
+	statuses := []models.TaskStatus{
+		models.TaskQueued,
+		models.TaskStarted,
+		models.TaskParametersUploaded,
+		models.TaskErrorReported,
+		models.TaskScoreReady,
+		models.TaskValidated,
+		models.TaskGroupValidated,
+	}
+	var tasks []*models.InferenceTask
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	query := db.WithContext(dbCtx).
+		Where("status IN ?", statuses).
+		Where("deadline_at IS NOT NULL AND deadline_at <= ?", now)
+	if cursor != nil {
+		query = query.Where(
+			"status > ? OR (status = ? AND deadline_at > ?) OR (status = ? AND deadline_at = ? AND id > ?)",
+			cursor.Status,
+			cursor.Status, cursor.DeadlineAt,
+			cursor.Status, cursor.DeadlineAt, cursor.ID,
+		)
+	}
+	err := query.
+		Order("status ASC, deadline_at ASC, id ASC").
+		Limit(limit).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 func processTaskTimeouts(ctx context.Context) {
 	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
+	var cursor *taskDeadlineCursor
 
 	for {
 		select {
@@ -258,18 +296,21 @@ func processTaskTimeouts(ctx context.Context) {
 				continue
 			}
 
-			queuedTasks, err := getTimedOutQueuedTasks(ctx, config.GetDB(), now)
+			tasks, err := getDueTaskDeadlines(ctx, config.GetDB(), now, config.GetConfig().Task.TimeoutQueryBatchSize, cursor)
 			if err != nil {
-				log.Errorf("StartTask: get timed out queued tasks error: %v", err)
+				log.Errorf("StartTask: get due task deadlines error: %v", err)
 			} else {
-				abortTimedOutTasks(ctx, queuedTasks, abortIssuer)
-			}
-
-			runningTasks, err := getTimedOutRunningTasks(ctx, config.GetDB(), now)
-			if err != nil {
-				log.Errorf("StartTask: get timed out running tasks error: %v", err)
-			} else {
-				abortTimedOutTasks(ctx, runningTasks, abortIssuer)
+				if len(tasks) == 0 {
+					cursor = nil
+				} else {
+					last := tasks[len(tasks)-1]
+					cursor = &taskDeadlineCursor{
+						Status:     last.Status,
+						DeadlineAt: last.DeadlineAt.Time,
+						ID:         last.ID,
+					}
+				}
+				abortTimedOutTasks(ctx, tasks, abortIssuer)
 			}
 
 			timer.Reset(2 * time.Second)

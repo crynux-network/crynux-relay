@@ -535,6 +535,7 @@ func abortNodeCurrentTaskForSlash(ctx context.Context, tx *gorm.DB, node *models
 	if err := task.Update(ctx, tx, map[string]interface{}{
 		"status":       models.TaskEndAborted,
 		"abort_reason": task.AbortReason,
+		"deadline_at":  nil,
 	}); err != nil {
 		return nil, err
 	}

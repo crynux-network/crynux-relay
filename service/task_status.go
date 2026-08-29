@@ -24,6 +24,18 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 	if err := ApplyTaskPricing(task); err != nil {
 		return err
 	}
+	if deadline, ok := GetQueueDeadline(task); ok {
+		task.DeadlineAt = sql.NullTime{Time: deadline, Valid: true}
+	}
+	balance, err := getRelayAccountFromCache(ctx, db, task.Creator)
+	if err != nil {
+		return err
+	}
+	relayAccountCache.mu.Lock()
+	defer relayAccountCache.mu.Unlock()
+	if balance.Cmp(&task.TaskFee.Int) < 0 {
+		return ErrInsufficientRelayAccount
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := task.Create(ctx, tx); err != nil {
 			return err
@@ -31,17 +43,15 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 		if err := models.AddTotalTask(ctx, tx); err != nil {
 			return err
 		}
-		commitFunc, err := chargeTaskFromRelayAccount(ctx, tx, task.TaskIDCommitment, task.Creator, &task.TaskFee.Int)
-		if err != nil {
-			return err
-		}
-		if err := commitFunc(); err != nil {
+		reason := fmt.Sprintf("%d-%s", models.RelayAccountEventTypeTaskPayment, task.TaskIDCommitment)
+		if err := createRelayAccountEvent(ctx, tx, models.RelayAccountEventTypeTaskPayment, reason, task.Creator, &task.TaskFee.Int); err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
+	balance.Sub(balance, &task.TaskFee.Int)
 	metrics.TasksCreated.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), task.Creator, metrics.VramTierLabel(task.MinVRAM)).Inc()
 	priorityValue, _ := new(big.Float).SetInt(&task.Priority.Int).Float64()
 	metrics.TaskPriority.WithLabelValues(metrics.TaskTypeLabel(task.TaskType), fmt.Sprint(taskVRAMDemand(task))).Observe(priorityValue)
@@ -105,23 +115,38 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	// start inference task
 	startTime := time.Now()
 	timeout := task.Timeout
+	var estimatedCompletionTime sql.NullTime
 	modelSwitched := !isSameModels(inUseModelIDs, models.BaseModelIDs(task.ModelIDs))
 	captureExecutionGPU := UsesRelayOwnedTimeouts(&task)
 	if captureExecutionGPU {
-		var err error
-		timeout, err = ComputeExecutionTimeout(&task, node.GPUName, node.GPUVram, modelSwitched)
+		timeoutTask := task
+		timeoutTask.ModelSwtiched = modelSwitched
+		description, err := DescribeExecutionTimeout(&timeoutTask, node.GPUName, node.GPUVram)
 		if err != nil {
 			return err
 		}
+		timeout = description.ComputedTimeout
+		estimatedCompletionTime = sql.NullTime{
+			Time:  startTime.Add(time.Duration(description.PredictedExecutionSeconds * float64(time.Second))),
+			Valid: true,
+		}
 	}
+	deadlineAt := sql.NullTime{Time: startTime.Add(time.Duration(timeout) * time.Second), Valid: true}
 	err := db.Transaction(func(tx *gorm.DB) error {
-		if err := task.Update(ctx, tx, map[string]interface{}{
-			"selected_node":  node.Address,
-			"start_time":     sql.NullTime{Time: startTime, Valid: true},
-			"timeout":        timeout,
-			"status":         models.TaskStarted,
-			"model_swtiched": modelSwitched,
-		}); err != nil {
+		updates := map[string]interface{}{
+			"selected_node":      node.Address,
+			"start_time":         sql.NullTime{Time: startTime, Valid: true},
+			"timeout":            timeout,
+			"status":             models.TaskStarted,
+			"model_swtiched":     modelSwitched,
+			"deadline_at":        deadlineAt,
+			"execution_gpu":      node.GPUName,
+			"execution_gpu_vram": node.GPUVram,
+		}
+		if captureExecutionGPU {
+			updates["estimated_completion_time"] = estimatedCompletionTime
+		}
+		if err := task.Update(ctx, tx, updates); err != nil {
 			return err
 		}
 
@@ -142,6 +167,10 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 	}
 	task.Timeout = timeout
 	task.ModelSwtiched = modelSwitched
+	task.ExecutionGPU = node.GPUName
+	task.ExecutionGPUVRAM = node.GPUVram
+	task.EstimatedCompletionTime = estimatedCompletionTime
+	task.DeadlineAt = deadlineAt
 	if captureExecutionGPU {
 		CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, node.GPUName, node.GPUVram)
 	}
@@ -189,12 +218,14 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 	}
 
 	scoreReadyTime := time.Now()
+	deadlineAt := scoreReadyTime.Add(time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second)
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":           models.TaskScoreReady,
 			"score":            task.Score,
 			"execution_dtype":  task.ExecutionDType,
 			"score_ready_time": sql.NullTime{Time: scoreReadyTime, Valid: true},
+			"deadline_at":      sql.NullTime{Time: deadlineAt, Valid: true},
 		})
 		if err != nil {
 			return err
@@ -224,10 +255,15 @@ func SetTaskStatusErrorReported(ctx context.Context, db *gorm.DB, originTask *mo
 		return err
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
+		scoreReadyTime := time.Now()
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":           models.TaskErrorReported,
 			"task_error":       task.TaskError,
-			"score_ready_time": sql.NullTime{Time: time.Now(), Valid: true},
+			"score_ready_time": sql.NullTime{Time: scoreReadyTime, Valid: true},
+			"deadline_at": sql.NullTime{
+				Time:  scoreReadyTime.Add(time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second),
+				Valid: true,
+			},
 		})
 		if err != nil {
 			return err
@@ -256,9 +292,15 @@ func SetTaskStatusValidated(ctx context.Context, db *gorm.DB, originTask *models
 	}
 
 	if err := db.Transaction(func(tx *gorm.DB) error {
+		validatedTime := time.Now()
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskValidated,
-			"validated_time": sql.NullTime{Time: time.Now(), Valid: true},
+			"task_id":        task.TaskID,
+			"validated_time": sql.NullTime{Time: validatedTime, Valid: true},
+			"deadline_at": sql.NullTime{
+				Time:  validatedTime.Add(time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second),
+				Valid: true,
+			},
 		})
 		if err != nil {
 			return err
@@ -290,10 +332,16 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 
 	var qosTraceEvents []NodeQosTraceInput
 	if err := db.Transaction(func(tx *gorm.DB) error {
+		validatedTime := time.Now()
 		if err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskGroupValidated,
-			"validated_time": sql.NullTime{Time: time.Now(), Valid: true},
+			"task_id":        task.TaskID,
+			"validated_time": sql.NullTime{Time: validatedTime, Valid: true},
 			"qos_score":      task.QOSScore,
+			"deadline_at": sql.NullTime{
+				Time:  validatedTime.Add(time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second),
+				Valid: true,
+			},
 		}); err != nil {
 			return err
 		}
@@ -372,8 +420,10 @@ func setTaskStatusEndInvalidatedWithEvidence(ctx context.Context, db *gorm.DB, o
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskEndInvalidated,
+			"task_id":        task.TaskID,
 			"validated_time": sql.NullTime{Time: time.Now(), Valid: true},
 			"qos_score":      0,
+			"deadline_at":    nil,
 		}); err != nil {
 			return err
 		}
@@ -440,8 +490,10 @@ func SetTaskStatusEndGroupRefund(ctx context.Context, db *gorm.DB, originTask *m
 
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskEndGroupRefund,
+			"task_id":        task.TaskID,
 			"validated_time": sql.NullTime{Time: time.Now(), Valid: true},
 			"qos_score":      task.QOSScore,
+			"deadline_at":    nil,
 		})
 		if err != nil {
 			return err
@@ -505,9 +557,11 @@ func SetTaskStatusEndAborted(ctx context.Context, db *gorm.DB, originTask *model
 
 	newTask := map[string]interface{}{
 		"status":         models.TaskEndAborted,
+		"task_id":        task.TaskID,
 		"abort_reason":   task.AbortReason,
 		"validated_time": task.ValidatedTime,
 		"qos_score":      task.QOSScore,
+		"deadline_at":    nil,
 	}
 	timeoutPenaltyMetrics := nodeHealthMetrics{}
 	logTimeoutPenalty := false
@@ -717,6 +771,7 @@ func SetTaskStatusEndSuccess(ctx context.Context, db *gorm.DB, originTask *model
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":               status,
 			"result_uploaded_time": sql.NullTime{Time: time.Now(), Valid: true},
+			"deadline_at":          nil,
 		})
 		if err != nil {
 			return err

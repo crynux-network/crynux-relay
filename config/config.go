@@ -226,6 +226,24 @@ func checkTaskConfig() error {
 	if appConfig.Task.HistoryCleanupBatchSize <= 0 {
 		return errors.New("task.history_cleanup_batch_size is not set")
 	}
+	if appConfig.Task.BatchCreateMaxItems <= 0 {
+		return errors.New("task.batch_create_max_items is not set")
+	}
+	if appConfig.Task.BatchStatusMaxItems <= 0 {
+		return errors.New("task.batch_status_max_items is not set")
+	}
+	if appConfig.Task.BatchValidateMaxItems <= 0 {
+		return errors.New("task.batch_validate_max_items is not set")
+	}
+	if appConfig.Task.BatchAbortMaxItems <= 0 {
+		return errors.New("task.batch_abort_max_items is not set")
+	}
+	if appConfig.Task.ResultMaxUncompressedBytes <= 0 {
+		return errors.New("task.result_max_uncompressed_bytes is not set")
+	}
+	if appConfig.Task.TimeoutQueryBatchSize <= 0 {
+		return errors.New("task.timeout_query_batch_size is not set")
+	}
 	return nil
 }
 

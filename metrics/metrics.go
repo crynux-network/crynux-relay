@@ -161,6 +161,32 @@ var (
 		Name: "relay_model_nodes",
 		Help: "Number of distinct nodes holding a huggingface base model, by model and holding state (on_disk or in_memory). Limited to the top models by on-disk node count.",
 	}, []string{"hf_model_id", "state"})
+
+	TaskBatchRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_task_batch_requests_total",
+		Help: "Total task batch requests by endpoint and whole-request result.",
+	}, []string{"endpoint", "result"})
+
+	TaskBatchItems = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_task_batch_items_total",
+		Help: "Total task batch items by endpoint and item outcome.",
+	}, []string{"endpoint", "outcome"})
+
+	TaskBatchDurationSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "relay_task_batch_duration_seconds",
+		Help:    "Task batch request duration by endpoint.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"endpoint"})
+
+	TaskBatchResponseBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_task_batch_response_bytes_total",
+		Help: "Total encoded task batch response bytes by endpoint.",
+	}, []string{"endpoint"})
+
+	TaskResultDownloadBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "relay_task_result_download_bytes_total",
+		Help: "Total whole-task result bytes sent by task type.",
+	}, []string{"task_type"})
 )
 
 // TaskExecutionTimeoutSeconds is created by InitTaskExecutionTimeoutBuckets from
@@ -197,6 +223,11 @@ func init() {
 		ModelDownloadsCompleted,
 		ModelDownloadsExpired,
 		ModelNodes,
+		TaskBatchRequests,
+		TaskBatchItems,
+		TaskBatchDurationSeconds,
+		TaskBatchResponseBytes,
+		TaskResultDownloadBytes,
 	)
 }
 

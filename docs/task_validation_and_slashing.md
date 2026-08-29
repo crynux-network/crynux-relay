@@ -56,6 +56,12 @@ This gives a **1% sampling rate**: roughly 1 in 100 tasks is selected for cross-
 | Not selected | 1 | `beta mod 100 != 0` | Single task validation |
 | Selected | 3 | `beta mod 100 == 0` | Group validation (cross-comparison) |
 
+### LLM Validation Group Hardware
+
+LLM generation is deterministic only within the same GPU variant. A numerical difference produced by another GPU variant can change one generated token, and that token becomes input to the remainder of the generation. Because Relay compares LLM scores by exact string equality, different GPU variants can produce different scores for honest executions and cause an incorrect invalidation.
+
+When an LLM task is selected for group validation, the two additional tasks MUST set `RequiredGPU` and `RequiredGPUVRAM` to the primary task's selected execution GPU name and GPU VRAM. Relay task status MUST return this immutable execution assignment to the creator. Relay MUST match both additional tasks only to nodes with that exact GPU name and GPU VRAM. The creator MUST NOT derive these requirements from the current mutable node record.
+
 ## Task Lifecycle
 
 The full state machine for an inference task:
@@ -101,6 +107,8 @@ After executing a task, the node submits a **score** (result fingerprint) rather
 The score is submitted via the `SubmitScore` API, which transitions the task to `TaskScoreReady`.
 
 ## Validation Logic
+
+The existing validation endpoint MUST continue processing one single task or one three-member VSS group. The batch validation endpoint MUST accept one or more independent validation units in one HTTP request, and every unit MUST retain the validation, locking, fee, QoS, health, and slashing boundary specified in this document. Batch transport and per-unit result behavior are specified in [task_batch_api.md](./task_batch_api.md).
 
 ### Single Task Validation (`ValidateSingleTask`)
 

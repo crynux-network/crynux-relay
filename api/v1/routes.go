@@ -31,6 +31,23 @@ func InitRoutes(r *fizz.Fizz) {
 
 	tasksGroup := v1g.Group("inference_tasks", "Inference tasks", "Inference tasks related APIs")
 
+	tasksGroup.POST("/batch", []fizz.OperationOption{
+		fizz.Summary("Create a bounded batch of tasks"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(inference_tasks.CreateTaskBatch, 200))
+	tasksGroup.POST("/batch/status", []fizz.OperationOption{
+		fizz.Summary("Get creator task status in a bounded batch"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(inference_tasks.GetTaskBatchStatus, 200))
+	tasksGroup.POST("/batch/validate", []fizz.OperationOption{
+		fizz.Summary("Validate task units in a bounded batch"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(inference_tasks.ValidateTaskBatch, 200))
+	tasksGroup.POST("/batch/abort", []fizz.OperationOption{
+		fizz.Summary("Cancel queued tasks in a bounded batch"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(inference_tasks.AbortTaskBatch, 200))
+
 	tasksGroup.POST("/:task_id_commitment", []fizz.OperationOption{
 		fizz.Summary("Create an task"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
@@ -48,8 +65,8 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, tonic.Handler(inference_tasks.UploadResult, 200))
 
-	tasksGroup.GET("/:task_id_commitment/results/:index", []fizz.OperationOption{
-		fizz.Summary("Get the result of the task by node address"),
+	tasksGroup.GET("/:task_id_commitment/results", []fizz.OperationOption{
+		fizz.Summary("Download all ordinary task results"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(inference_tasks.GetResult, 200))
 	tasksGroup.GET("/:task_id_commitment/results/checkpoint", []fizz.OperationOption{

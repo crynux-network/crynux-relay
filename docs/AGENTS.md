@@ -8,6 +8,7 @@
 | [task-pricing.md](./task-pricing.md) | Queue execution-time estimate, VRAM weighting, immutable task priority, parameter aggregation, dispatch ordering, and the public queued-task priority snapshot API |
 | [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, base-model readiness handling, in-round reservation, and dispatch consistency |
 | [node_selection.md](./node_selection.md) | Qualification filters, base-model gate, staking and QoS weight, in-memory locality, and weighted sampling |
+| [task_batch_api.md](./task_batch_api.md) | Creator-facing batch creation, status, validation, cancellation, and whole-task result-download contracts |
 | [qos.md](./qos.md) | Long-term performance score (`Q_long`) and short-term reliability factor (`H`) that compose the runtime QoS |
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |

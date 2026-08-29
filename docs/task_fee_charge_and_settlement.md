@@ -72,6 +72,8 @@ When task is created, Relay MUST:
 
 If balance is insufficient, task creation MUST fail and Relay MUST NOT persist a task fee event.
 
+For batch creation, each item MUST retain this charge and transaction boundary independently. One item failure MUST NOT roll back another item that committed successfully. Retrying the same task commitment and immutable normalized creation input MUST return the existing task without creating another `TaskPayment` event or applying another balance debit. The complete batch creation contract is specified in [task_batch_api.md](./task_batch_api.md).
+
 ## Refund Rules
 
 When task reaches a refunding terminal state, Relay MUST:

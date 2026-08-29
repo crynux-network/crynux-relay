@@ -82,6 +82,12 @@ network_flops:
 task:
   passive_slash_mode: true
   history_cleanup_batch_size: 2000
+  batch_create_max_items: 100
+  batch_status_max_items: 500
+  batch_validate_max_items: 100
+  batch_abort_max_items: 100
+  result_max_uncompressed_bytes: 1073741824
+  timeout_query_batch_size: 100
 task_pricing:
   initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
@@ -295,6 +301,12 @@ network_flops:
 task:
   passive_slash_mode: true
   history_cleanup_batch_size: 2000
+  batch_create_max_items: 100
+  batch_status_max_items: 500
+  batch_validate_max_items: 100
+  batch_abort_max_items: 100
+  result_max_uncompressed_bytes: 1073741824
+  timeout_query_batch_size: 100
 task_pricing:
   initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
@@ -426,6 +438,12 @@ stats:
 task:
   passive_slash_mode: true
   history_cleanup_batch_size: 2000
+  batch_create_max_items: 100
+  batch_status_max_items: 500
+  batch_validate_max_items: 100
+  batch_abort_max_items: 100
+  result_max_uncompressed_bytes: 1073741824
+  timeout_query_batch_size: 100
 task_pricing:
   initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
@@ -490,9 +508,9 @@ func writeConfigTestFiles(t *testing.T, passiveSlashMode bool, includePassiveSla
 	writeTestFile(t, jwtKeyFile, "jwt-secret")
 	writeTestFile(t, macKeyFile, "mac-secret")
 
-	taskConfig := "task:\n  history_cleanup_batch_size: 2000\n"
+	taskConfig := "task:\n  history_cleanup_batch_size: 2000\n" + batchConfigTestYAML
 	if includePassiveSlashMode {
-		taskConfig = fmt.Sprintf("task:\n  passive_slash_mode: %t\n  history_cleanup_batch_size: 2000\n", passiveSlashMode)
+		taskConfig = fmt.Sprintf("task:\n  passive_slash_mode: %t\n  history_cleanup_batch_size: 2000\n", passiveSlashMode) + batchConfigTestYAML
 	}
 	content := fmt.Sprintf(`environment: debug
 blockchains:
@@ -564,6 +582,13 @@ staking_score:
 	writeTestFile(t, filepath.Join(dir, "config.yml"), content)
 	return dir
 }
+
+const batchConfigTestYAML = "  batch_create_max_items: 100\n" +
+	"  batch_status_max_items: 500\n" +
+	"  batch_validate_max_items: 100\n" +
+	"  batch_abort_max_items: 100\n" +
+	"  result_max_uncompressed_bytes: 1073741824\n" +
+	"  timeout_query_batch_size: 100\n"
 
 func writeTestFile(t *testing.T, path string, content string) {
 	t.Helper()
