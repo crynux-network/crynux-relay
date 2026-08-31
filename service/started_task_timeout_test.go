@@ -49,24 +49,28 @@ func TestGetTimedOutRunningTasks(t *testing.T) {
 		},
 		{
 			TaskIDCommitment: "expired-score-ready",
+			TaskType:         models.TaskTypeSDFTLora,
 			Status:           models.TaskScoreReady,
 			StartTime:        sql.NullTime{Time: now.Add(-2 * time.Minute), Valid: true},
 			Timeout:          60,
 		},
 		{
 			TaskIDCommitment: "expired-error-reported",
+			TaskType:         models.TaskTypeSDFTLora,
 			Status:           models.TaskErrorReported,
 			StartTime:        sql.NullTime{Time: now.Add(-2 * time.Minute), Valid: true},
 			Timeout:          60,
 		},
 		{
 			TaskIDCommitment: "expired-validated",
+			TaskType:         models.TaskTypeSDFTLora,
 			Status:           models.TaskValidated,
 			StartTime:        sql.NullTime{Time: now.Add(-2 * time.Minute), Valid: true},
 			Timeout:          60,
 		},
 		{
 			TaskIDCommitment: "expired-group-validated",
+			TaskType:         models.TaskTypeSDFTLora,
 			Status:           models.TaskGroupValidated,
 			StartTime:        sql.NullTime{Time: now.Add(-2 * time.Minute), Valid: true},
 			Timeout:          60,
@@ -121,17 +125,18 @@ func TestGetTimedOutQueuedTasks(t *testing.T) {
 	}
 
 	now := time.Now()
-	sdUnits := uint64(512 * 512)
 	queueTimeout := time.Duration(config.GetConfig().TaskPricing.QueueTimeoutSeconds) * time.Second
 	tasks := []models.InferenceTask{
 		{
-			TaskIDCommitment: "expired-legacy-queued",
+			TaskIDCommitment: "expired-sdft-queued",
+			TaskType:         models.TaskTypeSDFTLora,
 			Status:           models.TaskQueued,
 			CreateTime:       sql.NullTime{Time: now.Add(-5 * time.Minute), Valid: true},
 			Timeout:          60,
 		},
 		{
-			TaskIDCommitment: "active-legacy-queued",
+			TaskIDCommitment: "active-sdft-queued",
+			TaskType:         models.TaskTypeSDFTLora,
 			Status:           models.TaskQueued,
 			CreateTime:       sql.NullTime{Time: now.Add(-30 * time.Second), Valid: true},
 			Timeout:          60,
@@ -139,17 +144,15 @@ func TestGetTimedOutQueuedTasks(t *testing.T) {
 		{
 			TaskIDCommitment: "expired-relay-owned-queued",
 			TaskType:         models.TaskTypeSD,
-			SDUnits:          &sdUnits,
 			Status:           models.TaskQueued,
 			CreateTime:       sql.NullTime{Time: now.Add(-queueTimeout - time.Minute), Valid: true},
 		},
 		{
 			TaskIDCommitment: "active-relay-owned-queued",
 			TaskType:         models.TaskTypeSD,
-			SDUnits:          &sdUnits,
 			Status:           models.TaskQueued,
-			// Older than the legacy 3-minute earliest cutoff, but still inside
-			// the relay-owned queue timeout. Must not be selected.
+			// Older than the SDFT 3-minute earliest cutoff, but still inside the
+			// relay-owned queue timeout. Must not be selected.
 			CreateTime: sql.NullTime{Time: now.Add(-5 * time.Minute), Valid: true},
 		},
 		{
@@ -175,7 +178,7 @@ func TestGetTimedOutQueuedTasks(t *testing.T) {
 	for _, task := range timedOutTasks {
 		got[task.TaskIDCommitment] = struct{}{}
 	}
-	for _, taskIDCommitment := range []string{"expired-legacy-queued", "expired-relay-owned-queued"} {
+	for _, taskIDCommitment := range []string{"expired-sdft-queued", "expired-relay-owned-queued"} {
 		if _, ok := got[taskIDCommitment]; !ok {
 			t.Fatalf("expected %s to be timed out, got %#v", taskIDCommitment, got)
 		}
@@ -188,7 +191,6 @@ func TestGetTimedOutQueuedTasks(t *testing.T) {
 func TestGetQueueDeadline(t *testing.T) {
 	initServiceTestConfig(t)
 	now := time.Now().Truncate(time.Second)
-	sdUnits := uint64(512 * 512)
 	tests := []struct {
 		name string
 		task models.InferenceTask
@@ -198,7 +200,6 @@ func TestGetQueueDeadline(t *testing.T) {
 			name: "relay owned sd",
 			task: models.InferenceTask{
 				TaskType:   models.TaskTypeSD,
-				SDUnits:    &sdUnits,
 				Status:     models.TaskStarted,
 				CreateTime: sql.NullTime{Time: now, Valid: true},
 				Timeout:    60,
@@ -206,7 +207,7 @@ func TestGetQueueDeadline(t *testing.T) {
 			want: now.Add(21600 * time.Second),
 		},
 		{
-			name: "sdft legacy",
+			name: "sdft",
 			task: models.InferenceTask{
 				TaskType:   models.TaskTypeSDFTLora,
 				Status:     models.TaskQueued,
@@ -232,7 +233,6 @@ func TestGetQueueDeadline(t *testing.T) {
 func TestGetTaskDeadlineRelayOwnedPhases(t *testing.T) {
 	initServiceTestConfig(t)
 	now := time.Now().Truncate(time.Second)
-	sdUnits := uint64(512 * 512)
 	tests := []struct {
 		name       string
 		task       models.InferenceTask
@@ -244,7 +244,7 @@ func TestGetTaskDeadlineRelayOwnedPhases(t *testing.T) {
 		{
 			name: "queue",
 			task: models.InferenceTask{
-				TaskType: models.TaskTypeSD, Status: models.TaskQueued, SDUnits: &sdUnits,
+				TaskType: models.TaskTypeSD, Status: models.TaskQueued,
 				CreateTime: sql.NullTime{Time: now, Valid: true},
 			},
 			wantPhase: TaskTimeoutPhaseQueue, wantWaiter: "relay", wantReason: models.TaskAbortTimeout,
@@ -253,7 +253,7 @@ func TestGetTaskDeadlineRelayOwnedPhases(t *testing.T) {
 		{
 			name: "execution",
 			task: models.InferenceTask{
-				TaskType: models.TaskTypeSD, Status: models.TaskStarted, SDUnits: &sdUnits, Timeout: 123,
+				TaskType: models.TaskTypeSD, Status: models.TaskStarted, Timeout: 123,
 				StartTime: sql.NullTime{Time: now, Valid: true},
 			},
 			wantPhase: TaskTimeoutPhaseExecution, wantWaiter: "node", wantReason: models.TaskAbortTimeout,
@@ -262,7 +262,7 @@ func TestGetTaskDeadlineRelayOwnedPhases(t *testing.T) {
 		{
 			name: "app validation",
 			task: models.InferenceTask{
-				TaskType: models.TaskTypeSD, Status: models.TaskScoreReady, SDUnits: &sdUnits,
+				TaskType: models.TaskTypeSD, Status: models.TaskScoreReady,
 				ScoreReadyTime: sql.NullTime{Time: now, Valid: true},
 			},
 			wantPhase: TaskTimeoutPhaseAppValidation, wantWaiter: "app", wantReason: models.TaskAbortCreatorValidationTimeout,
@@ -271,7 +271,7 @@ func TestGetTaskDeadlineRelayOwnedPhases(t *testing.T) {
 		{
 			name: "result upload",
 			task: models.InferenceTask{
-				TaskType: models.TaskTypeSD, Status: models.TaskValidated, SDUnits: &sdUnits,
+				TaskType: models.TaskTypeSD, Status: models.TaskValidated,
 				ValidatedTime: sql.NullTime{Time: now, Valid: true},
 			},
 			wantPhase: TaskTimeoutPhaseResultUpload, wantWaiter: "node", wantReason: models.TaskAbortResultUploadTimeout,
@@ -288,6 +288,58 @@ func TestGetTaskDeadlineRelayOwnedPhases(t *testing.T) {
 				t.Fatalf("got deadline=%s phase=%s waiter=%s reason=%d", deadline, phase, waiter, reason)
 			}
 		})
+	}
+}
+
+func TestGetTaskTransitionDeadlinePreservesSDFTTimeout(t *testing.T) {
+	initServiceTestConfig(t)
+	startTime := time.Now().Truncate(time.Second)
+	task := models.InferenceTask{
+		TaskType:  models.TaskTypeSDFTLora,
+		StartTime: sql.NullTime{Time: startTime, Valid: true},
+		Timeout:   120,
+	}
+	want := startTime.Add(120 * time.Second)
+	for _, status := range []models.TaskStatus{
+		models.TaskScoreReady,
+		models.TaskErrorReported,
+		models.TaskValidated,
+		models.TaskGroupValidated,
+	} {
+		deadline, err := getTaskTransitionDeadline(&task, status, startTime.Add(time.Minute))
+		if err != nil {
+			t.Fatalf("status %d: %v", status, err)
+		}
+		if !deadline.Valid || !deadline.Time.Equal(want) {
+			t.Fatalf("status %d deadline = %v, want %v", status, deadline, want)
+		}
+	}
+}
+
+func TestGetTaskTransitionDeadlineUsesRelayOwnedPhases(t *testing.T) {
+	initServiceTestConfig(t)
+	transitionTime := time.Now().Truncate(time.Second)
+	task := models.InferenceTask{
+		TaskType: models.TaskTypeSD,
+	}
+	tests := []struct {
+		status  models.TaskStatus
+		seconds uint64
+	}{
+		{status: models.TaskScoreReady, seconds: config.GetConfig().TaskPricing.AppValidationTimeoutSeconds},
+		{status: models.TaskErrorReported, seconds: config.GetConfig().TaskPricing.AppValidationTimeoutSeconds},
+		{status: models.TaskValidated, seconds: config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds},
+		{status: models.TaskGroupValidated, seconds: config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds},
+	}
+	for _, test := range tests {
+		deadline, err := getTaskTransitionDeadline(&task, test.status, transitionTime)
+		if err != nil {
+			t.Fatalf("status %d: %v", test.status, err)
+		}
+		want := transitionTime.Add(time.Duration(test.seconds) * time.Second)
+		if !deadline.Valid || !deadline.Time.Equal(want) {
+			t.Fatalf("status %d deadline = %v, want %v", test.status, deadline, want)
+		}
 	}
 }
 
@@ -339,34 +391,12 @@ func TestShouldUpdateNodeQosScoreOnAbort(t *testing.T) {
 	}
 }
 
-func TestUsesRelayOwnedTimeoutsRequiresCompleteWorkloadFields(t *testing.T) {
-	sdUnits := uint64(512 * 512)
-	inputBytes := uint64(100)
-	imageCount := uint64(0)
-	imagePixels := uint64(0)
-	maxNewTokens := uint64(256)
-
-	if !UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: models.TaskTypeSD, SDUnits: &sdUnits}) {
-		t.Fatal("SD with SDUnits must use relay-owned timeouts")
+func TestUsesRelayOwnedTimeoutsByTaskType(t *testing.T) {
+	if !UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: models.TaskTypeSD}) {
+		t.Fatal("SD must use relay-owned timeouts")
 	}
-	if UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: models.TaskTypeSD}) {
-		t.Fatal("SD without SDUnits must keep legacy timeouts")
-	}
-	if !UsesRelayOwnedTimeouts(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, LLMTextInputBytes: &inputBytes, LLMImageCount: &imageCount,
-		LLMImagePixels: &imagePixels, LLMMaxNewTokens: &maxNewTokens,
-	}) {
-		t.Fatal("LLM with all workload fields must use relay-owned timeouts")
-	}
-	if UsesRelayOwnedTimeouts(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, LLMTextInputBytes: &inputBytes,
-	}) {
-		t.Fatal("LLM missing LLMMaxNewTokens must keep legacy timeouts")
-	}
-	if UsesRelayOwnedTimeouts(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, LLMMaxNewTokens: &maxNewTokens,
-	}) {
-		t.Fatal("LLM missing LLMInputBytes must keep legacy timeouts")
+	if !UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: models.TaskTypeLLM}) {
+		t.Fatal("LLM must use relay-owned timeouts")
 	}
 	if UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: models.TaskTypeSDFTLora, Timeout: 60}) {
 		t.Fatal("SDFT must keep creator-supplied timeouts")

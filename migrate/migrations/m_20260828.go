@@ -23,16 +23,27 @@ type inferenceTaskBatchFieldsForM20260828 struct {
 	ValidatedTime           sql.NullTime
 	Timeout                 uint64
 	TaskType                uint8
-	SDUnits                 *uint64
-	LLMTextInputBytes       *uint64
-	LLMImageCount           *uint64
-	LLMImagePixels          *uint64
-	LLMMaxNewTokens         *uint64
 }
 
 func (inferenceTaskBatchFieldsForM20260828) TableName() string {
 	return "inference_tasks"
 }
+
+const (
+	taskStatusQueuedForM20260828             uint8 = 0
+	taskStatusStartedForM20260828            uint8 = 1
+	taskStatusParametersUploadedForM20260828 uint8 = 2
+	taskStatusErrorReportedForM20260828      uint8 = 3
+	taskStatusScoreReadyForM20260828         uint8 = 4
+	taskStatusValidatedForM20260828          uint8 = 5
+	taskStatusGroupValidatedForM20260828     uint8 = 6
+
+	taskTypeSDForM20260828       uint8 = 0
+	taskTypeLLMForM20260828      uint8 = 1
+	taskTypeSDFTLoraForM20260828 uint8 = 2
+
+	taskDeadlineBackfillBatchSizeForM20260828 = 500
+)
 
 func M20260828(db *gorm.DB) *gormigrate.Gormigrate {
 	return gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{{
@@ -44,10 +55,10 @@ func M20260828(db *gorm.DB) *gormigrate.Gormigrate {
 					return err
 				}
 			}
-			if err := backfillTaskDeadlinesForM20260828(tx); err != nil {
+			if err := tx.Exec("CREATE INDEX idx_inference_tasks_status_deadline_id ON inference_tasks (status, deadline_at, id)").Error; err != nil {
 				return err
 			}
-			if err := tx.Exec("CREATE INDEX idx_inference_tasks_status_deadline_id ON inference_tasks (status, deadline_at, id)").Error; err != nil {
+			if err := backfillTaskDeadlinesForM20260828(tx); err != nil {
 				return err
 			}
 			return nil
@@ -67,55 +78,80 @@ func M20260828(db *gorm.DB) *gormigrate.Gormigrate {
 }
 
 func backfillTaskDeadlinesForM20260828(tx *gorm.DB) error {
-	var tasks []inferenceTaskBatchFieldsForM20260828
-	if err := tx.Find(&tasks).Error; err != nil {
-		return err
-	}
-	for i := range tasks {
-		task := &tasks[i]
-		var deadline time.Time
-		relayOwned := (task.TaskType == 0 && task.SDUnits != nil) ||
-			(task.TaskType == 1 && task.LLMTextInputBytes != nil && task.LLMImageCount != nil &&
-				task.LLMImagePixels != nil && task.LLMMaxNewTokens != nil)
-		switch task.Status {
-		case 0:
-			if !task.CreateTime.Valid {
-				continue
+	for status := taskStatusQueuedForM20260828; status <= taskStatusGroupValidatedForM20260828; status++ {
+		var lastID uint
+		for {
+			var tasks []inferenceTaskBatchFieldsForM20260828
+			query := tx.
+				Where("status = ? AND deadline_at IS NULL", status).
+				Order("id ASC").
+				Limit(taskDeadlineBackfillBatchSizeForM20260828)
+			if lastID > 0 {
+				query = query.Where("id > ?", lastID)
 			}
-			if relayOwned {
-				deadline = task.CreateTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.QueueTimeoutSeconds) * time.Second)
-			} else {
-				deadline = task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second)
+			if err := query.Find(&tasks).Error; err != nil {
+				return err
 			}
-		case 1, 2:
-			if !task.StartTime.Valid {
-				continue
+			if len(tasks) == 0 {
+				break
 			}
-			deadline = task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second)
-		case 3, 4:
-			if relayOwned && task.ScoreReadyTime.Valid {
-				deadline = task.ScoreReadyTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second)
-			} else if task.StartTime.Valid {
-				deadline = task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second)
-			} else {
-				continue
+			for i := range tasks {
+				task := &tasks[i]
+				deadline, ok := deadlineAtForM20260828(task)
+				if !ok {
+					continue
+				}
+				if err := tx.Model(modelForTaskIDM20260828(task.ID)).Update("deadline_at", deadline).Error; err != nil {
+					return err
+				}
 			}
-		case 5, 6:
-			if relayOwned && task.ValidatedTime.Valid {
-				deadline = task.ValidatedTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second)
-			} else if task.StartTime.Valid {
-				deadline = task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second)
-			} else {
-				continue
+			lastID = tasks[len(tasks)-1].ID
+			if len(tasks) < taskDeadlineBackfillBatchSizeForM20260828 {
+				break
 			}
-		default:
-			continue
-		}
-		if err := tx.Model(modelForTaskIDM20260828(task.ID)).Update("deadline_at", deadline).Error; err != nil {
-			return err
 		}
 	}
 	return nil
+}
+
+func deadlineAtForM20260828(task *inferenceTaskBatchFieldsForM20260828) (time.Time, bool) {
+	relayOwned := task.TaskType == taskTypeSDForM20260828 || task.TaskType == taskTypeLLMForM20260828
+	if !relayOwned && task.TaskType != taskTypeSDFTLoraForM20260828 {
+		return time.Time{}, false
+	}
+	switch task.Status {
+	case taskStatusQueuedForM20260828:
+		if !task.CreateTime.Valid {
+			return time.Time{}, false
+		}
+		if relayOwned {
+			return task.CreateTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.QueueTimeoutSeconds) * time.Second), true
+		}
+		return task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second), true
+	case taskStatusStartedForM20260828, taskStatusParametersUploadedForM20260828:
+		if !task.StartTime.Valid {
+			return time.Time{}, false
+		}
+		return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second), true
+	case taskStatusErrorReportedForM20260828, taskStatusScoreReadyForM20260828:
+		if relayOwned && task.ScoreReadyTime.Valid {
+			return task.ScoreReadyTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second), true
+		}
+		if task.StartTime.Valid {
+			return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second), true
+		}
+		return time.Time{}, false
+	case taskStatusValidatedForM20260828, taskStatusGroupValidatedForM20260828:
+		if relayOwned && task.ValidatedTime.Valid {
+			return task.ValidatedTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second), true
+		}
+		if task.StartTime.Valid {
+			return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second), true
+		}
+		return time.Time{}, false
+	default:
+		return time.Time{}, false
+	}
 }
 
 func modelForTaskIDM20260828(id uint) *inferenceTaskBatchFieldsForM20260828 {

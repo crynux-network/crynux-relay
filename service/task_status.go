@@ -207,6 +207,22 @@ func checkTaskSelectedNode(ctx context.Context, db *gorm.DB, task *models.Infere
 	return node, nil
 }
 
+func getTaskTransitionDeadline(task *models.InferenceTask, status models.TaskStatus, transitionTime time.Time) (sql.NullTime, error) {
+	taskAtTransition := *task
+	taskAtTransition.Status = status
+	switch status {
+	case models.TaskScoreReady, models.TaskErrorReported:
+		taskAtTransition.ScoreReadyTime = sql.NullTime{Time: transitionTime, Valid: true}
+	case models.TaskValidated, models.TaskGroupValidated:
+		taskAtTransition.ValidatedTime = sql.NullTime{Time: transitionTime, Valid: true}
+	}
+	deadline, _, _, _, ok := GetTaskDeadline(&taskAtTransition)
+	if !ok {
+		return sql.NullTime{}, errors.New("task deadline cannot be calculated")
+	}
+	return sql.NullTime{Time: deadline, Valid: true}, nil
+}
+
 func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *models.InferenceTask) error {
 	task := *originTask
 	if task.Status != models.TaskStarted {
@@ -218,14 +234,17 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 	}
 
 	scoreReadyTime := time.Now()
-	deadlineAt := scoreReadyTime.Add(time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second)
+	deadlineAt, err := getTaskTransitionDeadline(&task, models.TaskScoreReady, scoreReadyTime)
+	if err != nil {
+		return err
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":           models.TaskScoreReady,
 			"score":            task.Score,
 			"execution_dtype":  task.ExecutionDType,
 			"score_ready_time": sql.NullTime{Time: scoreReadyTime, Valid: true},
-			"deadline_at":      sql.NullTime{Time: deadlineAt, Valid: true},
+			"deadline_at":      deadlineAt,
 		})
 		if err != nil {
 			return err
@@ -254,16 +273,17 @@ func SetTaskStatusErrorReported(ctx context.Context, db *gorm.DB, originTask *mo
 	if err != nil {
 		return err
 	}
+	scoreReadyTime := time.Now()
+	deadlineAt, err := getTaskTransitionDeadline(&task, models.TaskErrorReported, scoreReadyTime)
+	if err != nil {
+		return err
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		scoreReadyTime := time.Now()
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":           models.TaskErrorReported,
 			"task_error":       task.TaskError,
 			"score_ready_time": sql.NullTime{Time: scoreReadyTime, Valid: true},
-			"deadline_at": sql.NullTime{
-				Time:  scoreReadyTime.Add(time.Duration(config.GetConfig().TaskPricing.AppValidationTimeoutSeconds) * time.Second),
-				Valid: true,
-			},
+			"deadline_at":      deadlineAt,
 		})
 		if err != nil {
 			return err
@@ -291,16 +311,17 @@ func SetTaskStatusValidated(ctx context.Context, db *gorm.DB, originTask *models
 		return err
 	}
 
+	validatedTime := time.Now()
+	deadlineAt, err := getTaskTransitionDeadline(&task, models.TaskValidated, validatedTime)
+	if err != nil {
+		return err
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		validatedTime := time.Now()
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskValidated,
 			"task_id":        task.TaskID,
 			"validated_time": sql.NullTime{Time: validatedTime, Valid: true},
-			"deadline_at": sql.NullTime{
-				Time:  validatedTime.Add(time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second),
-				Valid: true,
-			},
+			"deadline_at":    deadlineAt,
 		})
 		if err != nil {
 			return err
@@ -331,17 +352,18 @@ func SetTaskStatusGroupValidated(ctx context.Context, db *gorm.DB, originTask *m
 	}
 
 	var qosTraceEvents []NodeQosTraceInput
+	validatedTime := time.Now()
+	deadlineAt, err := getTaskTransitionDeadline(&task, models.TaskGroupValidated, validatedTime)
+	if err != nil {
+		return err
+	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		validatedTime := time.Now()
 		if err = task.Update(ctx, tx, map[string]interface{}{
 			"status":         models.TaskGroupValidated,
 			"task_id":        task.TaskID,
 			"validated_time": sql.NullTime{Time: validatedTime, Valid: true},
 			"qos_score":      task.QOSScore,
-			"deadline_at": sql.NullTime{
-				Time:  validatedTime.Add(time.Duration(config.GetConfig().TaskPricing.ResultUploadTimeoutSeconds) * time.Second),
-				Valid: true,
-			},
+			"deadline_at":    deadlineAt,
 		}); err != nil {
 			return err
 		}

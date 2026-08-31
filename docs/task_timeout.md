@@ -19,7 +19,7 @@ Queue priority affects dispatch order only. It MUST NOT alter `CreateTime + queu
 
 ## Execution Timeout
 
-Creators MUST NOT supply the execution Timeout for normal SD or LLM tasks. Relay MUST ignore a supplied legacy value for these task types.
+Creators MUST NOT supply the execution Timeout for normal SD or LLM tasks. Relay MUST ignore a creator-supplied value for these task types.
 
 After Relay selects the node and exact GPU variant, Relay MUST calculate normal-task `Timeout` from the frozen model execution configuration and in-memory records defined in [task_execution_parameters.md](./task_execution_parameters.md). Requested `auto` MUST compare complete predictions from `auto` and reported actual dtype records. Unknown-model fallback MUST use the nearest task `MinVRAM` interval, prefer exact-GPU records over other GPU names with the same VRAM, and use the maximum complete prediction among equal-distance records.
 
@@ -63,7 +63,7 @@ The persisted execution GPU and estimated completion time MUST remain immutable 
 
 Execution Timeout covers only the period from `TaskStarted` until score submission or task-error reporting. It MUST NOT include queue waiting, creator validation, or result upload.
 
-SDFT LoRA MUST retain its creator-supplied Timeout and existing timeout calculation. A migrated non-terminal LLM task with any null `LLMTextInputBytes`, `LLMImageCount`, `LLMImagePixels`, or `LLMMaxNewTokens` field MUST retain its legacy stored Timeout and legacy deadline behavior until terminal state and MUST NOT enter execution-parameter calibration.
+SDFT LoRA MUST retain its creator-supplied Timeout for the complete task lifecycle and MUST NOT enter execution-parameter calibration or the normal SD/LLM staged timeout flow.
 
 ## Creator Validation Timeout
 

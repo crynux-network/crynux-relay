@@ -26,13 +26,11 @@ const (
 	TaskTimeoutPhaseExecution     TaskTimeoutPhase = "execution"
 	TaskTimeoutPhaseAppValidation TaskTimeoutPhase = "app_validation"
 	TaskTimeoutPhaseResultUpload  TaskTimeoutPhase = "result_upload"
-	TaskTimeoutPhaseLegacy        TaskTimeoutPhase = "legacy"
+	TaskTimeoutPhaseSDFT          TaskTimeoutPhase = "sdft"
 )
 
 func UsesRelayOwnedTimeouts(task *models.InferenceTask) bool {
-	return (task.TaskType == models.TaskTypeSD && task.SDUnits != nil) ||
-		(task.TaskType == models.TaskTypeLLM && task.LLMTextInputBytes != nil &&
-			task.LLMImageCount != nil && task.LLMImagePixels != nil && task.LLMMaxNewTokens != nil)
+	return task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM
 }
 
 // GetQueueDeadline returns CreateTime plus the queue timeout for the task type.
@@ -41,11 +39,14 @@ func GetQueueDeadline(task *models.InferenceTask) (time.Time, bool) {
 	if !task.CreateTime.Valid {
 		return time.Time{}, false
 	}
-	if UsesRelayOwnedTimeouts(task) {
-		seconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
-		return task.CreateTime.Time.Add(time.Duration(seconds) * time.Second), true
+	if task.TaskType == models.TaskTypeSDFTLora {
+		return task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second), true
 	}
-	return task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second), true
+	if !UsesRelayOwnedTimeouts(task) {
+		return time.Time{}, false
+	}
+	seconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
+	return task.CreateTime.Time.Add(time.Duration(seconds) * time.Second), true
 }
 
 func GetTaskDeadline(task *models.InferenceTask) (time.Time, TaskTimeoutPhase, string, models.TaskAbortReason, bool) {
@@ -55,17 +56,20 @@ func GetTaskDeadline(task *models.InferenceTask) (time.Time, TaskTimeoutPhase, s
 			if UsesRelayOwnedTimeouts(task) {
 				return deadline, TaskTimeoutPhaseQueue, "relay", models.TaskAbortTimeout, true
 			}
-			return deadline, TaskTimeoutPhaseLegacy, "relay", models.TaskAbortTimeout, true
+			return deadline, TaskTimeoutPhaseSDFT, "relay", models.TaskAbortTimeout, true
 		}
 		return time.Time{}, "", "", models.TaskAbortReasonNone, false
 	}
 	if !UsesRelayOwnedTimeouts(task) {
+		if task.TaskType != models.TaskTypeSDFTLora {
+			return time.Time{}, "", "", models.TaskAbortReasonNone, false
+		}
 		switch task.Status {
 		case models.TaskStarted, models.TaskParametersUploaded, models.TaskErrorReported,
 			models.TaskScoreReady, models.TaskValidated, models.TaskGroupValidated:
 			if task.StartTime.Valid {
 				return task.StartTime.Time.Add(time.Duration(task.Timeout) * time.Second),
-					TaskTimeoutPhaseLegacy, "node_or_creator", models.TaskAbortTimeout, true
+					TaskTimeoutPhaseSDFT, "node_or_creator", models.TaskAbortTimeout, true
 			}
 		}
 		return time.Time{}, "", "", models.TaskAbortReasonNone, false
@@ -116,25 +120,23 @@ func getTimedOutQueuedTasks(ctx context.Context, db *gorm.DB, now time.Time) ([]
 	tasks := make([]*models.InferenceTask, 0)
 	queueTimeoutSeconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
 	relayOwnedCutoff := now.Add(-time.Duration(queueTimeoutSeconds) * time.Second)
-	// Legacy and SDFT deadlines are CreateTime + 3 minutes + Timeout. Timeout is
-	// at least 0, so CreateTime older than 3 minutes is the earliest possible
-	// candidate; exact Timeout filtering happens in isQueuedTaskTimedOut.
-	legacyEarliestCutoff := now.Add(-3 * time.Minute)
+	// SDFT deadlines are CreateTime + 3 minutes + Timeout. Timeout is at least
+	// 0, so CreateTime older than 3 minutes is the earliest possible candidate.
+	sdftEarliestCutoff := now.Add(-3 * time.Minute)
 
 	for offset := 0; ; offset += pageSize {
 		page := make([]*models.InferenceTask, 0)
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		relayOwnedCandidate := db.Where(
-			db.Where("task_type = ? AND sd_units IS NOT NULL", models.TaskTypeSD).
-				Or("task_type = ? AND llm_text_input_bytes IS NOT NULL AND llm_image_count IS NOT NULL AND llm_image_pixels IS NOT NULL AND llm_max_new_tokens IS NOT NULL", models.TaskTypeLLM),
+			"task_type IN ?",
+			[]models.TaskType{models.TaskTypeSD, models.TaskTypeLLM},
 		).Where("create_time <= ?", relayOwnedCutoff)
-		legacyCandidate := db.Where("task_type <> ? OR sd_units IS NULL", models.TaskTypeSD).
-			Where("task_type <> ? OR llm_text_input_bytes IS NULL OR llm_image_count IS NULL OR llm_image_pixels IS NULL OR llm_max_new_tokens IS NULL", models.TaskTypeLLM).
-			Where("create_time <= ?", legacyEarliestCutoff)
+		sdftCandidate := db.Where("task_type = ?", models.TaskTypeSDFTLora).
+			Where("create_time <= ?", sdftEarliestCutoff)
 		err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
 			Where("status = ?", models.TaskQueued).
 			Where("create_time IS NOT NULL").
-			Where(db.Where(relayOwnedCandidate).Or(legacyCandidate)).
+			Where(db.Where(relayOwnedCandidate).Or(sdftCandidate)).
 			Order("id").
 			Offset(offset).
 			Limit(pageSize).

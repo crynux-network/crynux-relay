@@ -16,6 +16,8 @@ Write migration steps as direct, deterministic schema transitions for the target
 
 Migrations MUST NOT include data backfill logic unless the task explicitly requires it. When a migration creates a new table or column, leave it empty and let the application populate it, unless an explicit requirement states that historical data must be backfilled.
 
+When backfill is explicitly required, `inference_tasks` and `events` MUST NOT be read with an unfiltered full-table query. Use selective filters and batched reads instead.
+
 ### Local Structs Only
 
 Migration code MUST NOT reference structs from the `models` package. Define a local struct inside the migration file, frozen to the schema at the time the migration is written, with a `TableName()` method for the target table.
