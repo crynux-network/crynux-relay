@@ -24,7 +24,7 @@ In relay, the `version` field sent by node join, joined-node capability synchron
 Validation entry points:
 
 - Task creation validates `task_version` in `api/v1/inference_tasks/create_task.go`
-- Node join validates `version` in `api/v1/nodes/join.go` and `api/v2/nodes/join.go`
+- Node join validates `version` in `api/v2/nodes/join.go`
 - Joined-node capability synchronization validates `version` in `api/v2/nodes/capabilities.go`
 - Node version update validates `version` in `api/v1/nodes/version.go`
 
@@ -180,7 +180,6 @@ Given a task version `A.B.C`:
 - `service/start_task.go`
 - `service/task_status.go`
 - `api/v1/inference_tasks/create_task.go`
-- `api/v1/nodes/join.go`
 - `api/v2/nodes/join.go`
 - `api/v2/nodes/capabilities.go`
 - `api/v1/nodes/version.go`

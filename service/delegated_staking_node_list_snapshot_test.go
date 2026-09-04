@@ -331,6 +331,7 @@ func TestDelegationAPRProjectionContextHandlesProjectedMaxStakingChange(t *testi
 			Network:     network,
 			Status:      models.NodeStatusAvailable,
 			StakeAmount: models.BigInt{Int: *big.NewInt(100)},
+			QOSScore:    5,
 			HealthBase:  1,
 		},
 		{
@@ -338,6 +339,7 @@ func TestDelegationAPRProjectionContextHandlesProjectedMaxStakingChange(t *testi
 			Network:     network,
 			Status:      models.NodeStatusAvailable,
 			StakeAmount: models.BigInt{Int: *big.NewInt(400)},
+			QOSScore:    5,
 			HealthBase:  1,
 		},
 	}

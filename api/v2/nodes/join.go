@@ -79,7 +79,7 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 			Address:      in.Address,
 			GPUName:      in.GPUName,
 			GPUVram:      in.GPUVram,
-			QOSScore:     0,
+			QOSScore:     5.0,
 			MajorVersion: nodeVersions[0],
 			MinorVersion: nodeVersions[1],
 			PatchVersion: nodeVersions[2],

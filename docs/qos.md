@@ -40,7 +40,7 @@ Where:
 - `Q_max`: the maximum possible task score (10.0).
 - `H`: the short-term reliability factor (range 0 to 1).
 
-If `Q_long` is 0 (e.g., for a new node), it defaults to `5.0` (half of `Q_max`) before applying `H`.
+Relay MUST persist `Q_long = 5.0` when a node joins for the first time. Normalization MUST only divide the persisted value by `Q_max`. A persisted `Q_long` of `0` is a real zero score and MUST normalize to `0`; it MUST NOT be replaced with an initialization default.
 
 ## Factor Calculation
 
@@ -80,9 +80,9 @@ The long-term score (`Q_long`) is calculated using an in-memory rolling pool:
 - When a new task score arrives, it is appended to the pool. If the pool exceeds the configured size, the oldest entry is removed.
 - `Q_long` is the **arithmetic mean** of all scores in the pool.
 
-When a node's pool does not yet exist in memory (e.g., after a relay restart), the pool is initialized from persisted `QOSScore` in the database (`models.Node.QOSScore`, which stores `Q_long`) to ensure smooth transition.
+When a node's pool does not exist in memory, Relay MUST build the pool when the next valid task score arrives. If persisted `QOSScore` is greater than `0`, Relay MUST insert `score_pool_size - 1` copies of that persisted score before appending the new task score. Later task scores MUST replace these initial entries from oldest to newest. For a new node with persisted `QOSScore = 5.0`, the first pool therefore contains `score_pool_size - 1` entries of `5` and one real task score.
 
-When an existing node rejoins and `Q_long` is raised to the configured rejoin floor (`qos.rejoin_qos_long_floor`), the relay MUST discard the node's in-memory rolling pool. The next task score then re-seeds the pool from the floored persisted `QOSScore`, so the pre-kickout scores no longer contribute to `Q_long`.
+When an existing node rejoins with normalized `Q_long` below `qos.rejoin_qos_long_floor`, Relay MUST raise persisted `QOSScore` to `qos.rejoin_qos_long_floor * Q_max` and discard the node's in-memory rolling pool. This rule MUST apply when persisted `QOSScore` is `0`. The next valid task score MUST rebuild the pool with `score_pool_size - 1` copies of the raised score and one real task score, so scores recorded before kickout no longer contribute to `Q_long`. Relay MUST leave the score and pool unchanged when normalized `Q_long` is equal to or above the floor.
 
 ### Short-term Reliability Factor (`H`)
 
@@ -205,7 +205,9 @@ The API response `data` object MUST contain `node_address`, `max_task_events`, a
 |-------------------|-------|-------------|
 | `TASK_SCORE_REWARDS` | [10, 5, 2] | Task scores for 1st, 2nd, 3rd place |
 | `maxQoSScore` | 10.0 | Fixed normalization denominator for QoS score |
+| New node `QOSScore` | 5.0 | Persisted initial long-term score; normalized value is 0.5 |
 | `qos.score_pool_size` | 50 | Rolling pool size for node QoS calculation |
+| `qos.rejoin_qos_long_floor` | 0.3 | Minimum normalized long-term score applied when an existing node rejoins below the floor |
 | `qos.tracing_max_task_events` | 50 | Maximum number of in-memory QoS trace events retained per node |
 | `qos.penalty_factor` | 0.3 | Heavy timeout multiplier applied to H after first-timeout condition is no longer met |
 | `qos.first_timeout_penalty_factor` | 0.95 | Light timeout multiplier applied when node health is near full |

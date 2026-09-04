@@ -192,13 +192,8 @@ func CalculateQosScoreAt(qosScore float64, healthBase float64, healthUpdatedAt s
 }
 
 // CalculateLongTermQos returns normalized long-term QoS in range [0, 1].
-// If persisted long-term score is not initialized, use 0.5 as default.
 func CalculateLongTermQos(qosScore float64) float64 {
-	qosLong := qosScore / GetMaxQosScore()
-	if qosLong == 0 {
-		qosLong = 0.5
-	}
-	return qosLong
+	return qosScore / GetMaxQosScore()
 }
 
 // AdjustNodeQosForJoin applies a small long-term QoS recovery when an existing

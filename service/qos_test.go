@@ -60,6 +60,45 @@ func seedNodeQosScorePool(address string, score uint64, count int) {
 	nodeQoSScorePool.mu.Unlock()
 }
 
+func TestCalculateLongTermQosNormalizesPersistedScore(t *testing.T) {
+	if qosLong := CalculateLongTermQos(0); qosLong != 0 {
+		t.Fatalf("expected zero persisted score to normalize to 0, got %f", qosLong)
+	}
+	if qosLong := CalculateLongTermQos(5); qosLong != 0.5 {
+		t.Fatalf("expected initial persisted score to normalize to 0.5, got %f", qosLong)
+	}
+}
+
+func TestNodeTaskQosScoreReplacesInitialScores(t *testing.T) {
+	initQosTestConfig(t)
+
+	const address = "0xnew"
+	defer resetNodeQosScorePool(address)
+	node := &models.Node{Address: address, QOSScore: 5.0}
+
+	firstScore, err := getNodeTaskQosScore(node, 10)
+	if err != nil {
+		t.Fatalf("failed to get first node task qos score: %v", err)
+	}
+	poolSize := config.GetConfig().QoS.ScorePoolSize
+	expectedFirst := (float64(poolSize-1)*5 + 10) / float64(poolSize)
+	if firstScore != expectedFirst {
+		t.Fatalf("expected first score %.2f, got %.2f", expectedFirst, firstScore)
+	}
+	if size := getNodeQosWindowSize(address); size != int(poolSize) {
+		t.Fatalf("expected initialized pool size %d, got %d", poolSize, size)
+	}
+
+	secondScore, err := getNodeTaskQosScore(node, 2)
+	if err != nil {
+		t.Fatalf("failed to get second node task qos score: %v", err)
+	}
+	expectedSecond := (float64(poolSize-2)*5 + 10 + 2) / float64(poolSize)
+	if secondScore != expectedSecond {
+		t.Fatalf("expected second score %.2f, got %.2f", expectedSecond, secondScore)
+	}
+}
+
 func TestAdjustNodeQosForJoinResetsStaleScorePool(t *testing.T) {
 	initQosTestConfig(t)
 
@@ -84,6 +123,39 @@ func TestAdjustNodeQosForJoinResetsStaleScorePool(t *testing.T) {
 	}
 	if newScore < config.GetConfig().QoS.KickoutThreshold {
 		t.Fatalf("expected first post-rejoin score %.2f to stay above kickout threshold", newScore)
+	}
+}
+
+func TestAdjustZeroQosNodeForJoinRebuildsFromFloor(t *testing.T) {
+	initQosTestConfig(t)
+
+	const address = "0xzero-rejoin"
+	poolSize := config.GetConfig().QoS.ScorePoolSize
+	seedNodeQosScorePool(address, 0, int(poolSize))
+	defer resetNodeQosScorePool(address)
+
+	node := &models.Node{Address: address, QOSScore: 0}
+	AdjustNodeQosForJoin(node, false)
+
+	floorScore := config.GetConfig().QoS.RejoinQosLongFloor * GetMaxQosScore()
+	if node.QOSScore != floorScore {
+		t.Fatalf("expected zero score to recover to %.2f, got %.2f", floorScore, node.QOSScore)
+	}
+	if size := getNodeQosWindowSize(address); size != 0 {
+		t.Fatalf("expected stale zero score pool to be reset, got %d entries", size)
+	}
+
+	newScore, err := getNodeTaskQosScore(node, 10)
+	if err != nil {
+		t.Fatalf("failed to get first post-rejoin score: %v", err)
+	}
+	expectedScore := (float64(poolSize-1)*floorScore + 10) / float64(poolSize)
+	if newScore != expectedScore {
+		t.Fatalf("expected rebuilt score %.2f, got %.2f", expectedScore, newScore)
+	}
+	node.QOSScore = newScore
+	if ShouldPermanentKickout(node) {
+		t.Fatal("expected rebuilt score pool not to trigger permanent kickout")
 	}
 }
 
