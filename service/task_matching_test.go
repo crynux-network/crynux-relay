@@ -72,6 +72,21 @@ func TestFilterIndexEntriesForTaskHardFilters(t *testing.T) {
 	}
 }
 
+func TestFilterIndexEntriesForTaskRequiresNodeMinorVersion(t *testing.T) {
+	task := newMatchingTestTask()
+	task.TaskVersion = "3.6.0"
+
+	current := newMatchingTestEntry("0xcurrent")
+	current.MinorVersion = 6
+	old := newMatchingTestEntry("0xold")
+	old.MinorVersion = 5
+
+	filtered := filterIndexEntriesForTask(task, []*NodeIndexEntry{current, old})
+	if len(filtered) != 1 || filtered[0].Address != current.Address {
+		t.Fatalf("expected only version 3.6.0 node, got %+v", filtered)
+	}
+}
+
 func TestFilterIndexEntriesForTaskRequiredGPU(t *testing.T) {
 	task := newMatchingTestTask()
 	task.RequiredGPU = "NVIDIA A100"

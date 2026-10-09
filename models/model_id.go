@@ -104,7 +104,7 @@ func BaseModelIDs(modelIDs []string) []string {
 // It returns false for non-base model IDs (lora, controlnet) and for
 // URL-based model names, which are not huggingface models.
 func BaseModelHuggingFaceID(modelID string) (string, bool) {
-	name, ok := strings.CutPrefix(modelID, "base:")
+	name, ok := strings.CutPrefix(NormalizeModelID(modelID), "base:")
 	if !ok {
 		return "", false
 	}
@@ -118,6 +118,30 @@ func BaseModelHuggingFaceID(modelID string) (string, bool) {
 		return "", false
 	}
 	return name, true
+}
+
+// BaseModelVariant extracts the variant suffix from a base model dispatch ID
+// formatted as "base:<name>+<variant>". It returns an empty variant for
+// "base:<name>" without a suffix. Non-base model IDs return ("", false).
+func BaseModelVariant(modelID string) (string, bool) {
+	name, ok := strings.CutPrefix(NormalizeModelID(modelID), "base:")
+	if !ok {
+		return "", false
+	}
+	if variantSep := strings.IndexByte(name, '+'); variantSep >= 0 {
+		return name[variantSep+1:], true
+	}
+	return "", true
+}
+
+// BaseDispatchID builds the lowercase base model dispatch ID from a huggingface
+// model name and optional variant.
+func BaseDispatchID(hfModelID, variant string) string {
+	id := "base:" + NormalizeModelName(hfModelID)
+	if variant != "" {
+		id += "+" + strings.ToLower(variant)
+	}
+	return id
 }
 
 // NormalizeModelName lowercases a huggingface model name so that names

@@ -248,6 +248,18 @@ func createBatchItem(ctx context.Context, in TaskInput, address string) BatchCre
 		result.Outcome, result.Error = "permanent_error", err.Error()
 		return result
 	}
+	if err := service.ValidateTaskBaseModel(ctx, config.GetDB(), candidate.TaskType, candidate.ModelIDs); err != nil {
+		if errors.Is(err, service.ErrInvalidBaseModel) {
+			result.Outcome, result.Error = "permanent_error", err.Error()
+			return result
+		}
+		if errors.Is(err, service.ErrBaseModelCheckUnavailable) {
+			result.Outcome, result.Error = "temporary_error", err.Error()
+			return result
+		}
+		result.Outcome, result.Error = "temporary_error", err.Error()
+		return result
+	}
 	existing, err := models.GetTaskByIDCommitment(ctx, config.GetDB(), candidate.TaskIDCommitment)
 	if err == nil {
 		if immutableTaskInputEqual(existing, candidate) {

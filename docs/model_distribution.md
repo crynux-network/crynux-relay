@@ -2,6 +2,12 @@
 
 This document specifies how Relay distributes base models across nodes ahead of task assignment. A periodic model distribution controller tracks, per base model, how many nodes hold the model on disk and how frequently tasks require it, and emits `DownloadModel` events to spread the model to more nodes when demand exceeds coverage. Task matching never emits download events; it only applies the base-model gate specified in [node_selection.md](./node_selection.md) and leaves blocked tasks queued.
 
+## Inventory Versus Loaded Projection
+
+`node_models` is the authoritative on-disk inventory for currently joined nodes. Model distribution coverage, download completion, the task-matching base-model gate, and create-time HuggingFace validation skip decisions MUST use exact `node_models.model_id` matches, including any `+variant` suffix.
+
+`loaded_models` is a historical successful-execution projection used by `GET /v2/loaded-models`. It MUST NOT drive model distribution, task matching, or create-time Hub skip decisions. See [loaded_models.md](./loaded_models.md).
+
 ## Single Base Model
 
 Every inference task requires exactly one base model. `InferenceTask.ModelIDs` stores entries in the dispatch format `<usage>:<name>`, and exactly one entry carries the `base:` usage; all other entries are auxiliary `lora:` and `controlnet:` models that are downloaded as part of task execution on the assigned node.

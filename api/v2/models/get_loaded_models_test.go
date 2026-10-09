@@ -28,8 +28,8 @@ func TestGetLoadedModels(t *testing.T) {
 		t.Fatalf("failed to migrate loaded models: %v", err)
 	}
 	loadedModels := []dbmodels.LoadedModel{
-		{ModelID: "z/model", ModelType: dbmodels.LoadedModelTypeSD, MinVRAM: 24},
-		{ModelID: "a/model", ModelType: dbmodels.LoadedModelTypeLLM, MinVRAM: 16},
+		{ModelID: "z/model", Variant: "fp16", ModelType: dbmodels.LoadedModelTypeSD, MinVRAM: 24},
+		{ModelID: "a/model", Variant: "", ModelType: dbmodels.LoadedModelTypeLLM, MinVRAM: 16},
 	}
 	if err := db.Create(&loadedModels).Error; err != nil {
 		t.Fatalf("failed to create loaded models: %v", err)
@@ -37,6 +37,7 @@ func TestGetLoadedModels(t *testing.T) {
 	nodeModels := []dbmodels.NodeModel{
 		dbmodels.NewNodeModel("0x1", "base:a/model", true),
 		dbmodels.NewNodeModel("0x2", "base:a/model", false),
+		dbmodels.NewNodeModel("0x3", "base:z/model+fp16", false),
 	}
 	if err := db.Create(&nodeModels).Error; err != nil {
 		t.Fatalf("failed to create node models: %v", err)
@@ -53,16 +54,16 @@ func TestGetLoadedModels(t *testing.T) {
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 loaded models, got %d", len(resp.Data))
 	}
-	if resp.Data[0].ModelID != "a/model" || resp.Data[0].ModelType != dbmodels.LoadedModelTypeLLM || resp.Data[0].MinVRAM != 16 {
+	if resp.Data[0].ModelID != "a/model" || resp.Data[0].Variant != "" || resp.Data[0].ModelType != dbmodels.LoadedModelTypeLLM || resp.Data[0].MinVRAM != 16 {
 		t.Fatalf("unexpected first loaded model: %+v", resp.Data[0])
 	}
 	if resp.Data[0].OnDiskNodeCount != 2 || resp.Data[0].InMemoryNodeCount != 1 {
 		t.Fatalf("unexpected first loaded model node counts: %+v", resp.Data[0])
 	}
-	if resp.Data[1].ModelID != "z/model" || resp.Data[1].ModelType != dbmodels.LoadedModelTypeSD || resp.Data[1].MinVRAM != 24 {
+	if resp.Data[1].ModelID != "z/model" || resp.Data[1].Variant != "fp16" || resp.Data[1].ModelType != dbmodels.LoadedModelTypeSD || resp.Data[1].MinVRAM != 24 {
 		t.Fatalf("unexpected second loaded model: %+v", resp.Data[1])
 	}
-	if resp.Data[1].OnDiskNodeCount != 0 || resp.Data[1].InMemoryNodeCount != 0 {
+	if resp.Data[1].OnDiskNodeCount != 1 || resp.Data[1].InMemoryNodeCount != 0 {
 		t.Fatalf("unexpected second loaded model node counts: %+v", resp.Data[1])
 	}
 }

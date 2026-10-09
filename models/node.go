@@ -244,6 +244,49 @@ func CountNodesByHFModelID(ctx context.Context, db *gorm.DB) (map[string]HFModel
 	return counts, nil
 }
 
+// CountNodesByBaseDispatchID returns, per exact base dispatch model ID
+// (including +variant when present), on-disk and in-memory node counts.
+func CountNodesByBaseDispatchID(ctx context.Context, db *gorm.DB) (map[string]HFModelNodeCount, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	type row struct {
+		ModelID  string
+		OnDisk   int64
+		InMemory int64
+	}
+	var rows []row
+	if err := db.WithContext(dbCtx).Model(&NodeModel{}).
+		Select("model_id, COUNT(DISTINCT node_address) AS on_disk, COUNT(DISTINCT CASE WHEN in_use THEN node_address END) AS in_memory").
+		Where("hf_model_id <> ''").
+		Group("model_id").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]HFModelNodeCount, len(rows))
+	for _, r := range rows {
+		counts[r.ModelID] = HFModelNodeCount{OnDisk: r.OnDisk, InMemory: r.InMemory}
+	}
+	return counts, nil
+}
+
+// NodeModelExists reports whether any node_models row has the exact dispatch model ID.
+func NodeModelExists(ctx context.Context, db *gorm.DB, modelID string) (bool, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var nodeModel NodeModel
+	err := db.WithContext(dbCtx).Where("model_id = ?", NormalizeModelID(modelID)).Take(&nodeModel).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func GetBusyNodeCount(ctx context.Context, db *gorm.DB) (int64, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

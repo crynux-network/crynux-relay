@@ -43,6 +43,31 @@ func TestInferenceTaskSyncStatusRefreshesAbortReason(t *testing.T) {
 	}
 }
 
+func TestInferenceTaskPreservesStructuredTaskArgs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	if err := db.AutoMigrate(&InferenceTask{}); err != nil {
+		t.Fatalf("failed to migrate inference tasks: %v", err)
+	}
+	taskArgs := `{"model":"m","messages":[],"tools":[{"type":"function","function":{"name":"f","strict":true}}],"tool_choice":"required","response_format":{"type":"json_object"}}`
+	task := InferenceTask{
+		TaskIDCommitment: "structured-args",
+		TaskArgs:         taskArgs,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
+	var stored InferenceTask
+	if err := db.First(&stored, task.ID).Error; err != nil {
+		t.Fatalf("failed to load task: %v", err)
+	}
+	if stored.TaskArgs != taskArgs {
+		t.Fatalf("task args changed: %s", stored.TaskArgs)
+	}
+}
+
 func TestTaskAbortReasonValuesAreAppended(t *testing.T) {
 	if TaskAbortResultUploadTimeout != 9 {
 		t.Fatalf("existing abort reason value changed: got %d", TaskAbortResultUploadTimeout)

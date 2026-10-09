@@ -69,6 +69,26 @@ func TestBaseModelHuggingFaceID(t *testing.T) {
 	}
 }
 
+func TestBaseModelVariantAndDispatchID(t *testing.T) {
+	variant, ok := BaseModelVariant("base:crynux-network/sdxl-turbo+fp16")
+	if !ok || variant != "fp16" {
+		t.Fatalf("unexpected variant: %q %v", variant, ok)
+	}
+	variant, ok = BaseModelVariant("base:qwen/qwen3-8b")
+	if !ok || variant != "" {
+		t.Fatalf("unexpected empty variant: %q %v", variant, ok)
+	}
+	if _, ok := BaseModelVariant("lora:x"); ok {
+		t.Fatal("expected non-base model to fail")
+	}
+	if got := BaseDispatchID("Crynux-Network/SDXL-Turbo", "FP16"); got != "base:crynux-network/sdxl-turbo+fp16" {
+		t.Fatalf("unexpected dispatch id: %q", got)
+	}
+	if got := BaseDispatchID("qwen/qwen3-8b", ""); got != "base:qwen/qwen3-8b" {
+		t.Fatalf("unexpected dispatch id without variant: %q", got)
+	}
+}
+
 func TestNormalizeModelName(t *testing.T) {
 	if got := NormalizeModelName("Qwen/Qwen3.5-9B"); got != "qwen/qwen3.5-9b" {
 		t.Fatalf("unexpected normalized model name: %q", got)

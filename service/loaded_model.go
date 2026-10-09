@@ -14,29 +14,34 @@ const loadedModelFlushInterval = time.Hour
 const loadedModelNodeCountTTL = time.Minute
 
 var loadedModelCache = newLoadedModelMinVRAMCache()
-var loadedModelNodeCountCache = &hfModelNodeCountCache{}
+var loadedModelNodeCountCache = &baseDispatchNodeCountCache{}
 
-type hfModelNodeCountCache struct {
+type loadedModelKey struct {
+	ModelID string
+	Variant string
+}
+
+type baseDispatchNodeCountCache struct {
 	mu        sync.Mutex
 	counts    map[string]models.HFModelNodeCount
 	expiresAt time.Time
 }
 
-// GetLoadedModelNodeCounts returns per-model node counts aggregated from the
-// node_models table, cached in memory so that public API traffic does not
-// translate into database load.
+// GetLoadedModelNodeCounts returns per base-dispatch-ID node counts aggregated
+// from the node_models table, cached in memory so that public API traffic does
+// not translate into database load.
 func GetLoadedModelNodeCounts(ctx context.Context, db *gorm.DB) (map[string]models.HFModelNodeCount, error) {
 	return loadedModelNodeCountCache.get(ctx, db, time.Now())
 }
 
-func (cache *hfModelNodeCountCache) get(ctx context.Context, db *gorm.DB, now time.Time) (map[string]models.HFModelNodeCount, error) {
+func (cache *baseDispatchNodeCountCache) get(ctx context.Context, db *gorm.DB, now time.Time) (map[string]models.HFModelNodeCount, error) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
 	if cache.counts != nil && now.Before(cache.expiresAt) {
 		return cache.counts, nil
 	}
-	counts, err := models.CountNodesByHFModelID(ctx, db)
+	counts, err := models.CountNodesByBaseDispatchID(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -52,28 +57,33 @@ type pendingLoadedModel struct {
 
 type loadedModelMinVRAMCache struct {
 	mu      sync.Mutex
-	pending map[string]pendingLoadedModel
+	pending map[loadedModelKey]pendingLoadedModel
 }
 
 func newLoadedModelMinVRAMCache() *loadedModelMinVRAMCache {
 	return &loadedModelMinVRAMCache{
-		pending: make(map[string]pendingLoadedModel),
+		pending: make(map[loadedModelKey]pendingLoadedModel),
 	}
 }
 
 func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
 	modelType := models.LoadedModelTypeFromTaskType(task.TaskType)
-	seenModelIDs := make(map[string]struct{}, len(task.ModelIDs))
+	seen := make(map[loadedModelKey]struct{}, len(task.ModelIDs))
 	for _, modelID := range task.ModelIDs {
 		hfModelID, ok := models.BaseModelHuggingFaceID(modelID)
 		if !ok {
 			continue
 		}
-		if _, ok := seenModelIDs[hfModelID]; ok {
+		variant, ok := models.BaseModelVariant(modelID)
+		if !ok {
 			continue
 		}
-		seenModelIDs[hfModelID] = struct{}{}
-		loadedModelCache.record(hfModelID, modelType, node.GPUVram)
+		key := loadedModelKey{ModelID: hfModelID, Variant: variant}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		loadedModelCache.record(key, modelType, node.GPUVram)
 	}
 }
 
@@ -99,9 +109,10 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	}
 
 	loadedModels := make([]models.LoadedModel, 0, len(pending))
-	for modelID, pendingModel := range pending {
+	for key, pendingModel := range pending {
 		loadedModels = append(loadedModels, models.LoadedModel{
-			ModelID:   modelID,
+			ModelID:   key.ModelID,
+			Variant:   key.Variant,
 			ModelType: pendingModel.ModelType,
 			MinVRAM:   pendingModel.MinVRAM,
 		})
@@ -112,31 +123,31 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	}
 }
 
-func (cache *loadedModelMinVRAMCache) record(modelID string, modelType models.LoadedModelType, minVRAM uint64) {
+func (cache *loadedModelMinVRAMCache) record(key loadedModelKey, modelType models.LoadedModelType, minVRAM uint64) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if current, ok := cache.pending[modelID]; !ok || minVRAM < current.MinVRAM {
-		cache.pending[modelID] = pendingLoadedModel{ModelType: modelType, MinVRAM: minVRAM}
+	if current, ok := cache.pending[key]; !ok || minVRAM < current.MinVRAM {
+		cache.pending[key] = pendingLoadedModel{ModelType: modelType, MinVRAM: minVRAM}
 	}
 }
 
-func (cache *loadedModelMinVRAMCache) take() map[string]pendingLoadedModel {
+func (cache *loadedModelMinVRAMCache) take() map[loadedModelKey]pendingLoadedModel {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
 	result := cache.pending
-	cache.pending = make(map[string]pendingLoadedModel)
+	cache.pending = make(map[loadedModelKey]pendingLoadedModel)
 	return result
 }
 
-func (cache *loadedModelMinVRAMCache) merge(pending map[string]pendingLoadedModel) {
+func (cache *loadedModelMinVRAMCache) merge(pending map[loadedModelKey]pendingLoadedModel) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	for modelID, pendingModel := range pending {
-		if current, ok := cache.pending[modelID]; !ok || pendingModel.MinVRAM < current.MinVRAM {
-			cache.pending[modelID] = pendingModel
+	for key, pendingModel := range pending {
+		if current, ok := cache.pending[key]; !ok || pendingModel.MinVRAM < current.MinVRAM {
+			cache.pending[key] = pendingModel
 		}
 	}
 }
