@@ -84,6 +84,12 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	if in.TaskType == models.TaskTypeSDFTLora && in.Timeout == 0 {
 		return nil, response.NewValidationErrorResponse("timeout", "Timeout is required for fine-tune tasks")
 	}
+	if in.MinVram == nil {
+		return nil, response.NewValidationErrorResponse("min_vram", "min_vram is required")
+	}
+	if in.TaskSize == nil {
+		return nil, response.NewValidationErrorResponse("task_size", "task_size is required")
+	}
 
 	normalizedTaskArgs, err := models.NormalizeTaskArgsModelNames(in.TaskArgs, in.TaskType)
 	if err != nil {
@@ -106,6 +112,16 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		return nil, response.NewValidationErrorResponse("task_id_commitment", "Task already uploaded")
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, response.NewExceptionResponse(err)
+	}
+
+	if err := service.ValidateTaskBaseModel(c.Request.Context(), config.GetDB(), in.TaskType, in.TaskModelIDs); err != nil {
+		if errors.Is(err, service.ErrInvalidBaseModel) {
+			return nil, response.NewValidationErrorResponse("task_model_ids", err.Error())
+		}
+		if errors.Is(err, service.ErrBaseModelCheckUnavailable) {
+			return nil, response.NewExceptionResponse(err)
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 
@@ -139,6 +155,14 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 	samplingSeed := hexutil.Encode(samplingSeedBytes)
 
+	requiredGPU := ""
+	if in.RequiredGPU != nil {
+		requiredGPU = *in.RequiredGPU
+	}
+	requiredGPUVRAM := uint64(0)
+	if in.RequiredGPUVram != nil {
+		requiredGPUVRAM = *in.RequiredGPUVram
+	}
 	task := &models.InferenceTask{
 		TaskArgs:         in.TaskArgs,
 		TaskIDCommitment: in.TaskIDCommitment,
@@ -149,8 +173,8 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		TaskType:         in.TaskType,
 		TaskVersion:      in.TaskVersion,
 		MinVRAM:          *in.MinVram,
-		RequiredGPU:      *in.RequiredGPU,
-		RequiredGPUVRAM:  *in.RequiredGPUVram,
+		RequiredGPU:      requiredGPU,
+		RequiredGPUVRAM:  requiredGPUVRAM,
 		TaskFee:          in.TaskFee,
 		TaskSize:         *in.TaskSize,
 		ModelIDs:         in.TaskModelIDs,

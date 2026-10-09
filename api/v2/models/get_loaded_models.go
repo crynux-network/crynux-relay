@@ -13,6 +13,7 @@ var getDB = config.GetDB
 
 type LoadedModelData struct {
 	ModelID           string                   `json:"model_id"`
+	Variant           string                   `json:"variant"`
 	ModelType         dbmodels.LoadedModelType `json:"model_type"`
 	MinVRAM           uint64                   `json:"min_vram"`
 	InMemoryNodeCount int64                    `json:"in_memory_node_count"`
@@ -36,9 +37,11 @@ func GetLoadedModels(c *gin.Context) (*GetLoadedModelsResponse, error) {
 
 	data := make([]LoadedModelData, 0, len(loadedModels))
 	for _, loadedModel := range loadedModels {
-		nodeCount := nodeCounts[loadedModel.ModelID]
+		dispatchID := dbmodels.BaseDispatchID(loadedModel.ModelID, loadedModel.Variant)
+		nodeCount := nodeCounts[dispatchID]
 		data = append(data, LoadedModelData{
 			ModelID:           loadedModel.ModelID,
+			Variant:           loadedModel.Variant,
 			ModelType:         loadedModel.ModelType,
 			MinVRAM:           loadedModel.MinVRAM,
 			InMemoryNodeCount: nodeCount.InMemory,

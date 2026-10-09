@@ -75,6 +75,10 @@ func initNodeQosTracingTestConfig(t *testing.T) {
 		"  min_nodes: 1\n" +
 		"  max_nodes: 10\n" +
 		"  download_timeout_seconds: 1800\n" +
+		"huggingface:\n" +
+		"  api_base_url: \"https://huggingface.co\"\n" +
+		"  timeout_seconds: 5\n" +
+		"  cache_ttl_seconds: 300\n" +
 		"staking_score:\n" +
 		"  locked_emission_coefficient: 1.0\n" +
 		"qos:\n" +

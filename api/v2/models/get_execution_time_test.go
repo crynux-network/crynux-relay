@@ -100,6 +100,10 @@ func initExecutionTimeAPITest(t *testing.T) {
 		"  min_nodes: 1\n" +
 		"  max_nodes: 10\n" +
 		"  download_timeout_seconds: 1800\n" +
+		"huggingface:\n" +
+		"  api_base_url: \"https://huggingface.co\"\n" +
+		"  timeout_seconds: 5\n" +
+		"  cache_ttl_seconds: 300\n" +
 		"qos:\n" +
 		"  tracing_max_task_events: 50\n" +
 		"  penalty_factor: 0.3\n" +

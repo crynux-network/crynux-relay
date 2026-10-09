@@ -16,6 +16,17 @@ The batch APIs MUST NOT replace or change the behavior of the existing single-ta
 
 `POST /v1/inference_tasks/batch` MUST be the signed batch creation endpoint. Its items MUST contain the complete normal-task creation input, including `task_id_commitment`. The endpoint MUST accept ordinary SD and LLM tasks. SDFT checkpoint upload MUST remain on its existing multipart single-task endpoint.
 
+Single-task create (`POST /v1/inference_tasks/:task_id_commitment`) and batch create MUST both require client-supplied `min_vram` and `task_size`. Relay MUST reject a missing `min_vram` or `task_size` before charging. Relay MUST NOT fill `min_vram` from `loaded_models` or any other server-side table.
+
+Before charging, Relay MUST validate each item's huggingface base model as follows:
+
+1. Extract each lowercase `base:` dispatch ID from `task_model_ids`.
+2. URL-based base names MUST skip Hub validation.
+3. When `node_models` contains a row with that exact dispatch ID, Relay MUST skip Hub validation for that ID.
+4. Otherwise Relay MUST query the HuggingFace Hub model API without downloading weights. LLM tasks MUST accept a resolvable public model repository. SD and SDFT base models MUST accept a repository whose file list includes `model_index.json` and either a matching `.{variant}.` weight file when `variant` is non-empty, or a default non-variant weight file when `variant` is empty.
+5. A permanent Hub rejection MUST become a create `permanent_error` for that batch item, or a `validation_error` on single create, and MUST NOT charge the creator.
+6. A Hub timeout or Hub 5xx MUST become a create `temporary_error` for that batch item, or a retryable exception on single create, and MUST NOT charge the creator.
+
 Relay MUST normalize, validate, price, and create each item independently through the existing single-task financial boundary. Each item MUST use its own database transaction for:
 
 - task row creation;

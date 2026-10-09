@@ -195,6 +195,12 @@ type AppConfig struct {
 		DownloadTimeoutSeconds    float64 `mapstructure:"download_timeout_seconds"`
 	} `mapstructure:"model_distribution"`
 
+	HuggingFace struct {
+		APIBaseURL      string  `mapstructure:"api_base_url"`
+		TimeoutSeconds  float64 `mapstructure:"timeout_seconds"`
+		CacheTTLSeconds float64 `mapstructure:"cache_ttl_seconds"`
+	} `mapstructure:"huggingface"`
+
 	TaskSchema struct {
 		StableDiffusionInference    string `mapstructure:"stable_diffusion_inference"`
 		GPTInference                string `mapstructure:"gpt_inference"`

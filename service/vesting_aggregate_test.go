@@ -112,6 +112,10 @@ model_distribution:
   min_nodes: 1
   max_nodes: 10
   download_timeout_seconds: 1800
+huggingface:
+  api_base_url: "https://huggingface.co"
+  timeout_seconds: 5
+  cache_ttl_seconds: 300
 qos:
   tracing_max_task_events: 50
   penalty_factor: 0.3

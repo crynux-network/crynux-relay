@@ -85,6 +85,9 @@ func InitConfig(configPath string) error {
 	if err := checkModelDistributionConfig(); err != nil {
 		return err
 	}
+	if err := checkHuggingFaceConfig(); err != nil {
+		return err
+	}
 	if err := checkStakingScoreConfig(); err != nil {
 		return err
 	}
@@ -348,6 +351,20 @@ func checkModelDistributionConfig() error {
 	}
 	if distribution.DownloadTimeoutSeconds <= 0 {
 		return errors.New("model_distribution.download_timeout_seconds is not set")
+	}
+	return nil
+}
+
+func checkHuggingFaceConfig() error {
+	hf := appConfig.HuggingFace
+	if strings.TrimSpace(hf.APIBaseURL) == "" {
+		return errors.New("huggingface.api_base_url is not set")
+	}
+	if hf.TimeoutSeconds <= 0 {
+		return errors.New("huggingface.timeout_seconds is not set")
+	}
+	if hf.CacheTTLSeconds <= 0 {
+		return errors.New("huggingface.cache_ttl_seconds is not set")
 	}
 	return nil
 }

@@ -87,7 +87,11 @@ const taskPricingMatchingTestConfigYAML = "staking_score:\n" +
 	"  safety_factor: 2.0\n" +
 	"  min_nodes: 1\n" +
 	"  max_nodes: 10\n" +
-	"  download_timeout_seconds: 1800\n"
+	"  download_timeout_seconds: 1800\n" +
+	"huggingface:\n" +
+	"  api_base_url: \"https://huggingface.co\"\n" +
+	"  timeout_seconds: 5\n" +
+	"  cache_ttl_seconds: 300\n"
 
 const qosHealthTestConfigYAML = "  penalty_factor: 0.3\n" +
 	"  first_timeout_penalty_factor: 0.95\n" +
