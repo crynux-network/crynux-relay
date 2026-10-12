@@ -7,11 +7,14 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"crynux_relay/utils"
 	"database/sql"
+	"math/big"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 const topNodeIncentiveSize = 10
@@ -41,6 +44,90 @@ type GetNodeIncentiveOutput struct {
 	Data *GetNodeIncentiveData `json:"data"`
 }
 
+type nodeTotalTaskFeeRow struct {
+	NodeAddress      string
+	OperatorEarning  models.BigInt
+	DelegatorEarning models.BigInt
+}
+
+// loadTopNodesByTotalTaskFee returns the current-window top nodes ranked by
+// operator_earning + delegator_earning, with task counters from node_incentives.
+func loadTopNodesByTotalTaskFee(ctx context.Context, db *gorm.DB, start, end time.Time, limit int) ([]NodeIncentive, error) {
+	var earningRows []nodeTotalTaskFeeRow
+	if err := db.WithContext(ctx).Model(&models.NodeEarning{}).
+		Select("node_address, operator_earning, delegator_earning").
+		Where("time >= ?", start).
+		Where("time < ?", end).
+		Order("CAST(operator_earning AS DECIMAL(65,0)) + CAST(delegator_earning AS DECIMAL(65,0)) DESC").
+		Order("node_address ASC").
+		Limit(limit).
+		Find(&earningRows).Error; err != nil {
+		return nil, err
+	}
+
+	nodeIncentives := make([]NodeIncentive, 0, len(earningRows))
+	nodeAddresses := make([]string, 0, len(earningRows))
+	nodeIncentiveMap := make(map[string]NodeIncentive, len(earningRows))
+	for _, row := range earningRows {
+		total := new(big.Int).Add(&row.OperatorEarning.Int, &row.DelegatorEarning.Int)
+		incentive, _ := utils.WeiToEther(total).Float64()
+		nodeIncentive := NodeIncentive{
+			NodeAddress: row.NodeAddress,
+			Incentive:   incentive,
+		}
+		nodeAddresses = append(nodeAddresses, row.NodeAddress)
+		nodeIncentiveMap[row.NodeAddress] = nodeIncentive
+		nodeIncentives = append(nodeIncentives, nodeIncentive)
+	}
+
+	if len(nodeAddresses) == 0 {
+		return nodeIncentives, nil
+	}
+
+	rows, err := db.WithContext(ctx).Model(&models.NodeIncentive{}).
+		Select("node_address, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count").
+		Where("time >= ?", start).
+		Where("time < ?", end).
+		Where("node_address IN ?", nodeAddresses).
+		Group("node_address").
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var nodeAddress string
+		var taskCount int64
+		var sdTaskCount sql.NullInt64
+		var llmTaskCount sql.NullInt64
+		var sdFTLoraTaskCount sql.NullInt64
+		if err := rows.Scan(&nodeAddress, &taskCount, &sdTaskCount, &llmTaskCount, &sdFTLoraTaskCount); err != nil {
+			return nil, err
+		}
+		nodeIncentive, ok := nodeIncentiveMap[nodeAddress]
+		if !ok {
+			continue
+		}
+		nodeIncentive.TaskCount = taskCount
+		if sdTaskCount.Valid {
+			nodeIncentive.SDTaskCount = sdTaskCount.Int64
+		}
+		if llmTaskCount.Valid {
+			nodeIncentive.LLMTaskCount = llmTaskCount.Int64
+		}
+		if sdFTLoraTaskCount.Valid {
+			nodeIncentive.SDFTLoraTaskCount = sdFTLoraTaskCount.Int64
+		}
+		nodeIncentiveMap[nodeAddress] = nodeIncentive
+	}
+
+	for i, address := range nodeAddresses {
+		nodeIncentives[i] = nodeIncentiveMap[address]
+	}
+	return nodeIncentives, nil
+}
+
 func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIncentiveOutput, error) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
@@ -48,51 +135,16 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 	start := now.Truncate(24 * time.Hour)
 	end := start.Add(24 * time.Hour)
 
-	rows, err := config.GetDB().WithContext(ctx).Model(&models.NodeIncentive{}).
-		Select("node_address, SUM(incentive) as incentive, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count").
-		Where("time >= ?", start).
-		Where("time < ?", end).
-		Group("node_address").
-		Order("incentive DESC").
-		Offset(0).
-		Limit(topNodeIncentiveSize).
-		Rows()
-
+	nodeIncentives, err := loadTopNodesByTotalTaskFee(ctx, config.GetDB(), start, end, topNodeIncentiveSize)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	defer rows.Close()
-
-	nodeIncentiveMap := make(map[string]NodeIncentive)
-	var nodeAddresses []string
-	for rows.Next() {
-		var nodeAddress string
-		var incentive float64
-		var task_count int64
-		var sd_task_count sql.NullInt64
-		var llm_task_count sql.NullInt64
-		var sd_ft_lora_task_count sql.NullInt64
-
-		if err := rows.Scan(&nodeAddress, &incentive, &task_count, &sd_task_count, &llm_task_count, &sd_ft_lora_task_count); err != nil {
-			return nil, response.NewExceptionResponse(err)
-		}
-		nodeIncentive := NodeIncentive{
-			NodeAddress: nodeAddress,
-			Incentive:   incentive,
-			TaskCount:   task_count,
-		}
-		if sd_task_count.Valid {
-			nodeIncentive.SDTaskCount = sd_task_count.Int64
-		}
-		if llm_task_count.Valid {
-			nodeIncentive.LLMTaskCount = llm_task_count.Int64
-		}
-		if sd_ft_lora_task_count.Valid {
-			nodeIncentive.SDFTLoraTaskCount = sd_ft_lora_task_count.Int64
-		}
-		nodeAddresses = append(nodeAddresses, nodeAddress)
-		nodeIncentiveMap[nodeAddress] = nodeIncentive
+	nodeAddresses := make([]string, 0, len(nodeIncentives))
+	nodeIncentiveMap := make(map[string]NodeIncentive, len(nodeIncentives))
+	for _, nodeIncentive := range nodeIncentives {
+		nodeAddresses = append(nodeAddresses, nodeIncentive.NodeAddress)
+		nodeIncentiveMap[nodeIncentive.NodeAddress] = nodeIncentive
 	}
 
 	var nodes []models.NetworkNodeData
@@ -105,7 +157,6 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 	}
 
 	for _, node := range nodes {
-
 		if nodeIncentive, ok := nodeIncentiveMap[node.Address]; ok {
 			nodeModel, ok := nodeMap[node.Address]
 			if !ok {
@@ -122,16 +173,16 @@ func GetNodeIncentive(c *gin.Context, input *GetNodeIncentiveParams) (*GetNodeIn
 		}
 	}
 
-	var nodeIncentives []NodeIncentive
+	result := make([]NodeIncentive, 0, len(nodeAddresses))
 	for _, address := range nodeAddresses {
 		if nodeIncentive, ok := nodeIncentiveMap[address]; ok {
-			nodeIncentives = append(nodeIncentives, nodeIncentive)
+			result = append(result, nodeIncentive)
 		}
 	}
 
 	return &GetNodeIncentiveOutput{
 		Data: &GetNodeIncentiveData{
-			Nodes: nodeIncentives,
+			Nodes: result,
 		},
 	}, nil
 }
