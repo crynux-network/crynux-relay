@@ -14,6 +14,7 @@
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | [task_timeout.md](./task_timeout.md) | Queue, execution, creator-validation, and result-upload deadlines with abort, fee, Node Busy, health, and API behavior |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
+| [deterministic_execution.md](./deterministic_execution.md) | Operational determinism, rare LLM result divergence, token-decision boundaries, and execution-mode validation requirements |
 | [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, base-ready candidate snapshots, validation, upload, and missing-data reporting |
 | [task_error_reporting.md](./task_error_reporting.md) | Node task diagnostic signature authorization, protocol isolation, idempotent storage, and Admin exact-query contract |
 | [task_history_retention.md](./task_history_retention.md) | Configurable retention cleanup for terminal inference tasks, node task errors, task artifacts, and the `events` stream |
