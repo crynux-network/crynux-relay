@@ -12,7 +12,7 @@ This document specifies how Relay distributes model files across nodes ahead of 
 
 ## Required Model File Set
 
-A task requires the model files that Relay derives from its TaskArgs when the task is created. For an LLM task the set contains the model repository. For an image task the set contains the diffusers base model and every component repository. LoRA and quantization configuration are not model files. Each member is a model file entry with source type, repository, optional revision, format, and format kwargs.
+A task requires the model files that Relay derives from its TaskArgs when the task is created. For an LLM task the set contains the model repository. For an image task the set contains the diffusers base model and every component repository. Component entries MAY use format `diffusers` for Diffusers-layout weights; that format string does not make the entry a base pipeline. LoRA and quantization configuration are not model files. Each member is a model file entry with source type, repository, optional revision, format, and format kwargs.
 
 Relay stores the set on the task as `RequiredModelFileHashes` (exact hashes of members with a revision) and `RequiredModelFileSourceHashes` (source hashes of members without a revision). Relay resolves a TaskArgs revision to its commit SHA at task creation unless the exact file is already held by a node. Validation-group members pin exact revisions inside TaskArgs before create, as specified in [task_validation_and_slashing.md](./task_validation_and_slashing.md).
 

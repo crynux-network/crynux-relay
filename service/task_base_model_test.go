@@ -169,3 +169,60 @@ func TestPrepareTaskModelRequirementsAcceptsAnyFormattedVersion(t *testing.T) {
 		t.Fatalf("unexpected requirements: %+v", requirements)
 	}
 }
+
+func TestPrepareTaskModelRequirementsAcceptsDiffusersComponentWithoutModelIndex(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/models/org/sd":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"siblings": []map[string]string{
+					{"rfilename": "model_index.json"},
+					{"rfilename": "vae/config.json"},
+					{"rfilename": "vae/diffusion_pytorch_model.safetensors"},
+				},
+			})
+		case "/api/models/org/vae":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"siblings": []map[string]string{
+					{"rfilename": "config.json"},
+					{"rfilename": "diffusion_pytorch_model.safetensors"},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	taskArgs := `{"version":"3.7.0","base_model":{"name":"org/sd"},"components":{"vae":{"format":"diffusers","repo":"org/vae","format_kwargs":{}}},"dtype":"float16","prompt":"a cat"}`
+	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeSD, taskArgs)
+	if err != nil {
+		t.Fatalf("expected preparation to pass: %v", err)
+	}
+	if len(requirements.Entries) != 2 {
+		t.Fatalf("expected base and component entries, got %+v", requirements.Entries)
+	}
+	if requirements.Entries[0].Repository != "org/sd" || requirements.Entries[0].Format != models.ImageBaseModelFormat {
+		t.Fatalf("unexpected base entry: %+v", requirements.Entries[0])
+	}
+	if requirements.Entries[1].Repository != "org/vae" || requirements.Entries[1].Format != "diffusers" {
+		t.Fatalf("unexpected component entry: %+v", requirements.Entries[1])
+	}
+}
+
+func TestPrepareTaskModelRequirementsRejectsBaseWithoutModelIndex(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"siblings": []map[string]string{
+				{"rfilename": "config.json"},
+				{"rfilename": "diffusion_pytorch_model.safetensors"},
+			},
+		})
+	})
+
+	_, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeSD, imageTaskArgs("org/vae-only", ""))
+	if !errors.Is(err, ErrInvalidBaseModel) {
+		t.Fatalf("expected ErrInvalidBaseModel, got %v", err)
+	}
+}

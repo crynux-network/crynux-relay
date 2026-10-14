@@ -92,7 +92,9 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 		if held {
 			continue
 		}
-		if err := validateEntryOnHub(ctx, client, entry); err != nil {
+		// SD entries[0] is always the base pipeline from DeriveTaskModelRequirements.
+		requirePipeline := taskType == models.TaskTypeSD && index == 0
+		if err := validateEntryOnHub(ctx, client, entry, requirePipeline); err != nil {
 			return nil, hubValidationError(err)
 		}
 	}
@@ -112,10 +114,11 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 	return requirements, nil
 }
 
-// validateEntryOnHub checks that the repository of a model entry exists and,
-// for a diffusers base model, that the requested variant has weights.
-func validateEntryOnHub(ctx context.Context, client *huggingface.Client, entry models.ModelFileEntry) error {
-	if entry.Format != models.ImageBaseModelFormat {
+// validateEntryOnHub checks that the repository of a model entry exists.
+// requirePipeline is true only for the SD base_model entry; other entries,
+// including Diffusers-format components, are validated as public repositories.
+func validateEntryOnHub(ctx context.Context, client *huggingface.Client, entry models.ModelFileEntry, requirePipeline bool) error {
+	if !requirePipeline {
 		return client.ValidateBaseModel(ctx, huggingface.ModelKindRepository, entry.Repository, "")
 	}
 	variant, _ := entry.FormatKwargs["variant"].(string)
