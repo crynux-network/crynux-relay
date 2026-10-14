@@ -1064,12 +1064,12 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 	initTaskPricingTestStore(t)
 	start := time.Now()
 	units := uint64(512 * 512)
-	calibrate := func(id, model, variant, dtype string, quantizeBits, minVRAM uint64) {
+	calibrate := func(id, model, variant, dtype string, quantizationID byte, minVRAM uint64) {
 		task := &models.InferenceTask{
 			TaskIDCommitment: id, TaskType: models.TaskTypeSD, Status: models.TaskValidated,
 			ModelName: model, ModelVariant: variant, RequestedDType: "auto", ExecutionDType: dtype,
-			QuantizeBits: quantizeBits, MinVRAM: minVRAM, SDUnits: &units,
-			QuantizationConfigHash: models.Hash32{byte(quantizeBits)}.Bytes(),
+			MinVRAM: minVRAM, SDUnits: &units,
+			QuantizationConfigHash: models.Hash32{quantizationID}.Bytes(),
 			StartTime:              sql.NullTime{Time: start, Valid: true},
 			ScoreReadyTime:         sql.NullTime{Time: start.Add(60 * time.Second), Valid: true},
 		}

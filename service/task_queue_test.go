@@ -51,7 +51,7 @@ func TestTaskQueue(t *testing.T) {
 		Model: gorm.Model{
 			ID: 3,
 		},
-		TaskArgs:         `{"model":"Qwen/Qwen2.5-7B","messages":[{"role":"user","content":"I want to create an AI agent. Any suggestions?"}],"tools":null,"generation_config":{"max_new_tokens":250,"do_sample":true,"temperature":0.8,"repetition_penalty":1.1},"seed":42,"dtype":"bfloat16","quantize_bits":4}`,
+		TaskArgs:         `{"model":"Qwen/Qwen2.5-7B","messages":[{"role":"user","content":"I want to create an AI agent. Any suggestions?"}],"tools":null,"generation_config":{"max_new_tokens":250,"do_sample":true,"temperature":0.8,"repetition_penalty":1.1},"seed":42,"dtype":"bfloat16"}`,
 		TaskIDCommitment: "0xcd6d403f21c5af106f39c2e1ad921a3e9caf97a1017c3802798e47ad261742b3",
 		Creator:          "0x72E420eCAF65263Dd3246601Adf15DdDDfB91774",
 		SamplingSeed:     "0x574cfc0049946ba0d268d6659d00af8641e1fa62032f6f9004c71d53276b960f",
@@ -68,7 +68,7 @@ func TestTaskQueue(t *testing.T) {
 		Model: gorm.Model{
 			ID: 4,
 		},
-		TaskArgs:         `{"model":"Qwen/Qwen2.5-7B","messages":[{"role":"user","content":"I want to create an AI agent. Any suggestions?"}],"tools":null,"generation_config":{"max_new_tokens":250,"do_sample":true,"temperature":0.8,"repetition_penalty":1.1},"seed":42,"dtype":"bfloat16","quantize_bits":4}`,
+		TaskArgs:         `{"model":"Qwen/Qwen2.5-7B","messages":[{"role":"user","content":"I want to create an AI agent. Any suggestions?"}],"tools":null,"generation_config":{"max_new_tokens":250,"do_sample":true,"temperature":0.8,"repetition_penalty":1.1},"seed":42,"dtype":"bfloat16"}`,
 		TaskIDCommitment: "0xe46a7df276680fab5be8b245469e7c5d96e112d86812953d983f9beac5100754",
 		Creator:          "0x72E420eCAF65263Dd3246601Adf15DdDDfB91774",
 		SamplingSeed:     "0x0410e745020ade9f62c35ecae98fdca004f3e7ea34e0547925d2dc9ecd683f84",
@@ -84,7 +84,7 @@ func TestTaskQueue(t *testing.T) {
 
 	queue := service.NewTaskQueue()
 	queue.Push(tasks...)
-	orders := []uint{3,4,1,2}
+	orders := []uint{3, 4, 1, 2}
 	for i := 0; i < 4; i++ {
 		task, _ := queue.Pop()
 		if task.ID != orders[i] {

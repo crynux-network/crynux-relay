@@ -35,7 +35,6 @@ type taskPricingKey struct {
 	modelName              string
 	modelVariant           string
 	requestedDType         string
-	quantizeBits           uint64
 	quantizationConfigHash models.Hash32
 }
 
@@ -359,7 +358,7 @@ func meanParameters(records []*cachedGPUCalibration, taskType models.TaskType) e
 	return total
 }
 
-func createExactCalibrationLocked(key gpuCalibrationKey, quantizeBits uint64) *cachedGPUCalibration {
+func createExactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
 	initial := initialExecutionParameters()
 	cached := &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:                 key.taskType,
@@ -370,7 +369,6 @@ func createExactCalibrationLocked(key gpuCalibrationKey, quantizeBits uint64) *c
 		ExecutionDType:           key.executionDType,
 		RequiredModelFilesHash:   key.requiredModelFilesHash.Bytes(),
 		QuantizationConfigHash:   key.quantizationConfigHash.Bytes(),
-		QuantizeBits:             quantizeBits,
 		SDOverheadSeconds:        initial.sdOverhead,
 		SecondsPerSDPixelStep:    initial.sdRate,
 		SDFormulaVersion:         sdFormulaVersion,
@@ -386,11 +384,11 @@ func createExactCalibrationLocked(key gpuCalibrationKey, quantizeBits uint64) *c
 	return cached
 }
 
-func exactCalibrationLocked(key gpuCalibrationKey, quantizeBits uint64) *cachedGPUCalibration {
+func exactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
 	if cached, ok := globalTaskPricing.records[key]; ok {
 		return cached
 	}
-	return createExactCalibrationLocked(key, quantizeBits)
+	return createExactCalibrationLocked(key)
 }
 
 func getTaskPricingParameters(task *models.InferenceTask) executionParameters {
@@ -403,7 +401,7 @@ func getTaskPricingParameters(task *models.InferenceTask) executionParameters {
 	}
 	key := taskPricingKey{
 		taskType: task.TaskType, vramDemand: task.MinVRAM, modelName: task.ModelName,
-		modelVariant: task.ModelVariant, requestedDType: task.RequestedDType, quantizeBits: task.QuantizeBits,
+		modelVariant: task.ModelVariant, requestedDType: task.RequestedDType,
 		quantizationConfigHash: hash32FromColumn(task.QuantizationConfigHash),
 	}
 	if parameters, ok := globalTaskPricing.aggregates[key]; ok {
@@ -465,7 +463,7 @@ func recomputeAggregatesLocked(taskType models.TaskType, changedGPUVram uint64) 
 		if key.taskType == taskType && key.vramDemand <= changedGPUVram {
 			task := &models.InferenceTask{
 				TaskType: key.taskType, MinVRAM: key.vramDemand, ModelName: key.modelName,
-				ModelVariant: key.modelVariant, RequestedDType: key.requestedDType, QuantizeBits: key.quantizeBits,
+				ModelVariant: key.modelVariant, RequestedDType: key.requestedDType,
 				QuantizationConfigHash: key.quantizationConfigHash.Bytes(),
 			}
 			globalTaskPricing.aggregates[key] = meanParameters(candidateCalibrationsLocked(task, "", 0, true), taskType)
@@ -501,7 +499,7 @@ func CalibrateValidatedSDTask(task *models.InferenceTask) error {
 	if err != nil {
 		return err
 	}
-	cached := exactCalibrationLocked(key, task.QuantizeBits)
+	cached := exactCalibrationLocked(key)
 	x := [2]float64{1, float64(*task.SDUnits)}
 	actual := task.ScoreReadyTime.Time.Sub(task.StartTime.Time).Seconds()
 	parameters := parametersFromRecord(&cached.record)
@@ -630,7 +628,7 @@ func CalibrateUploadedLLMTask(task *models.InferenceTask, completionTokens uint6
 	if err != nil {
 		return err
 	}
-	cached := exactCalibrationLocked(key, task.QuantizeBits)
+	cached := exactCalibrationLocked(key)
 	modelSwitched := 0.0
 	if task.ModelSwtiched {
 		modelSwitched = 1
@@ -713,7 +711,7 @@ type ExecutionTimeoutDescription struct {
 	ModelName                  string
 	ModelVariant               string
 	RequestedDType             string
-	QuantizeBits               uint64
+	QuantizationConfigHash     string
 	SelectedExecutionDType     string
 	MinVRAMRequirement         uint64
 	MaxVRAMRequirement         uint64
@@ -741,7 +739,7 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 		ModelName:                  task.ModelName,
 		ModelVariant:               task.ModelVariant,
 		RequestedDType:             task.RequestedDType,
-		QuantizeBits:               task.QuantizeBits,
+		QuantizationConfigHash:     hash32FromColumn(task.QuantizationConfigHash).Hex(),
 		TimeoutMultiplier:          cfg.TimeoutMultiplier,
 		MinExecutionTimeoutSeconds: cfg.MinExecutionTimeoutSeconds,
 		MaxExecutionTimeoutSeconds: cfg.MaxExecutionTimeoutSeconds,
@@ -914,7 +912,7 @@ func publishTaskPricingMetricsLocked() {
 	for key, parameters := range globalTaskPricing.aggregates {
 		metrics.SetTaskPricingCalibration(
 			metrics.TaskTypeLabel(key.taskType), key.modelName, key.modelVariant, key.requestedDType,
-			key.quantizeBits, key.vramDemand, parameters.sdOverhead, parameters.sdRate, parameters.llm.values(),
+			key.quantizationConfigHash.Hex(), key.vramDemand, parameters.sdOverhead, parameters.sdRate, parameters.llm.values(),
 		)
 	}
 	for key, cached := range globalTaskPricing.records {
@@ -929,7 +927,7 @@ func publishTaskPricingMetricsLocked() {
 			key.modelName,
 			key.modelVariant,
 			key.executionDType,
-			cached.record.QuantizeBits,
+			key.quantizationConfigHash.Hex(),
 			cached.record.MinVRAMRequirement,
 			cached.record.MaxVRAMRequirement,
 			cached.record.SDOverheadSeconds,

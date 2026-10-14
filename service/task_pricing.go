@@ -274,7 +274,6 @@ func FreezeTaskModelExecutionConfig(task *models.InferenceTask) error {
 	task.ModelName = config.ModelName
 	task.ModelVariant = config.ModelVariant
 	task.RequestedDType = config.RequestedDType
-	task.QuantizeBits = config.QuantizeBits
 	return nil
 }
 

@@ -113,7 +113,6 @@ type InferenceTask struct {
 	ModelVariant     string     `json:"model_variant" gorm:"size:191;not null;default:''"`
 	RequestedDType   string     `json:"requested_dtype" gorm:"column:requested_dtype;size:64;not null;default:'auto'"`
 	ExecutionDType   string     `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;default:''"`
-	QuantizeBits     uint64     `json:"quantize_bits" gorm:"not null;default:0"`
 	// RequiredModelFileHashes and RequiredModelFileSourceHashes are sorted
 	// concatenations of 32-byte hashes of the exact and revision-less model files.
 	RequiredModelFileHashes       []byte `json:"-" gorm:"type:longblob;not null"`
