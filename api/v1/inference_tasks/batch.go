@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -59,17 +58,19 @@ type BatchStatusInputWithSignature struct {
 }
 
 type BatchStatusItem struct {
-	TaskIDCommitment        string                 `json:"task_id_commitment"`
-	Found                   bool                   `json:"found"`
-	Status                  models.TaskStatus      `json:"status"`
-	AbortReason             models.TaskAbortReason `json:"abort_reason"`
-	TaskError               models.TaskError       `json:"task_error"`
-	Sequence                uint64                 `json:"sequence,omitempty"`
-	SamplingSeed            string                 `json:"sampling_seed,omitempty"`
-	ExecutionGPU            string                 `json:"execution_gpu,omitempty"`
-	ExecutionGPUVRAM        uint64                 `json:"execution_gpu_vram,omitempty"`
-	EstimatedCompletionTime *time.Time             `json:"estimated_completion_time,omitempty"`
-	ResultAvailable         bool                   `json:"result_available"`
+	TaskIDCommitment        string                  `json:"task_id_commitment"`
+	Found                   bool                    `json:"found"`
+	Status                  models.TaskStatus       `json:"status"`
+	AbortReason             models.TaskAbortReason  `json:"abort_reason"`
+	TaskError               models.TaskError        `json:"task_error"`
+	Sequence                uint64                  `json:"sequence,omitempty"`
+	SamplingSeed            string                  `json:"sampling_seed,omitempty"`
+	ExecutionGPU            string                  `json:"execution_gpu,omitempty"`
+	ExecutionGPUVRAM        uint64                  `json:"execution_gpu_vram,omitempty"`
+	ExecutionModelFiles     []models.ModelFileEntry `json:"execution_model_files,omitempty"`
+	RequestedModelCacheHash string                  `json:"requested_model_cache_hash,omitempty"`
+	EstimatedCompletionTime *time.Time              `json:"estimated_completion_time,omitempty"`
+	ResultAvailable         bool                    `json:"result_available"`
 }
 
 type BatchStatusResponse struct {
@@ -171,11 +172,10 @@ func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, erro
 	if in.TaskType != models.TaskTypeSD && in.TaskType != models.TaskTypeLLM {
 		return nil, errors.New("batch creation supports only ordinary SD and LLM tasks")
 	}
-	if in.MinVram == nil || in.TaskSize == nil {
-		return nil, errors.New("min_vram and task_size are required")
+	if in.MinVram == nil {
+		return nil, errors.New("min_vram is required")
 	}
-	if in.TaskIDCommitment == "" || in.TaskArgs == "" || in.Nonce == "" ||
-		len(in.TaskModelIDs) == 0 || in.TaskVersion == "" {
+	if in.TaskIDCommitment == "" || in.TaskArgs == "" || in.Nonce == "" {
 		return nil, errors.New("required task input is missing")
 	}
 	if validationErr, err := models.ValidateTaskArgsJsonStr(in.TaskArgs, in.TaskType); err != nil {
@@ -187,14 +187,17 @@ func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, erro
 	if err != nil {
 		return nil, err
 	}
-	parts := strings.Split(in.TaskVersion, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("invalid task version")
+	taskVersion, err := models.ParseTaskArgsVersion(normalizedArgs)
+	if err != nil {
+		return nil, err
 	}
-	for _, part := range parts {
-		if _, err := strconv.ParseUint(part, 10, 64); err != nil {
-			return nil, errors.New("invalid task version")
-		}
+	taskSize, err := models.DeriveTaskSize(normalizedArgs, in.TaskType)
+	if err != nil {
+		return nil, err
+	}
+	modelIDs, err := models.DeriveTaskModelIDs(normalizedArgs, in.TaskType)
+	if err != nil {
+		return nil, err
 	}
 	requiredGPU := ""
 	if in.RequiredGPU != nil {
@@ -216,13 +219,13 @@ func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, erro
 		Nonce:            in.Nonce,
 		Status:           models.TaskQueued,
 		TaskType:         in.TaskType,
-		TaskVersion:      in.TaskVersion,
+		TaskVersion:      taskVersion,
 		MinVRAM:          *in.MinVram,
 		RequiredGPU:      requiredGPU,
 		RequiredGPUVRAM:  requiredGPUVRAM,
 		TaskFee:          in.TaskFee,
-		TaskSize:         *in.TaskSize,
-		ModelIDs:         models.NormalizeModelIDs(in.TaskModelIDs),
+		TaskSize:         taskSize,
+		ModelIDs:         modelIDs,
 		CreateTime:       sql.NullTime{Time: time.Now(), Valid: true},
 	}, nil
 }
@@ -248,18 +251,6 @@ func createBatchItem(ctx context.Context, in TaskInput, address string) BatchCre
 		result.Outcome, result.Error = "permanent_error", err.Error()
 		return result
 	}
-	if err := service.ValidateTaskBaseModel(ctx, config.GetDB(), candidate.TaskType, candidate.ModelIDs); err != nil {
-		if errors.Is(err, service.ErrInvalidBaseModel) {
-			result.Outcome, result.Error = "permanent_error", err.Error()
-			return result
-		}
-		if errors.Is(err, service.ErrBaseModelCheckUnavailable) {
-			result.Outcome, result.Error = "temporary_error", err.Error()
-			return result
-		}
-		result.Outcome, result.Error = "temporary_error", err.Error()
-		return result
-	}
 	existing, err := models.GetTaskByIDCommitment(ctx, config.GetDB(), candidate.TaskIDCommitment)
 	if err == nil {
 		if immutableTaskInputEqual(existing, candidate) {
@@ -276,6 +267,16 @@ func createBatchItem(ctx context.Context, in TaskInput, address string) BatchCre
 		result.Outcome, result.Error = "temporary_error", err.Error()
 		return result
 	}
+	requirements, err := service.PrepareTaskModelRequirements(ctx, config.GetDB(), candidate.TaskType, candidate.TaskArgs)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidTaskModelArgs) || errors.Is(err, service.ErrInvalidBaseModel) {
+			result.Outcome, result.Error = "permanent_error", err.Error()
+		} else {
+			result.Outcome, result.Error = "temporary_error", err.Error()
+		}
+		return result
+	}
+	candidate.SetModelRequirements(requirements)
 	if err := service.CreateTask(ctx, config.GetDB(), candidate); err != nil {
 		existing, lookupErr := models.GetTaskByIDCommitment(ctx, config.GetDB(), candidate.TaskIDCommitment)
 		if lookupErr == nil {
@@ -375,6 +376,10 @@ func GetTaskBatchStatus(c *gin.Context, in *BatchStatusInputWithSignature) (*Bat
 	for i := range tasks {
 		byCommitment[tasks[i].TaskIDCommitment] = tasks[i]
 	}
+	executionModelFiles, err := service.BatchTaskExecutionModelFileEntries(c.Request.Context(), config.GetDB(), tasks)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
 	results := make([]BatchStatusItem, len(in.TaskIDCommitments))
 	for i, commitment := range in.TaskIDCommitments {
 		results[i].TaskIDCommitment = commitment
@@ -391,6 +396,12 @@ func GetTaskBatchStatus(c *gin.Context, in *BatchStatusInputWithSignature) (*Bat
 		results[i].SamplingSeed = task.SamplingSeed
 		results[i].ExecutionGPU = task.ExecutionGPU
 		results[i].ExecutionGPUVRAM = task.ExecutionGPUVRAM
+		results[i].ExecutionModelFiles = executionModelFiles[commitment]
+		cacheHash, err := requestedModelCacheHashHex(&task)
+		if err != nil {
+			return nil, response.NewExceptionResponse(err)
+		}
+		results[i].RequestedModelCacheHash = cacheHash
 		if task.EstimatedCompletionTime.Valid {
 			value := task.EstimatedCompletionTime.Time
 			results[i].EstimatedCompletionTime = &value

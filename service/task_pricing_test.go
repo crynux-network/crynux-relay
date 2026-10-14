@@ -103,13 +103,13 @@ func TestComputeSDPricingUnitsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compute sd pricing units: %v", err)
 	}
-	if units != 6*512*512 {
+	if units != 1*1024*1024*30 {
 		t.Fatalf("expected default pixel-step units, got %d", units)
 	}
 }
 
 func TestComputeSDPricingUnitsExplicitValues(t *testing.T) {
-	units, err := computeSDPricingUnits(`{"task_config":{"num_images":2,"image_width":1024,"image_height":1024,"steps":20}}`)
+	units, err := computeSDPricingUnits(`{"task_config":{"num_images_per_prompt":2,"image_width":1024,"image_height":1024,"steps":20}}`)
 	if err != nil {
 		t.Fatalf("compute sd pricing units: %v", err)
 	}
@@ -119,11 +119,11 @@ func TestComputeSDPricingUnitsExplicitValues(t *testing.T) {
 }
 
 func TestComputeSDPricingUnitsPartialConfigUsesDefaults(t *testing.T) {
-	units, err := computeSDPricingUnits(`{"task_config":{"num_images":1}}`)
+	units, err := computeSDPricingUnits(`{"task_config":{"num_images_per_prompt":1}}`)
 	if err != nil {
 		t.Fatalf("compute sd pricing units: %v", err)
 	}
-	if units != 512*512 {
+	if units != 1*1024*1024*30 {
 		t.Fatalf("expected default dimensions and steps, got %d", units)
 	}
 }
@@ -272,7 +272,7 @@ func TestApplyTaskPricingComputesPriority(t *testing.T) {
 	}
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeSD,
-		TaskArgs: `{"task_config":{"num_images":6,"image_width":512,"image_height":512}}`,
+		TaskArgs: `{"task_config":{"num_images_per_prompt":6,"image_width":512,"image_height":512,"steps":1}}`,
 		MinVRAM:  16,
 		TaskFee:  models.BigInt{Int: *fee},
 	}
@@ -283,7 +283,7 @@ func TestApplyTaskPricingComputesPriority(t *testing.T) {
 	if task.SDUnits == nil || *task.SDUnits != 6*512*512 {
 		t.Fatalf("expected exact pixel-step units")
 	}
-	// overhead 30 + 6 units * 10 initial seconds per unit = 90 seconds.
+	// overhead 30 + 6*512*512 pixel-steps * 10 initial seconds per 512*512 = 90 seconds.
 	if task.EstimatedNodeSeconds != 90 {
 		t.Fatalf("expected estimated node seconds 90, got %f", task.EstimatedNodeSeconds)
 	}
@@ -349,7 +349,7 @@ func TestComputeEstimatedNodeSecondsUsesStoredLLMMaxNewTokens(t *testing.T) {
 
 func TestCalibrateUploadedLLMTaskRequiresTerminalSuccessStatus(t *testing.T) {
 	initTaskPricingTestStore(t)
-	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType}
+	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:                 models.TaskTypeLLM,
@@ -436,7 +436,7 @@ func TestTaskPricingAggregationUsesSimpleGPUAverage(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeSD,
-		TaskArgs: `{"task_config":{"num_images":1,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs: `{"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
 		MinVRAM:  32,
 	}
 	if err := ApplyTaskPricing(task); err != nil {
@@ -456,7 +456,7 @@ func TestRequiredGPUUsesExactParametersWithoutAggregateKey(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
 		TaskType:        models.TaskTypeSD,
-		TaskArgs:        `{"task_config":{"num_images":1,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs:        `{"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
 		RequiredGPU:     "A",
 		RequiredGPUVRAM: 40,
 	}
@@ -653,7 +653,7 @@ func TestCalibrateUploadedLLMTaskDoesNotCommitWhenFitFails(t *testing.T) {
 		cfg.TaskPricing.CalibrationRegularization = originalRegularization
 	})
 
-	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType}
+	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:                 models.TaskTypeLLM,
@@ -819,7 +819,10 @@ func TestCalibrationFlushRetainsConcurrentUpdate(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("flush: %v", err)
 	}
-	key := taskCalibrationKey(task, "A100", 40)
+	key, err := taskCalibrationKey(task, "A100", 40)
+	if err != nil {
+		t.Fatalf("calibration key: %v", err)
+	}
 	globalTaskPricing.mu.RLock()
 	dirty := globalTaskPricing.records[key].dirtyVersion
 	globalTaskPricing.mu.RUnlock()
@@ -838,6 +841,7 @@ func TestInitTaskPricingResetsOldLLMFormulaAndPreservesSD(t *testing.T) {
 		GPUName: "A100", GPUVram: 40, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.25, SDSuccessSamples: 7,
 		LLMConstantSeconds: 1, LLMSecondsPerInputByte: 2, LLMSecondsPerOutputToken: 3,
 		LLMFormulaVersion: 1, LLMSuccessSamples: 9, LLMXTX00: 1, LLMXTY0: 1,
+		RequiredModelFilesHash: make([]byte, 32), QuantizationConfigHash: make([]byte, 32),
 	}
 	if err := db.Create(&record).Error; err != nil {
 		t.Fatalf("seed old calibration: %v", err)
@@ -868,6 +872,7 @@ func TestInitTaskPricingResetsOldSDFormulaAndPreservesLLM(t *testing.T) {
 		GPUName: "A100", GPUVram: 40, SecondsPerSDPixelStep: 0.25, SDSuccessSamples: 7,
 		LLMConstantSeconds: 12, LLMSecondsPerInputByte: 0.002, LLMSecondsPerOutputToken: 0.2,
 		LLMFormulaVersion: llmFormulaVersion, LLMSuccessSamples: 9, LLMXTX00: 1, LLMXTY0: 1,
+		RequiredModelFilesHash: make([]byte, 32), QuantizationConfigHash: make([]byte, 32),
 	}
 	if err := db.Create(&record).Error; err != nil {
 		t.Fatalf("seed old calibration: %v", err)
@@ -904,7 +909,7 @@ func TestTaskPricingAggregationAveragesSDOverhead(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeSD,
-		TaskArgs: `{"task_config":{"num_images":1,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs: `{"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
 		MinVRAM:  32,
 	}
 	if err := ApplyTaskPricing(task); err != nil {
@@ -935,7 +940,7 @@ func TestCalibrateValidatedSDTaskDoesNotCommitWhenFitFails(t *testing.T) {
 		cfg.TaskPricing.CalibrationRegularization = originalRegularization
 	})
 
-	key := gpuCalibrationKey{taskType: models.TaskTypeSD, name: "A100", vram: 40, executionDType: models.AutoExecutionDType}
+	key := gpuCalibrationKey{taskType: models.TaskTypeSD, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:              models.TaskTypeSD,
@@ -1018,7 +1023,7 @@ func TestCleanupTaskExecutionGPUSnapshotsExcludesQueueTimeout(t *testing.T) {
 
 func TestCalibrateUploadedLLMTaskSkipsResidualTruncateWhenPredictionNonPositive(t *testing.T) {
 	initTaskPricingTestStore(t)
-	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType}
+	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeLLM, GPUName: "A100", GPUVram: 40, ExecutionDType: models.AutoExecutionDType,
@@ -1064,8 +1069,9 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 			TaskIDCommitment: id, TaskType: models.TaskTypeSD, Status: models.TaskValidated,
 			ModelName: model, ModelVariant: variant, RequestedDType: "auto", ExecutionDType: dtype,
 			QuantizeBits: quantizeBits, MinVRAM: minVRAM, SDUnits: &units,
-			StartTime:      sql.NullTime{Time: start, Valid: true},
-			ScoreReadyTime: sql.NullTime{Time: start.Add(60 * time.Second), Valid: true},
+			QuantizationConfigHash: models.Hash32{byte(quantizeBits)}.Bytes(),
+			StartTime:              sql.NullTime{Time: start, Valid: true},
+			ScoreReadyTime:         sql.NullTime{Time: start.Add(60 * time.Second), Valid: true},
 		}
 		CaptureTaskExecutionGPUSnapshot(id, "A100", 40)
 		if err := CalibrateValidatedSDTask(task); err != nil {
@@ -1085,7 +1091,7 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 	}
 	key := gpuCalibrationKey{
 		taskType: models.TaskTypeSD, name: "A100", vram: 40, modelName: "model-a",
-		modelVariant: "fp16", executionDType: "float16",
+		modelVariant: "fp16", executionDType: "float16", requiredModelFilesHash: models.RequiredModelFilesHash(nil),
 	}
 	record := globalTaskPricing.records[key].record
 	if record.MinVRAMRequirement != 8 || record.MaxVRAMRequirement != 16 || record.SDSuccessSamples != 2 {
@@ -1109,7 +1115,7 @@ func TestAutoPricingAveragesReportedDTypes(t *testing.T) {
 	}
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
-		TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"model","task_config":{"num_images":1}}`, MinVRAM: 16,
+		TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"model","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`, MinVRAM: 16,
 	}
 	if err := ApplyTaskPricing(task); err != nil {
 		t.Fatalf("apply pricing: %v", err)
@@ -1129,7 +1135,7 @@ func TestUnknownModelUsesNearestVRAMInterval(t *testing.T) {
 		globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
 	}
 	globalTaskPricing.mu.Unlock()
-	task := &models.InferenceTask{TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"unknown","task_config":{"num_images":1}}`, MinVRAM: 18}
+	task := &models.InferenceTask{TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"unknown","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`, MinVRAM: 18}
 	if err := ApplyTaskPricing(task); err != nil {
 		t.Fatalf("apply pricing: %v", err)
 	}

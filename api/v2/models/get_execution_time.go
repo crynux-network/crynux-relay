@@ -2,29 +2,32 @@ package models
 
 import (
 	"crynux_relay/api/v2/response"
+	dbmodels "crynux_relay/models"
 	"crynux_relay/service"
+	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type GetSDExecutionTimeInput struct {
-	Model        string  `query:"model" description:"HuggingFace model name"`
-	Dtype        *string `query:"dtype" description:"Requested dtype"`
-	QuantizeBits *int64  `query:"quantize_bits" description:"Requested quantization bits"`
-	Variant      *string `query:"variant" description:"SD base-model variant"`
-	MinVRAM      *uint64 `query:"min_vram" description:"Minimum GPU VRAM in GB"`
-	GPUName      *string `query:"gpu_name" description:"Exact GPU name"`
-	GPUVRAM      *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
+	Model              string  `query:"model" description:"HuggingFace model name"`
+	Dtype              *string `query:"dtype" description:"Requested dtype"`
+	QuantizationConfig *string `query:"quantization_config" description:"Complete quantization_config as a JSON value"`
+	Variant            *string `query:"variant" description:"SD base-model variant"`
+	MinVRAM            *uint64 `query:"min_vram" description:"Minimum GPU VRAM in GB"`
+	GPUName            *string `query:"gpu_name" description:"Exact GPU name"`
+	GPUVRAM            *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
 }
 
 type GetLLMExecutionTimeInput struct {
-	Model        string  `query:"model" description:"HuggingFace model name"`
-	Dtype        *string `query:"dtype" description:"Requested dtype"`
-	QuantizeBits *int64  `query:"quantize_bits" description:"Requested quantization bits"`
-	MinVRAM      *uint64 `query:"min_vram" description:"Minimum GPU VRAM in GB"`
-	GPUName      *string `query:"gpu_name" description:"Exact GPU name"`
-	GPUVRAM      *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
+	Model              string  `query:"model" description:"HuggingFace model name"`
+	Dtype              *string `query:"dtype" description:"Requested dtype"`
+	QuantizationConfig *string `query:"quantization_config" description:"Complete quantization_config as a JSON value"`
+	MinVRAM            *uint64 `query:"min_vram" description:"Minimum GPU VRAM in GB"`
+	GPUName            *string `query:"gpu_name" description:"Exact GPU name"`
+	GPUVRAM            *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
 }
 
 type SDExecutionTimeData struct {
@@ -52,18 +55,18 @@ type GetLLMExecutionTimeResponse struct {
 }
 
 type executionTimeRequest struct {
-	Model        string
-	Dtype        *string
-	QuantizeBits *int64
-	Variant      *string
-	MinVRAM      *uint64
-	GPUName      *string
-	GPUVRAM      *uint64
+	Model              string
+	Dtype              *string
+	QuantizationConfig *string
+	Variant            *string
+	MinVRAM            *uint64
+	GPUName            *string
+	GPUVRAM            *uint64
 }
 
 func GetSDExecutionTime(c *gin.Context, in *GetSDExecutionTimeInput) (*GetSDExecutionTimeResponse, error) {
 	query, err := parseExecutionTimeQuery(executionTimeRequest{
-		Model: in.Model, Dtype: in.Dtype, QuantizeBits: in.QuantizeBits, Variant: in.Variant,
+		Model: in.Model, Dtype: in.Dtype, QuantizationConfig: in.QuantizationConfig, Variant: in.Variant,
 		MinVRAM: in.MinVRAM, GPUName: in.GPUName, GPUVRAM: in.GPUVRAM,
 	})
 	if err != nil {
@@ -80,7 +83,7 @@ func GetSDExecutionTime(c *gin.Context, in *GetSDExecutionTimeInput) (*GetSDExec
 
 func GetLLMExecutionTime(c *gin.Context, in *GetLLMExecutionTimeInput) (*GetLLMExecutionTimeResponse, error) {
 	query, err := parseExecutionTimeQuery(executionTimeRequest{
-		Model: in.Model, Dtype: in.Dtype, QuantizeBits: in.QuantizeBits,
+		Model: in.Model, Dtype: in.Dtype, QuantizationConfig: in.QuantizationConfig,
 		MinVRAM: in.MinVRAM, GPUName: in.GPUName, GPUVRAM: in.GPUVRAM,
 	})
 	if err != nil {
@@ -99,12 +102,27 @@ func GetLLMExecutionTime(c *gin.Context, in *GetLLMExecutionTimeInput) (*GetLLME
 	}, nil
 }
 
+// parseQuantizationConfigHash hashes the canonical JSON of the complete
+// quantization_config; a missing config is canonical null.
+func parseQuantizationConfigHash(raw *string) (dbmodels.Hash32, error) {
+	var config any
+	if raw != nil && strings.TrimSpace(*raw) != "" {
+		decoder := json.NewDecoder(strings.NewReader(*raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&config); err != nil {
+			return dbmodels.Hash32{}, errors.New("must be valid JSON")
+		}
+	}
+	return dbmodels.QuantizationConfigHash(config)
+}
+
 func parseExecutionTimeQuery(in executionTimeRequest) (service.TaskExecutionTimeQuery, error) {
 	if strings.TrimSpace(in.Model) == "" {
 		return service.TaskExecutionTimeQuery{}, response.NewValidationErrorResponse("model", "required")
 	}
-	if in.QuantizeBits != nil && *in.QuantizeBits < 0 {
-		return service.TaskExecutionTimeQuery{}, response.NewValidationErrorResponse("quantize_bits", "must be unsigned")
+	quantizationConfigHash, err := parseQuantizationConfigHash(in.QuantizationConfig)
+	if err != nil {
+		return service.TaskExecutionTimeQuery{}, response.NewValidationErrorResponse("quantization_config", err.Error())
 	}
 
 	hasMinVRAM := in.MinVRAM != nil
@@ -137,12 +155,9 @@ func parseExecutionTimeQuery(in executionTimeRequest) (service.TaskExecutionTime
 		}
 	}
 
-	query := service.TaskExecutionTimeQuery{ModelName: in.Model}
+	query := service.TaskExecutionTimeQuery{ModelName: in.Model, QuantizationConfigHash: quantizationConfigHash}
 	if in.Dtype != nil && strings.TrimSpace(*in.Dtype) != "" {
 		query.RequestedDType = *in.Dtype
-	}
-	if in.QuantizeBits != nil {
-		query.QuantizeBits = uint64(*in.QuantizeBits)
 	}
 	if in.Variant != nil {
 		query.ModelVariant = *in.Variant

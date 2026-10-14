@@ -73,10 +73,14 @@ func TestGetQueuedTaskPriorityGweiStringsAndNoDB(t *testing.T) {
 	priority := new(big.Int)
 	priority.SetString("57447899546", 10)
 	task := models.InferenceTask{
-		TaskIDCommitment: "api-task",
-		Status:           models.TaskQueued,
-		TaskType:         models.TaskTypeLLM,
-		Priority:         models.BigInt{Int: *priority},
+		RequiredModelFileHashes:       []byte{},
+		RequiredModelFileSourceHashes: []byte{},
+		RequestedModelCacheHash:       make([]byte, 32),
+		QuantizationConfigHash:        make([]byte, 32),
+		TaskIDCommitment:              "api-task",
+		Status:                        models.TaskQueued,
+		TaskType:                      models.TaskTypeLLM,
+		Priority:                      models.BigInt{Int: *priority},
 	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create task: %v", err)

@@ -69,11 +69,11 @@ The node SHALL handle these event types:
 
 Relay MUST produce `DownloadModel` events only from the model distribution controller specified in [model_distribution.md](./model_distribution.md). Neither task matching nor task start produces these events.
 
-Each `DownloadModel` event MUST target one selected qualified node and contain one normalized `base:<name>` model ID that is absent from that node's authoritative on-disk model set. Relay MUST NOT emit `DownloadModel` for non-base IDs.
+Each `DownloadModel` event MUST target one selected qualified node and contain the complete required model file set as a `model_files` list, whose set is not covered by that node's authoritative on-disk model file inventory. A member with a revision is an exact file; a member without a revision is a source of which the node downloads one revision.
 
-Each selection attempt emits exactly one event carrying the selected base model ID, committed in the same transaction as the persisted selection record. Relay MUST NOT periodically resend events for a pending selection. A new event for the same node and model is produced only by a new selection attempt after the previous selection expired.
+Each selection attempt emits exactly one event carrying the required model file set, committed in the same transaction as the persisted selection record. Relay MUST NOT periodically resend events for a pending selection. A new event for the same node and model file set is produced only by a new selection attempt after the previous selection expired.
 
-The AddModelID node report MUST remain authoritative for the corresponding on-disk `node_models` row; selection completion is derived from the on-disk inventory as specified in [model_distribution.md](./model_distribution.md).
+The AddModelID node report MUST remain authoritative for the corresponding on-disk `node_models` row of the reported model file; selection completion is derived from the on-disk inventory as specified in [model_distribution.md](./model_distribution.md).
 
 ## Event Producers
 

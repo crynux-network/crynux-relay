@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	dbmodels "crynux_relay/models"
 	"crynux_relay/service"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,12 +13,14 @@ import (
 var getDB = config.GetDB
 
 type LoadedModelData struct {
-	ModelID           string                   `json:"model_id"`
-	Variant           string                   `json:"variant"`
-	ModelType         dbmodels.LoadedModelType `json:"model_type"`
-	MinVRAM           uint64                   `json:"min_vram"`
-	InMemoryNodeCount int64                    `json:"in_memory_node_count"`
-	OnDiskNodeCount   int64                    `json:"on_disk_node_count"`
+	ModelID            string                   `json:"model_id"`
+	Variant            string                   `json:"variant"`
+	ModelType          dbmodels.LoadedModelType `json:"model_type"`
+	ExecutionDType     string                   `json:"execution_dtype"`
+	QuantizationConfig json.RawMessage          `json:"quantization_config"`
+	MinVRAM            uint64                   `json:"min_vram"`
+	InMemoryNodeCount  int64                    `json:"in_memory_node_count"`
+	OnDiskNodeCount    int64                    `json:"on_disk_node_count"`
 }
 
 type GetLoadedModelsResponse struct {
@@ -26,26 +29,22 @@ type GetLoadedModelsResponse struct {
 }
 
 func GetLoadedModels(c *gin.Context) (*GetLoadedModelsResponse, error) {
-	loadedModels, err := dbmodels.ListLoadedModels(c.Request.Context(), getDB())
-	if err != nil {
-		return nil, response.NewExceptionResponse(err)
-	}
-	nodeCounts, err := service.GetLoadedModelNodeCounts(c.Request.Context(), getDB())
+	views, err := service.GetLoadedModelViews(c.Request.Context(), getDB())
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	data := make([]LoadedModelData, 0, len(loadedModels))
-	for _, loadedModel := range loadedModels {
-		dispatchID := dbmodels.BaseDispatchID(loadedModel.ModelID, loadedModel.Variant)
-		nodeCount := nodeCounts[dispatchID]
+	data := make([]LoadedModelData, 0, len(views))
+	for _, view := range views {
 		data = append(data, LoadedModelData{
-			ModelID:           loadedModel.ModelID,
-			Variant:           loadedModel.Variant,
-			ModelType:         loadedModel.ModelType,
-			MinVRAM:           loadedModel.MinVRAM,
-			InMemoryNodeCount: nodeCount.InMemory,
-			OnDiskNodeCount:   nodeCount.OnDisk,
+			ModelID:            view.Model.ModelID,
+			Variant:            view.Model.Variant,
+			ModelType:          view.Model.ModelType,
+			ExecutionDType:     view.Model.ExecutionDType,
+			QuantizationConfig: json.RawMessage(view.Model.QuantizationConfig),
+			MinVRAM:            view.Model.MinVRAM,
+			InMemoryNodeCount:  view.InMemoryNodeCount,
+			OnDiskNodeCount:    view.OnDiskNodeCount,
 		})
 	}
 	return &GetLoadedModelsResponse{

@@ -17,6 +17,7 @@ func TestGetTimedOutRunningTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
 		t.Fatalf("failed to migrate inference tasks: %v", err)
 	}
@@ -120,6 +121,7 @@ func TestGetTimedOutQueuedTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
 		t.Fatalf("failed to migrate inference tasks: %v", err)
 	}

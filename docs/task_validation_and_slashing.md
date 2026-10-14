@@ -62,6 +62,12 @@ LLM generation is deterministic only within the same GPU variant. A numerical di
 
 When an LLM task is selected for group validation, the two additional tasks MUST set `RequiredGPU` and `RequiredGPUVRAM` to the primary task's selected execution GPU name and GPU VRAM. Relay task status MUST return this immutable execution assignment to the creator. Relay MUST match both additional tasks only to nodes with that exact GPU name and GPU VRAM. The creator MUST NOT derive these requirements from the current mutable node record.
 
+### Validation Group Model Files
+
+Every member of a validation group MUST execute with the same exact model files. The creator MUST copy the primary task's TaskArgs and MUST write each primary execution model file's revision into the matching TaskArgs field: LLM `revision`, or Image `base_model.revision` / `components.*.revision` matched by repository and format. Relay MUST derive required model file hashes from that pinned TaskArgs and MUST match the additional tasks only to nodes that hold those exact files. Relay task status MUST return the primary task's execution model files to the creator, as specified in [task_batch_api.md](./task_batch_api.md).
+
+Group validation MUST require every started member of the group to have identical `ExecutionModelFileHashes`. Relay MUST reject the validation with an error and MUST NOT change any task, node, account, or event state when the started members differ. A member that was aborted before it started has no execution model files and MUST be excluded from the comparison.
+
 ## Task Lifecycle
 
 The full state machine for an inference task:

@@ -18,13 +18,13 @@ import (
 )
 
 type NodeJoinInput struct {
-	Network  string        `json:"network" description:"network" validate:"required"`
-	Address  string        `json:"address" path:"address" description:"address" validate:"required"`
-	GPUName  string        `json:"gpu_name" description:"gpu_name" validate:"required"`
-	GPUVram  uint64        `json:"gpu_vram" description:"gpu_vram" validate:"required"`
-	Version  string        `json:"version" description:"version" validate:"required"`
-	ModelIDs []string      `json:"model_ids" description:"node local model ids" validate:"required"`
-	Staking  models.BigInt `json:"staking" description:"staking amount" validate:"required"`
+	Network    string                  `json:"network" description:"network" validate:"required"`
+	Address    string                  `json:"address" path:"address" description:"address" validate:"required"`
+	GPUName    string                  `json:"gpu_name" description:"gpu_name" validate:"required"`
+	GPUVram    uint64                  `json:"gpu_vram" description:"gpu_vram" validate:"required"`
+	Version    string                  `json:"version" description:"version" validate:"required"`
+	ModelFiles []models.ModelFileEntry `json:"model_files" description:"node local model files with concrete revisions" validate:"required"`
+	Staking    models.BigInt           `json:"staking" description:"staking amount" validate:"required"`
 }
 
 type NodeJoinInputWithSignature struct {
@@ -52,7 +52,10 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 	}
 
 	in.GPUName = models.NormalizeGPUName(in.GPUName)
-	in.ModelIDs = models.NormalizeModelIDs(in.ModelIDs)
+	modelFiles, err := service.BuildHeldModelFiles(in.ModelFiles)
+	if err != nil {
+		return nil, response.NewValidationErrorResponse("model_files", err.Error())
+	}
 
 	unlockJoin := service.LockNodeIndexByAddress(in.Address)
 	defer unlockJoin()
@@ -109,7 +112,7 @@ func NodeJoin(c *gin.Context, in *NodeJoinInputWithSignature) (*response.Respons
 	}
 	node.StakeAmount = models.BigInt{Int: *stakeAmount}
 
-	err = service.SetNodeStatusJoin(c.Request.Context(), config.GetDB(), node, in.ModelIDs)
+	err = service.SetNodeStatusJoin(c.Request.Context(), config.GetDB(), node, modelFiles)
 	if refreshErr := service.RefreshNodeIndexLocked(c.Request.Context(), config.GetDB(), in.Address); refreshErr != nil {
 		log.Errorf("NodeJoin: refresh node index for %s error: %v", in.Address, refreshErr)
 	}

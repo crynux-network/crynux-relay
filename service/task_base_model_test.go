@@ -15,104 +15,157 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestValidateTaskBaseModelSkipsHubWhenNodeHasModel(t *testing.T) {
+func newTaskBaseModelTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.NodeModel{}); err != nil {
+	if err := db.AutoMigrate(&models.ModelFile{}, &models.NodeModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	nodeModel := models.NewNodeModel("0x1", "base:org/model+fp16", false)
-	if err := db.Create(&nodeModel).Error; err != nil {
-		t.Fatalf("create node model: %v", err)
-	}
+	return db
+}
+
+func useHuggingFaceServer(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	SetHuggingFaceClientForTest(huggingface.NewClient(server.URL, time.Second, time.Minute))
+	t.Cleanup(func() { SetHuggingFaceClientForTest(nil) })
+}
+
+func TestPrepareTaskModelRequirementsSkipsHubWhenNodeHasModel(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	seedNodeModelFiles(t, db, "0x1", testModelFile(t, "org/model", "rev-1"))
 
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-	SetHuggingFaceClientForTest(huggingface.NewClient(server.URL, time.Second, time.Minute))
-	defer SetHuggingFaceClientForTest(nil)
+	})
 
-	err = ValidateTaskBaseModel(context.Background(), db, models.TaskTypeSD, []string{"base:org/model+fp16"})
+	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("org/model", "rev-1"))
 	if err != nil {
-		t.Fatalf("expected validation to pass: %v", err)
+		t.Fatalf("expected preparation to pass: %v", err)
 	}
 	if calls != 0 {
 		t.Fatalf("expected hub not to be called, got %d calls", calls)
 	}
+	want := testModelFileHash(t, "org/model", "rev-1")
+	if len(requirements.RequiredModelFileHashes) != 1 || requirements.RequiredModelFileHashes[0] != want {
+		t.Fatalf("unexpected required hashes: %v", requirements.RequiredModelFileHashes)
+	}
 }
 
-func TestValidateTaskBaseModelRejectsMissingHubModel(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+func TestPrepareTaskModelRequirementsResolvesRevisionToCommit(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/models/org/model/revision/main" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"sha": "commit-sha"})
+	})
+
+	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("org/model", "main"))
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("expected preparation to pass: %v", err)
 	}
-	if err := db.AutoMigrate(&models.NodeModel{}); err != nil {
-		t.Fatalf("migrate: %v", err)
+	want := testModelFileHash(t, "org/model", "commit-sha")
+	if len(requirements.RequiredModelFileHashes) != 1 || requirements.RequiredModelFileHashes[0] != want {
+		t.Fatalf("expected hash of the commit, got %v", requirements.RequiredModelFileHashes)
 	}
+	stored, err := models.GetModelFiles(context.Background(), db, []models.Hash32{want})
+	if err != nil || len(stored) != 1 {
+		t.Fatalf("expected the commit entry in the catalog, got %v, %v", stored, err)
+	}
+}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestPrepareTaskModelRequirementsRejectsMissingRevision(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Error-Code", "RevisionNotFound")
 		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-	SetHuggingFaceClientForTest(huggingface.NewClient(server.URL, time.Second, time.Minute))
-	defer SetHuggingFaceClientForTest(nil)
+	})
 
-	err = ValidateTaskBaseModel(context.Background(), db, models.TaskTypeLLM, []string{"base:missing/model"})
+	_, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("org/model", "missing"))
 	if !errors.Is(err, ErrInvalidBaseModel) {
 		t.Fatalf("expected ErrInvalidBaseModel, got %v", err)
 	}
 }
 
-func TestValidateTaskBaseModelTemporaryOnHubOutage(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := db.AutoMigrate(&models.NodeModel{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+func TestPrepareTaskModelRequirementsRejectsMissingHubModel(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	_, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("missing/model", ""))
+	if !errors.Is(err, ErrInvalidBaseModel) {
+		t.Fatalf("expected ErrInvalidBaseModel, got %v", err)
+	}
+}
+
+func TestPrepareTaskModelRequirementsTemporaryOnHubOutage(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
-	}))
-	defer server.Close()
-	SetHuggingFaceClientForTest(huggingface.NewClient(server.URL, time.Second, time.Minute))
-	defer SetHuggingFaceClientForTest(nil)
+	})
 
-	err = ValidateTaskBaseModel(context.Background(), db, models.TaskTypeLLM, []string{"base:org/model"})
+	_, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("org/model", ""))
 	if !errors.Is(err, ErrBaseModelCheckUnavailable) {
 		t.Fatalf("expected ErrBaseModelCheckUnavailable, got %v", err)
 	}
 }
 
-func TestValidateTaskBaseModelAcceptsValidSDFromHub(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := db.AutoMigrate(&models.NodeModel{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestPrepareTaskModelRequirementsKeepsSourceIdentityWithoutRevision(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"siblings": []map[string]string{
 				{"rfilename": "model_index.json"},
-				{"rfilename": "unet/diffusion_pytorch_model.fp16.safetensors"},
+				{"rfilename": "unet/diffusion_pytorch_model.safetensors"},
 			},
 		})
-	}))
-	defer server.Close()
-	SetHuggingFaceClientForTest(huggingface.NewClient(server.URL, time.Second, time.Minute))
-	defer SetHuggingFaceClientForTest(nil)
+	})
 
-	err = ValidateTaskBaseModel(context.Background(), db, models.TaskTypeSD, []string{"base:org/sd+fp16"})
+	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeSD, imageTaskArgs("org/sd", ""))
 	if err != nil {
-		t.Fatalf("expected validation to pass: %v", err)
+		t.Fatalf("expected preparation to pass: %v", err)
+	}
+	if len(requirements.RequiredModelFileHashes) != 0 || len(requirements.RequiredModelFileSourceHashes) != 1 {
+		t.Fatalf("unexpected requirements: %+v", requirements)
+	}
+	wantSource, err := requirements.Entries[0].ModelFileSourceHash()
+	if err != nil || requirements.RequiredModelFileSourceHashes[0] != wantSource {
+		t.Fatalf("unexpected source hash: %v, %v", requirements.RequiredModelFileSourceHashes, err)
+	}
+}
+
+func TestPrepareTaskModelRequirementsRejectsInvalidArgs(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+
+	_, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, `{"version":"3.7.0"}`)
+	if !errors.Is(err, ErrInvalidTaskModelArgs) {
+		t.Fatalf("expected ErrInvalidTaskModelArgs, got %v", err)
+	}
+}
+
+func TestPrepareTaskModelRequirementsAcceptsAnyFormattedVersion(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	seedNodeModelFiles(t, db, "0x1", testModelFile(t, "org/model", "rev-1"))
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	requirements, err := PrepareTaskModelRequirements(
+		context.Background(), db, models.TaskTypeLLM,
+		`{"version":"9.1.0","model":"org/model","revision":"rev-1"}`)
+	if err != nil {
+		t.Fatalf("expected preparation to pass: %v", err)
+	}
+	if len(requirements.Entries) != 1 || requirements.Entries[0].Repository != "org/model" {
+		t.Fatalf("unexpected requirements: %+v", requirements)
 	}
 }

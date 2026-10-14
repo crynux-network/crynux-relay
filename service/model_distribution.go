@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/metrics"
 	"crynux_relay/models"
+	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -14,12 +15,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// modelDemandKey identifies one distribution unit: a base model together
-// with the VRAM demand and the LLM Darwin exclusion of the tasks requiring
-// it. Tasks with different VRAM demands form separate demand groups because
-// a node only counts toward coverage of the groups it can execute.
+// modelDemandKey identifies one distribution unit: a required model file set
+// together with the VRAM demand and the LLM Darwin exclusion of the tasks
+// requiring it. Tasks with different VRAM demands form separate demand groups
+// because a node only counts toward coverage of the groups it can execute.
 type modelDemandKey struct {
-	modelID       string
+	setKey        models.Hash32
 	minVRAM       uint64
 	excludeDarwin bool
 }
@@ -33,12 +34,26 @@ func taskVRAMDemand(task *models.InferenceTask) uint64 {
 	return task.MinVRAM
 }
 
-func modelDemandKeyOf(task *models.InferenceTask, modelID string) modelDemandKey {
-	return modelDemandKey{
-		modelID:       modelID,
+// modelDemandKeyOf returns the demand group of a task and its required model
+// file hashes. ok is false when the task requires no model files.
+func modelDemandKeyOf(task *models.InferenceTask) (key modelDemandKey, exact, source []models.Hash32, ok bool, err error) {
+	exact, err = task.RequiredModelFileHashList()
+	if err != nil {
+		return key, nil, nil, false, err
+	}
+	source, err = task.RequiredModelFileSourceHashList()
+	if err != nil {
+		return key, nil, nil, false, err
+	}
+	if len(exact) == 0 && len(source) == 0 {
+		return key, nil, nil, false, nil
+	}
+	key = modelDemandKey{
+		setKey:        models.DistributionKey(exact, source),
 		minVRAM:       taskVRAMDemand(task),
 		excludeDarwin: task.TaskType == models.TaskTypeLLM,
 	}
+	return key, exact, source, true, nil
 }
 
 // nodeSatisfiesDemand reports whether a node's VRAM covers the demand
@@ -57,18 +72,21 @@ func nodeSatisfiesDemand(gpuName string, gpuVram uint64, key modelDemandKey) boo
 // current demand window: queued tasks, window arrivals, measured execution
 // durations and the pricing estimates used as the cold-start fallback.
 type modelDemand struct {
-	key                  modelDemandKey
-	queuedCount          int
-	arrivalCount         int
-	latestCreateTime     time.Time
-	latestTaskType       models.TaskType
-	estimatedSecondsSum  float64
-	estimatedSecondsCnt  int
-	executionSecondsSum  float64
-	executionSecondsCnt  int
+	key                 modelDemandKey
+	exact               []models.Hash32
+	source              []models.Hash32
+	representativeTask  uint
+	queuedCount         int
+	arrivalCount        int
+	latestCreateTime    time.Time
+	latestTaskType      models.TaskType
+	estimatedSecondsSum float64
+	estimatedSecondsCnt int
+	executionSecondsSum float64
+	executionSecondsCnt int
 }
 
-// modelSelectionState is the per-model view over the persisted selection
+// modelSelectionState is the per-model-set view over the persisted selection
 // records used for capacity accounting and pool exclusion.
 type modelSelectionState struct {
 	// attemptCounts counts all selection records per node address.
@@ -77,6 +95,14 @@ type modelSelectionState struct {
 	nonExpired map[string]struct{}
 	// pendingNodes marks nodes with a pending record.
 	pendingNodes map[string]struct{}
+}
+
+func newModelSelectionState() *modelSelectionState {
+	return &modelSelectionState{
+		attemptCounts: make(map[string]int),
+		nonExpired:    make(map[string]struct{}),
+		pendingNodes:  make(map[string]struct{}),
+	}
 }
 
 func StartModelDistribution(ctx context.Context, db *gorm.DB) {
@@ -114,7 +140,10 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	selectionStates := buildModelSelectionStates(selections)
+	selectionStates, err := buildModelSelectionStates(selections)
+	if err != nil {
+		return err
+	}
 
 	if err := cleanupSelectionsWithoutDemand(ctx, db, selectionStates, demands); err != nil {
 		return err
@@ -124,13 +153,11 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 		return nil
 	}
 
-	demandModelIDs := demandedModelIDs(demands)
-	holdingNodes, err := getModelHoldingNodes(ctx, db, demandModelIDs)
+	candidateNodes, err := getDownloadCandidateNodes(ctx, db)
 	if err != nil {
 		return err
 	}
-
-	candidateNodes, err := getDownloadCandidateNodes(ctx, db)
+	holdingNodes, err := getModelHoldingNodes(ctx, db, demands, candidateNodes)
 	if err != nil {
 		return err
 	}
@@ -144,14 +171,14 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 	}
 
 	for _, demand := range demands {
-		modelID := demand.key.modelID
-		state := selectionStates[modelID]
+		setKey := demand.key.setKey
+		state := selectionStates[setKey]
 		target := computeTargetNodeCount(demand, cfg.DemandWindowSeconds, cfg.SafetyFactor, cfg.MinNodes, cfg.MaxNodes)
 
 		// Coverage and pending capacity count only nodes that satisfy the
 		// demand group's VRAM requirement; a copy on a node that cannot
 		// execute the demanding tasks does not serve them.
-		holding := holdingNodes[modelID]
+		holding := holdingNodes[demand.key]
 		qualifiedHoldingCount := 0
 		for address := range holding {
 			if node, ok := nodeHardwareByAddress[address]; ok && nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
@@ -180,21 +207,25 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 		}
 
 		selected := selectDownloadTargetNodes(qualifiedCandidates, holding, state, now, deficit)
+		if len(selected) == 0 {
+			continue
+		}
+		modelFiles, err := loadDemandModelFiles(ctx, db, demand)
+		if err != nil {
+			log.Errorf("ModelDistribution: load model files of set %s error: %v", setKey.Hex(), err)
+			continue
+		}
 		for _, node := range selected {
-			if err := emitModelDownloadSelection(ctx, db, modelID, node.Address, demand.key.minVRAM, demand.latestTaskType, now, cfg.DownloadTimeoutSeconds); err != nil {
-				log.Errorf("ModelDistribution: emit download selection for model %s on node %s error: %v", modelID, node.Address, err)
+			if err := emitModelDownloadSelection(ctx, db, demand, modelFiles, node.Address, now, cfg.DownloadTimeoutSeconds); err != nil {
+				log.Errorf("ModelDistribution: emit download selection for set %s on node %s error: %v", setKey.Hex(), node.Address, err)
 				continue
 			}
 			// Record the new selection in the in-memory state so later
-			// demand groups of the same model see it as pending capacity
+			// demand groups of the same set see it as pending capacity
 			// and do not select the node again in this round.
 			if state == nil {
-				state = &modelSelectionState{
-					attemptCounts: make(map[string]int),
-					nonExpired:    make(map[string]struct{}),
-					pendingNodes:  make(map[string]struct{}),
-				}
-				selectionStates[modelID] = state
+				state = newModelSelectionState()
+				selectionStates[setKey] = state
 			}
 			state.attemptCounts[node.Address]++
 			state.nonExpired[node.Address] = struct{}{}
@@ -204,50 +235,43 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-func demandedModelIDs(demands map[modelDemandKey]*modelDemand) []string {
-	modelIDSet := make(map[string]struct{})
-	modelIDs := make([]string, 0, len(demands))
-	for key := range demands {
-		if _, ok := modelIDSet[key.modelID]; ok {
-			continue
-		}
-		modelIDSet[key.modelID] = struct{}{}
-		modelIDs = append(modelIDs, key.modelID)
-	}
-	return modelIDs
-}
-
 // applySelectionStatusTransitions moves pending selections to completed when
-// the node's authoritative on-disk model set contains the model, and to
-// expired when the deadline has passed without completion.
+// the node's authoritative on-disk inventory covers the required model file
+// set, and to expired when the deadline has passed without completion.
 func applySelectionStatusTransitions(ctx context.Context, db *gorm.DB, now time.Time) error {
 	selections, err := models.GetAllNodeModelDownloadSelections(ctx, db)
 	if err != nil {
 		return err
 	}
 
-	pendingModelIDs := make(map[string]struct{})
+	completedIDSet := make(map[uint]struct{})
+	hasPending := false
 	for _, selection := range selections {
 		if selection.Status == models.NodeModelDownloadSelectionPending {
-			pendingModelIDs[selection.ModelID] = struct{}{}
+			hasPending = true
+			break
 		}
 	}
-	completedIDSet := make(map[uint]struct{})
-	if len(pendingModelIDs) > 0 {
-		modelIDs := make([]string, 0, len(pendingModelIDs))
-		for modelID := range pendingModelIDs {
-			modelIDs = append(modelIDs, modelID)
+	if hasPending {
+		rows, err := models.ListNodeModelFileRows(ctx, db)
+		if err != nil {
+			return err
 		}
-		onDisk, err := getNodeModelPairs(ctx, db, modelIDs)
+		inventories, err := nodeFileSetsByAddress(rows)
 		if err != nil {
 			return err
 		}
 		completedIDs := make([]uint, 0)
-		for _, selection := range selections {
+		for i := range selections {
+			selection := &selections[i]
 			if selection.Status != models.NodeModelDownloadSelectionPending {
 				continue
 			}
-			if _, ok := onDisk[nodeModelPair{modelID: selection.ModelID, nodeAddress: selection.NodeAddress}]; ok {
+			exact, source, err := selection.RequiredHashes()
+			if err != nil {
+				return err
+			}
+			if inventory, ok := inventories[selection.NodeAddress]; ok && modelFilesCovered(inventory.exact, inventory.source, exact, source) {
 				completedIDs = append(completedIDs, selection.ID)
 			}
 		}
@@ -281,33 +305,41 @@ func applySelectionStatusTransitions(ctx context.Context, db *gorm.DB, now time.
 	return nil
 }
 
-type nodeModelPair struct {
-	modelID     string
-	nodeAddress string
+// nodeFileSets is the disk inventory of one node as exact and source hash sets.
+type nodeFileSets struct {
+	exact  map[models.Hash32]struct{}
+	source map[models.Hash32]struct{}
 }
 
-func getNodeModelPairs(ctx context.Context, db *gorm.DB, modelIDs []string) (map[nodeModelPair]struct{}, error) {
-	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	var rows []models.NodeModel
-	if err := db.WithContext(dbCtx).Model(&models.NodeModel{}).
-		Select("model_id, node_address").
-		Where("model_id IN ?", modelIDs).
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	pairs := make(map[nodeModelPair]struct{}, len(rows))
+func nodeFileSetsByAddress(rows []models.NodeModelFileRow) (map[string]*nodeFileSets, error) {
+	inventories := make(map[string]*nodeFileSets)
 	for _, row := range rows {
-		pairs[nodeModelPair{modelID: row.ModelID, nodeAddress: row.NodeAddress}] = struct{}{}
+		hash, err := models.Hash32FromBytes(row.ModelFileHash)
+		if err != nil {
+			return nil, err
+		}
+		sourceHash, err := models.Hash32FromBytes(row.ModelFileSourceHash)
+		if err != nil {
+			return nil, err
+		}
+		inventory, ok := inventories[row.NodeAddress]
+		if !ok {
+			inventory = &nodeFileSets{
+				exact:  make(map[models.Hash32]struct{}),
+				source: make(map[models.Hash32]struct{}),
+			}
+			inventories[row.NodeAddress] = inventory
+		}
+		inventory.exact[hash] = struct{}{}
+		inventory.source[sourceHash] = struct{}{}
 	}
-	return pairs, nil
+	return inventories, nil
 }
 
-// collectModelDemands measures demand per demand group (base model plus task
-// VRAM demand) from tasks that are currently queued or were created within
-// the demand window, plus execution durations of tasks completed within the
-// window.
+// collectModelDemands measures demand per demand group (required model file
+// set plus task VRAM demand) from tasks that are currently queued or were
+// created within the demand window, plus execution durations of tasks
+// completed within the window.
 func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time) (map[modelDemandKey]*modelDemand, error) {
 	demands := make(map[modelDemandKey]*modelDemand)
 
@@ -317,27 +349,31 @@ func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time
 	}
 	for i := range demandTasks {
 		task := &demandTasks[i]
-		for _, modelID := range models.BaseModelIDs(task.ModelIDs) {
-			key := modelDemandKeyOf(task, modelID)
-			demand, ok := demands[key]
-			if !ok {
-				demand = &modelDemand{key: key}
-				demands[key] = demand
-			}
-			if task.Status == models.TaskQueued {
-				demand.queuedCount++
-			}
-			if task.CreateTime.Valid && !task.CreateTime.Time.Before(windowStart) {
-				demand.arrivalCount++
-			}
-			if task.CreateTime.Valid && task.CreateTime.Time.After(demand.latestCreateTime) {
-				demand.latestCreateTime = task.CreateTime.Time
-				demand.latestTaskType = task.TaskType
-			}
-			if task.EstimatedNodeSeconds > 0 {
-				demand.estimatedSecondsSum += task.EstimatedNodeSeconds
-				demand.estimatedSecondsCnt++
-			}
+		key, exact, source, ok, err := modelDemandKeyOf(task)
+		if err != nil {
+			return nil, fmt.Errorf("task %d required model files: %w", task.ID, err)
+		}
+		if !ok {
+			continue
+		}
+		demand, ok := demands[key]
+		if !ok {
+			demand = &modelDemand{key: key, exact: exact, source: source, representativeTask: task.ID}
+			demands[key] = demand
+		}
+		if task.Status == models.TaskQueued {
+			demand.queuedCount++
+		}
+		if task.CreateTime.Valid && !task.CreateTime.Time.Before(windowStart) {
+			demand.arrivalCount++
+		}
+		if task.CreateTime.Valid && task.CreateTime.Time.After(demand.latestCreateTime) {
+			demand.latestCreateTime = task.CreateTime.Time
+			demand.latestTaskType = task.TaskType
+		}
+		if task.EstimatedNodeSeconds > 0 {
+			demand.estimatedSecondsSum += task.EstimatedNodeSeconds
+			demand.estimatedSecondsCnt++
 		}
 	}
 
@@ -351,14 +387,19 @@ func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time
 		if executionSeconds <= 0 {
 			continue
 		}
-		for _, modelID := range models.BaseModelIDs(task.ModelIDs) {
-			demand, ok := demands[modelDemandKeyOf(task, modelID)]
-			if !ok {
-				continue
-			}
-			demand.executionSecondsSum += executionSeconds
-			demand.executionSecondsCnt++
+		key, _, _, ok, err := modelDemandKeyOf(task)
+		if err != nil {
+			return nil, fmt.Errorf("task %d required model files: %w", task.ID, err)
 		}
+		if !ok {
+			continue
+		}
+		demand, ok := demands[key]
+		if !ok {
+			continue
+		}
+		demand.executionSecondsSum += executionSeconds
+		demand.executionSecondsCnt++
 	}
 	return demands, nil
 }
@@ -369,7 +410,7 @@ func getDemandTasks(ctx context.Context, db *gorm.DB, windowStart time.Time) ([]
 
 	var tasks []models.InferenceTask
 	if err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
-		Select("id, status, task_type, model_ids, create_time, estimated_node_seconds, min_v_ram, required_gpu, required_gpuv_ram").
+		Select("id, status, task_type, required_model_file_hashes, required_model_file_source_hashes, create_time, estimated_node_seconds, min_v_ram, required_gpu, required_gpuv_ram").
 		Where("status = ? OR create_time >= ?", models.TaskQueued, windowStart).
 		Find(&tasks).Error; err != nil {
 		return nil, err
@@ -383,7 +424,7 @@ func getCompletedTasksInWindow(ctx context.Context, db *gorm.DB, windowStart tim
 
 	var tasks []models.InferenceTask
 	if err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
-		Select("id, task_type, model_ids, start_time, score_ready_time, min_v_ram, required_gpu, required_gpuv_ram").
+		Select("id, task_type, required_model_file_hashes, required_model_file_source_hashes, start_time, score_ready_time, min_v_ram, required_gpu, required_gpuv_ram").
 		Where("score_ready_time >= ?", windowStart).
 		Where("start_time IS NOT NULL").
 		Find(&tasks).Error; err != nil {
@@ -392,8 +433,8 @@ func getCompletedTasksInWindow(ctx context.Context, db *gorm.DB, windowStart tim
 	return tasks, nil
 }
 
-// computeTargetNodeCount derives the target holding-node count of one base
-// model: ceil(arrival_rate * avg_execution_seconds * safety_factor) clamped
+// computeTargetNodeCount derives the target holding-node count of one model
+// file set: ceil(arrival_rate * avg_execution_seconds * safety_factor) clamped
 // to [minNodes, maxNodes]. When the window contains no completed task, the
 // mean stored pricing estimate of the demanding tasks is used instead.
 func computeTargetNodeCount(demand *modelDemand, windowSeconds, safetyFactor float64, minNodes, maxNodes int) int {
@@ -416,17 +457,17 @@ func computeTargetNodeCount(demand *modelDemand, windowSeconds, safetyFactor flo
 	return target
 }
 
-func buildModelSelectionStates(selections []models.NodeModelDownloadSelection) map[string]*modelSelectionState {
-	states := make(map[string]*modelSelectionState)
+func buildModelSelectionStates(selections []models.NodeModelDownloadSelection) (map[models.Hash32]*modelSelectionState, error) {
+	states := make(map[models.Hash32]*modelSelectionState)
 	for _, selection := range selections {
-		state, ok := states[selection.ModelID]
+		setKey, err := models.Hash32FromBytes(selection.ModelFileHash)
+		if err != nil {
+			return nil, err
+		}
+		state, ok := states[setKey]
 		if !ok {
-			state = &modelSelectionState{
-				attemptCounts: make(map[string]int),
-				nonExpired:    make(map[string]struct{}),
-				pendingNodes:  make(map[string]struct{}),
-			}
-			states[selection.ModelID] = state
+			state = newModelSelectionState()
+			states[setKey] = state
 		}
 		state.attemptCounts[selection.NodeAddress]++
 		switch selection.Status {
@@ -437,50 +478,54 @@ func buildModelSelectionStates(selections []models.NodeModelDownloadSelection) m
 			state.nonExpired[selection.NodeAddress] = struct{}{}
 		}
 	}
-	return states
+	return states, nil
 }
 
-// cleanupSelectionsWithoutDemand deletes the selection records of models that
-// no longer have current demand in any demand group, ending their demand
-// period.
-func cleanupSelectionsWithoutDemand(ctx context.Context, db *gorm.DB, selectionStates map[string]*modelSelectionState, demands map[modelDemandKey]*modelDemand) error {
-	demandedIDs := make(map[string]struct{})
+// cleanupSelectionsWithoutDemand deletes the selection records of model file
+// sets that no longer have current demand in any demand group, ending their
+// demand period.
+func cleanupSelectionsWithoutDemand(ctx context.Context, db *gorm.DB, selectionStates map[models.Hash32]*modelSelectionState, demands map[modelDemandKey]*modelDemand) error {
+	demandedSets := make(map[models.Hash32]struct{})
 	for key := range demands {
-		demandedIDs[key.modelID] = struct{}{}
+		demandedSets[key.setKey] = struct{}{}
 	}
-	staleModelIDs := make([]string, 0)
-	for modelID := range selectionStates {
-		if _, ok := demandedIDs[modelID]; !ok {
-			staleModelIDs = append(staleModelIDs, modelID)
+	staleSets := make([]models.Hash32, 0)
+	for setKey := range selectionStates {
+		if _, ok := demandedSets[setKey]; !ok {
+			staleSets = append(staleSets, setKey)
 		}
 	}
-	return models.DeleteNodeModelDownloadSelectionsByModelIDs(ctx, db, staleModelIDs)
+	return models.DeleteNodeModelDownloadSelectionsByModelFileHashes(ctx, db, staleSets)
 }
 
-// getModelHoldingNodes returns, per base model, the addresses of currently
-// joined Available or Busy nodes whose on-disk model set contains the model.
-func getModelHoldingNodes(ctx context.Context, db *gorm.DB, modelIDs []string) (map[string]map[string]struct{}, error) {
-	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	var rows []models.NodeModel
-	if err := db.WithContext(dbCtx).Model(&models.NodeModel{}).
-		Select("node_models.model_id, node_models.node_address").
-		Joins("INNER JOIN nodes ON nodes.address = node_models.node_address AND nodes.deleted_at IS NULL").
-		Where("node_models.model_id IN ?", modelIDs).
-		Where("nodes.status IN ?", []models.NodeStatus{models.NodeStatusAvailable, models.NodeStatusBusy}).
-		Find(&rows).Error; err != nil {
+// getModelHoldingNodes returns, per demand group, the addresses of the given
+// Available or Busy nodes whose on-disk inventory covers the required model
+// file set: every exact file and at least one file of every source.
+func getModelHoldingNodes(ctx context.Context, db *gorm.DB, demands map[modelDemandKey]*modelDemand, nodes []models.Node) (map[modelDemandKey]map[string]struct{}, error) {
+	addresses := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		addresses = append(addresses, node.Address)
+	}
+	holding := make(map[modelDemandKey]map[string]struct{}, len(demands))
+	if len(addresses) == 0 {
+		return holding, nil
+	}
+	rows, err := models.ListNodeModelFileRows(ctx, db, addresses...)
+	if err != nil {
 		return nil, err
 	}
-
-	holding := make(map[string]map[string]struct{})
-	for _, row := range rows {
-		nodes, ok := holding[row.ModelID]
-		if !ok {
-			nodes = make(map[string]struct{})
-			holding[row.ModelID] = nodes
+	inventories, err := nodeFileSetsByAddress(rows)
+	if err != nil {
+		return nil, err
+	}
+	for key, demand := range demands {
+		covering := make(map[string]struct{})
+		for address, inventory := range inventories {
+			if modelFilesCovered(inventory.exact, inventory.source, demand.exact, demand.source) {
+				covering[address] = struct{}{}
+			}
 		}
-		nodes[row.NodeAddress] = struct{}{}
+		holding[key] = covering
 	}
 	return holding, nil
 }
@@ -499,8 +544,8 @@ func getDownloadCandidateNodes(ctx context.Context, db *gorm.DB) ([]models.Node,
 }
 
 // selectDownloadTargetNodes selects up to limit download target nodes for one
-// base model. The primary pool contains candidate nodes that do not hold the
-// model and have no selection record for it in the current demand period.
+// model file set. The primary pool contains candidate nodes that do not hold
+// the set and have no selection record for it in the current demand period.
 // Only when the primary pool is empty are nodes with expired-only records
 // re-admitted, ordered so that every eligible node is attempted once before
 // any node is attempted twice.
@@ -599,23 +644,71 @@ func sampleDownloadTargets(nodes []models.Node, now time.Time, limit int) []mode
 	return selected
 }
 
+// loadDemandModelFiles returns the model file requirements of a demand group:
+// exact entries with their revision from the catalog and source entries with
+// an empty revision derived from the TaskArgs of a demanding task.
+func loadDemandModelFiles(ctx context.Context, db *gorm.DB, demand *modelDemand) ([]models.ModelFileEntry, error) {
+	exactEntries, err := LoadModelFileEntries(ctx, db, demand.exact)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]models.ModelFileEntry, 0, len(demand.exact)+len(demand.source))
+	for _, hash := range demand.exact {
+		entry, ok := exactEntries[hash]
+		if !ok {
+			return nil, fmt.Errorf("model file %s is missing from the catalog", hash.Hex())
+		}
+		files = append(files, entry)
+	}
+	if len(demand.source) == 0 {
+		return files, nil
+	}
+
+	var task models.InferenceTask
+	if err := db.WithContext(ctx).Select("id, task_type, task_args").First(&task, demand.representativeTask).Error; err != nil {
+		return nil, err
+	}
+	requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
+	if err != nil {
+		return nil, err
+	}
+	wanted := hashSet(demand.source)
+	for _, entry := range requirements.Entries {
+		if entry.Revision != "" {
+			continue
+		}
+		sourceHash, err := entry.ModelFileSourceHash()
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := wanted[sourceHash]; ok {
+			files = append(files, entry)
+			delete(wanted, sourceHash)
+		}
+	}
+	if len(wanted) > 0 {
+		return nil, fmt.Errorf("task %d does not provide %d required model file sources", task.ID, len(wanted))
+	}
+	return files, nil
+}
+
 // emitModelDownloadSelection inserts the selection record and the DownloadModel
 // event in one database transaction.
-func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, modelID, nodeAddress string, minVRAM uint64, taskType models.TaskType, sentAt time.Time, downloadTimeoutSeconds float64) error {
+func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, demand *modelDemand, modelFiles []models.ModelFileEntry, nodeAddress string, sentAt time.Time, downloadTimeoutSeconds float64) error {
 	deadline := sentAt.Add(time.Duration(downloadTimeoutSeconds * float64(time.Second)))
-	selection := models.NewNodeModelDownloadSelection(modelID, nodeAddress, minVRAM, sentAt, deadline)
+	selection := models.NewNodeModelDownloadSelection(demand.exact, demand.source, nodeAddress, demand.key.minVRAM, sentAt, deadline)
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := models.CreateNodeModelDownloadSelection(ctx, tx, selection); err != nil {
 			return err
 		}
 		return emitEvent(ctx, tx, &models.DownloadModelEvent{
 			NodeAddress: nodeAddress,
-			ModelID:     selection.ModelID,
-			TaskType:    taskType,
+			ModelFiles:  modelFiles,
+			TaskType:    demand.latestTaskType,
 		})
 	}); err != nil {
 		return err
 	}
-	metrics.ModelDownloadsDispatched.WithLabelValues(metrics.TaskTypeLabel(taskType), metrics.VramTierLabel(minVRAM)).Inc()
+	metrics.ModelDownloadsDispatched.WithLabelValues(metrics.TaskTypeLabel(demand.latestTaskType), metrics.VramTierLabel(demand.key.minVRAM)).Inc()
 	return nil
 }

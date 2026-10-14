@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/utils"
 	"database/sql"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -20,6 +22,29 @@ import (
 )
 
 var ErrValidationAlreadyApplied = errors.New("validation already applied")
+
+// ErrInconsistentExecutionModelFiles reports that the started members of a
+// validation group executed with different exact model files.
+var ErrInconsistentExecutionModelFiles = errors.New("validation group execution model files are inconsistent")
+
+// checkGroupExecutionModelFiles requires every started member of a validation
+// group to hold the same execution model file hashes.
+func checkGroupExecutionModelFiles(tasks []*models.InferenceTask) error {
+	var reference *models.InferenceTask
+	for _, task := range tasks {
+		if task.Status == models.TaskEndAborted {
+			continue
+		}
+		if reference == nil {
+			reference = task
+			continue
+		}
+		if !bytes.Equal(reference.ExecutionModelFileHashes, task.ExecutionModelFileHashes) {
+			return fmt.Errorf("%w: tasks %s and %s", ErrInconsistentExecutionModelFiles, reference.TaskIDCommitment, task.TaskIDCommitment)
+		}
+	}
+	return nil
+}
 
 func validateTaskID(taskID, nonce, taskIDCommitment string) error {
 	taskIDBytes, err := hexutil.Decode(taskID)
@@ -365,6 +390,9 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 			tasks = refreshedTasks
 			for _, task := range tasks {
 				task.TaskID = taskID
+			}
+			if err := checkGroupExecutionModelFiles(tasks); err != nil {
+				return err
 			}
 
 			// sort tasks by time cost

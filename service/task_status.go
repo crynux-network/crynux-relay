@@ -105,18 +105,29 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 		return errors.New("node version is not compatible with task")
 	}
 
-	var inUseModelIDs []string
-	for _, model := range node.Models {
-		if model.InUse && models.IsBaseModelID(model.ModelID) {
-			inUseModelIDs = append(inUseModelIDs, model.ModelID)
-		}
+	requirements, err := newTaskModelRequirements(&task)
+	if err != nil {
+		return err
 	}
+	modelState, err := loadNodeModelState(ctx, db, node.Address)
+	if err != nil {
+		return err
+	}
+	nodeEntry, err := buildNodeIndexEntry(&node, modelState.files[node.Address], modelState.inMemory[node.Address])
+	if err != nil {
+		return err
+	}
+	executionHashes, err := resolveExecutionModelFileHashes(requirements, modelState.files[node.Address], nodeEntry.CurrentModelFileHashes)
+	if err != nil {
+		return err
+	}
+	task.ExecutionModelFileHashes = models.EncodeHashList(executionHashes)
 
 	// start inference task
 	startTime := time.Now()
 	timeout := task.Timeout
 	var estimatedCompletionTime sql.NullTime
-	modelSwitched := !isSameModels(inUseModelIDs, models.BaseModelIDs(task.ModelIDs))
+	modelSwitched := !nodeEntry.holdsRequiredModelInMemory(requirements)
 	captureExecutionGPU := UsesRelayOwnedTimeouts(&task)
 	if captureExecutionGPU {
 		timeoutTask := task
@@ -132,16 +143,17 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 		}
 	}
 	deadlineAt := sql.NullTime{Time: startTime.Add(time.Duration(timeout) * time.Second), Valid: true}
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
-			"selected_node":      node.Address,
-			"start_time":         sql.NullTime{Time: startTime, Valid: true},
-			"timeout":            timeout,
-			"status":             models.TaskStarted,
-			"model_swtiched":     modelSwitched,
-			"deadline_at":        deadlineAt,
-			"execution_gpu":      node.GPUName,
-			"execution_gpu_vram": node.GPUVram,
+			"selected_node":               node.Address,
+			"start_time":                  sql.NullTime{Time: startTime, Valid: true},
+			"timeout":                     timeout,
+			"status":                      models.TaskStarted,
+			"model_swtiched":              modelSwitched,
+			"deadline_at":                 deadlineAt,
+			"execution_gpu":               node.GPUName,
+			"execution_gpu_vram":          node.GPUVram,
+			"execution_model_file_hashes": task.ExecutionModelFileHashes,
 		}
 		if captureExecutionGPU {
 			updates["estimated_completion_time"] = estimatedCompletionTime
@@ -150,7 +162,7 @@ func SetTaskStatusStarted(ctx context.Context, db *gorm.DB, originTask *models.I
 			return err
 		}
 
-		if err := nodeStartTask(ctx, tx, &node, task.TaskIDCommitment, task.ModelIDs); err != nil {
+		if err := nodeStartTask(ctx, tx, &node, task.TaskIDCommitment); err != nil {
 			return err
 		}
 		return emitEvent(ctx, tx, &models.TaskStartedEvent{

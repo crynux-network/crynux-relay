@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crynux_relay/config"
 	"crynux_relay/models"
@@ -16,6 +17,8 @@ func initModelDistributionTest(t *testing.T) {
 	if err := config.GetDB().AutoMigrate(
 		&models.Node{},
 		&models.NodeModel{},
+		&models.ModelFile{},
+		&models.NodeInMemoryModel{},
 		&models.InferenceTask{},
 		&models.Event{},
 		&models.NodeModelDownloadSelection{},
@@ -158,18 +161,15 @@ func TestApplySelectionStatusTransitions(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	completing := models.NewNodeModelDownloadSelection("base:model-a", "0xdone", 0, now.Add(-time.Minute), now.Add(time.Hour))
-	expiring := models.NewNodeModelDownloadSelection("base:model-a", "0xlate", 0, now.Add(-2*time.Hour), now.Add(-time.Hour))
-	waiting := models.NewNodeModelDownloadSelection("base:model-a", "0xwaiting", 0, now.Add(-time.Minute), now.Add(time.Hour))
+	completing := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xdone", 0, now.Add(-time.Minute), now.Add(time.Hour))
+	expiring := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xlate", 0, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	waiting := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xwaiting", 0, now.Add(-time.Minute), now.Add(time.Hour))
 	for _, selection := range []*models.NodeModelDownloadSelection{completing, expiring, waiting} {
 		if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 			t.Fatalf("create selection: %v", err)
 		}
 	}
-	nodeModel := models.NewNodeModel("0xdone", "base:model-a", false)
-	if err := nodeModel.Save(ctx, db); err != nil {
-		t.Fatalf("create node model: %v", err)
-	}
+	seedNodeModelFiles(t, db, "0xdone", testImageBaseModelFile(t, "model-a", "rev-a"))
 
 	if err := applySelectionStatusTransitions(ctx, db, now); err != nil {
 		t.Fatalf("apply transitions: %v", err)
@@ -200,11 +200,11 @@ func TestApplySelectionStatusTransitions(t *testing.T) {
 
 	// A new attempt is allowed after expiry but duplicate non-expired records
 	// are rejected by the uniqueness constraint.
-	retry := models.NewNodeModelDownloadSelection("base:model-a", "0xlate", 0, now, now.Add(time.Hour))
+	retry := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xlate", 0, now, now.Add(time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, retry); err != nil {
 		t.Fatalf("create retry selection after expiry: %v", err)
 	}
-	duplicate := models.NewNodeModelDownloadSelection("base:model-a", "0xwaiting", 0, now, now.Add(time.Hour))
+	duplicate := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xwaiting", 0, now, now.Add(time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, duplicate); err == nil {
 		t.Fatal("expected duplicate non-expired selection to violate the unique index")
 	}
@@ -224,10 +224,11 @@ func TestRunModelDistributionRoundEmitsAndConverges(t *testing.T) {
 		TaskIDCommitment:     "0xtask",
 		Status:               models.TaskQueued,
 		TaskType:             models.TaskTypeSD,
-		ModelIDs:             models.StringArray{"base:model-a", "lora:adapter"},
+		TaskArgs:             imageTaskArgs("model-a", "rev-a"),
 		CreateTime:           sql.NullTime{Time: now, Valid: true},
 		EstimatedNodeSeconds: 60,
 	}
+	applyTaskModelRequirements(t, db, &task)
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -242,7 +243,7 @@ func TestRunModelDistributionRoundEmitsAndConverges(t *testing.T) {
 	if len(selections) != 1 {
 		t.Fatalf("expected one selection, got %d", len(selections))
 	}
-	if selections[0].NodeAddress != node.Address || selections[0].ModelID != "base:model-a" ||
+	if selections[0].NodeAddress != node.Address || !bytes.Equal(selections[0].ModelFileHash, models.DistributionKey(exactA(t), nil).Bytes()) ||
 		selections[0].Status != models.NodeModelDownloadSelectionPending {
 		t.Fatalf("unexpected selection: %+v", selections[0])
 	}
@@ -260,10 +261,7 @@ func TestRunModelDistributionRoundEmitsAndConverges(t *testing.T) {
 
 	// The node reports the model on disk: the selection completes and the
 	// holding node covers the target, so still nothing new is emitted.
-	nodeModel := models.NewNodeModel(node.Address, "base:model-a", false)
-	if err := nodeModel.Save(ctx, db); err != nil {
-		t.Fatalf("create node model: %v", err)
-	}
+	seedNodeModelFiles(t, db, node.Address, testImageBaseModelFile(t, "model-a", "rev-a"))
 	if err := runModelDistributionRound(ctx, db); err != nil {
 		t.Fatalf("third round: %v", err)
 	}
@@ -297,20 +295,18 @@ func TestRunModelDistributionRoundRespectsTaskHardwareRequirement(t *testing.T) 
 
 	// The small node already holds the model, but it cannot execute the
 	// demanding task, so it must not count toward the group's coverage.
-	smallHolding := models.NewNodeModel(small.Address, "base:model-a", false)
-	if err := smallHolding.Save(ctx, db); err != nil {
-		t.Fatalf("create node model: %v", err)
-	}
+	seedNodeModelFiles(t, db, small.Address, testModelFile(t, "model-a", "rev-a"))
 
 	task := models.InferenceTask{
 		TaskIDCommitment:     "0xtask",
 		Status:               models.TaskQueued,
 		TaskType:             models.TaskTypeLLM,
 		MinVRAM:              100,
-		ModelIDs:             models.StringArray{"base:model-a"},
+		TaskArgs:             llmTaskArgs("model-a", "rev-a"),
 		CreateTime:           sql.NullTime{Time: now, Valid: true},
 		EstimatedNodeSeconds: 60,
 	}
+	applyTaskModelRequirements(t, db, &task)
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
@@ -340,7 +336,7 @@ func TestRunModelDistributionRoundRespectsTaskHardwareRequirement(t *testing.T) 
 }
 
 func TestNodeSatisfiesDemand(t *testing.T) {
-	llmDemand := modelDemandKey{modelID: "base:model-a", minVRAM: 100, excludeDarwin: true}
+	llmDemand := modelDemandKey{minVRAM: 100, excludeDarwin: true}
 	if nodeSatisfiesDemand("NVIDIA RTX PRO 6000 Blackwell Server Edition+docker", 96, llmDemand) {
 		t.Fatal("expected a node below min VRAM to be disqualified")
 	}
@@ -350,7 +346,7 @@ func TestNodeSatisfiesDemand(t *testing.T) {
 	if nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, llmDemand) {
 		t.Fatal("expected a Darwin node to be disqualified for LLM demand")
 	}
-	if !nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, modelDemandKey{modelID: "base:model-a", minVRAM: 100}) {
+	if !nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, modelDemandKey{minVRAM: 100}) {
 		t.Fatal("expected a Darwin node to qualify without the LLM exclusion")
 	}
 }
@@ -383,15 +379,16 @@ func TestRunModelDistributionRoundReplacesExpiredSelection(t *testing.T) {
 		TaskIDCommitment:     "0xtask",
 		Status:               models.TaskQueued,
 		TaskType:             models.TaskTypeSD,
-		ModelIDs:             models.StringArray{"base:model-a"},
+		TaskArgs:             imageTaskArgs("model-a", "rev-a"),
 		CreateTime:           sql.NullTime{Time: now, Valid: true},
 		EstimatedNodeSeconds: 60,
 	}
+	applyTaskModelRequirements(t, db, &task)
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
-	expired := models.NewNodeModelDownloadSelection("base:model-a", first.Address, 0, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	expired := models.NewNodeModelDownloadSelection(exactA(t), nil, first.Address, 0, now.Add(-2*time.Hour), now.Add(-time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, expired); err != nil {
 		t.Fatalf("create expired selection: %v", err)
 	}
@@ -427,7 +424,7 @@ func TestRunModelDistributionRoundCleansUpWithoutDemand(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	selection := models.NewNodeModelDownloadSelection("base:model-a", "0xnode", 0, now, now.Add(time.Hour))
+	selection := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xnode", 0, now, now.Add(time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 		t.Fatalf("create selection: %v", err)
 	}
@@ -451,8 +448,8 @@ func TestDeleteNodeModelDownloadSelectionsByNodeAddress(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	mine := models.NewNodeModelDownloadSelection("base:model-a", "0xquitting", 0, now, now.Add(time.Hour))
-	other := models.NewNodeModelDownloadSelection("base:model-a", "0xstaying", 0, now, now.Add(time.Hour))
+	mine := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xquitting", 0, now, now.Add(time.Hour))
+	other := models.NewNodeModelDownloadSelection(exactA(t), nil, "0xstaying", 0, now, now.Add(time.Hour))
 	for _, selection := range []*models.NodeModelDownloadSelection{mine, other} {
 		if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 			t.Fatalf("create selection: %v", err)
@@ -469,4 +466,9 @@ func TestDeleteNodeModelDownloadSelectionsByNodeAddress(t *testing.T) {
 	if len(selections) != 1 || selections[0].NodeAddress != "0xstaying" {
 		t.Fatalf("expected only the other node's selection to remain, got %+v", selections)
 	}
+}
+
+func exactA(t testing.TB) []models.Hash32 {
+	t.Helper()
+	return []models.Hash32{testImageBaseModelFileHash(t, "model-a", "rev-a")}
 }

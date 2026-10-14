@@ -17,6 +17,7 @@ func newNodeTaskErrorTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.NodeTaskError{}); err != nil {
 		t.Fatalf("failed to migrate test db: %v", err)
 	}

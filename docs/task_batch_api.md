@@ -16,16 +16,23 @@ The batch APIs MUST NOT replace or change the behavior of the existing single-ta
 
 `POST /v1/inference_tasks/batch` MUST be the signed batch creation endpoint. Its items MUST contain the complete normal-task creation input, including `task_id_commitment`. The endpoint MUST accept ordinary SD and LLM tasks. SDFT checkpoint upload MUST remain on its existing multipart single-task endpoint.
 
-Single-task create (`POST /v1/inference_tasks/:task_id_commitment`) and batch create MUST both require client-supplied `min_vram` and `task_size`. Relay MUST reject a missing `min_vram` or `task_size` before charging. Relay MUST NOT fill `min_vram` from `loaded_models` or any other server-side table.
+Single-task create (`POST /v1/inference_tasks/:task_id_commitment`) and batch create MUST both require client-supplied `min_vram`. Relay MUST reject a missing `min_vram` before charging. Relay MUST NOT fill `min_vram` from `loaded_models` or any other server-side table.
 
-Before charging, Relay MUST validate each item's huggingface base model as follows:
+Create input MUST contain protocol identity fields, `task_args`, `task_type`, `task_fee`, GPU constraints (`required_gpu`, `required_gpu_vram`, `min_vram`), and optional `timeout` for SDFT. Create input MUST NOT accept `task_version`, `task_model_ids`, `task_size`, or `required_model_files`.
 
-1. Extract each lowercase `base:` dispatch ID from `task_model_ids`.
-2. URL-based base names MUST skip Hub validation.
-3. When `node_models` contains a row with that exact dispatch ID, Relay MUST skip Hub validation for that ID.
-4. Otherwise Relay MUST query the HuggingFace Hub model API without downloading weights. LLM tasks MUST accept a resolvable public model repository. SD and SDFT base models MUST accept a repository whose file list includes `model_index.json` and either a matching `.{variant}.` weight file when `variant` is non-empty, or a default non-variant weight file when `variant` is empty.
-5. A permanent Hub rejection MUST become a create `permanent_error` for that batch item, or a `validation_error` on single create, and MUST NOT charge the creator.
-6. A Hub timeout or Hub 5xx MUST become a create `temporary_error` for that batch item, or a retryable exception on single create, and MUST NOT charge the creator.
+After TaskArgs schema validation, Relay MUST parse `version` from TaskArgs, require the `major.minor.patch` numeric format, and store it as `InferenceTask.TaskVersion`. Relay MUST accept any version string that matches that format. Relay MUST NOT reject a create request because the version equals or differs from a fixed release number.
+
+Relay MUST derive `TaskSize` from TaskArgs and store it on the task row: for an SD task, `task_config.num_images_per_prompt` with schema default `1` when absent; for an LLM or SDFT task, `1`. Relay MUST derive `ModelIDs` from TaskArgs and store them on the task row. Result download continues to use the stored `TaskSize`.
+
+Before charging, Relay MUST derive the required model files from the TaskArgs of each item and validate them as follows:
+
+1. Each member of the required model file set is one model file entry derived from the TaskArgs: the LLM model repository, or the diffusers base model and each component repository of an image task.
+2. An entry with a revision whose exact model file hash exists in `node_models` MUST skip Hub validation. An entry without a revision whose source hash matches a file in `node_models` MUST skip Hub validation.
+3. Otherwise Relay MUST query the HuggingFace Hub model API without downloading weights. LLM tasks and image components MUST accept a resolvable public model repository. A diffusers base model MUST accept a repository whose file list includes `model_index.json` and either a matching `.{variant}.` weight file when `variant` is non-empty, or a default non-variant weight file when `variant` is empty.
+4. An entry with a revision that is not held by a node MUST be resolved on the Hub to its commit SHA, and the stored exact hash MUST name that commit. An entry without a revision MUST keep its revision-less source identity.
+5. Relay MUST register every exact model file in the `model_files` catalog and MUST store the exact and source hash lists on the task as `RequiredModelFileHashes` and `RequiredModelFileSourceHashes`, together with `RequestedModelCacheHash` and `QuantizationConfigHash`.
+6. A permanent Hub rejection MUST become a create `permanent_error` for that batch item, or a `validation_error` on single create, and MUST NOT charge the creator.
+7. A Hub timeout or Hub 5xx MUST become a create `temporary_error` for that batch item, or a retryable exception on single create, and MUST NOT charge the creator.
 
 Relay MUST normalize, validate, price, and create each item independently through the existing single-task financial boundary. Each item MUST use its own database transaction for:
 
@@ -62,12 +69,14 @@ Each item MUST return only:
 - sequence;
 - sampling seed;
 - selected execution GPU name and GPU VRAM when available;
+- execution model files as exact entries when available;
+- requested model cache hash as hex;
 - estimated execution completion time when available;
 - result availability.
 
-The endpoint MUST NOT return task arguments, nonce, score, task fee, or model identifiers. An absent task and a task owned by another creator MUST both return `found = false`.
+The endpoint MUST NOT return task arguments, nonce, score, task fee, or model IDs. An absent task and a task owned by another creator MUST both return `found = false`.
 
-The selected execution GPU name and GPU VRAM MUST be the immutable assignment captured when the task starts. Relay MUST NOT derive them from the node's current mutable record. LLM VSS processing uses this pair to restrict the two additional members to the same GPU variant as the primary task.
+The selected execution GPU name and GPU VRAM MUST be the immutable assignment captured when the task starts. Relay MUST NOT derive them from the node's current mutable record. LLM VSS processing uses this pair to restrict the two additional members to the same GPU variant as the primary task. VSS processing uses the execution model files to pin exact revisions into the additional members' TaskArgs before those members are created.
 
 The estimated execution completion time MUST equal task start time plus the exact-GPU execution estimate that Relay used as the input to execution-timeout calculation. It MUST exclude the timeout multiplier, timeout minimum, timeout maximum, and every later stage deadline.
 
@@ -82,7 +91,7 @@ The estimated execution completion time MUST equal task start time plus the exac
 
 Every validation unit MUST retain the transaction, task-locking, node-state, fee, QoS, health, and slashing behavior of the existing single or group validation operation. Relay MUST process units independently and MUST NOT claim atomic behavior across units.
 
-Relay MUST verify the task commitments, task ID, VRF proof, public key, creator, and current task states before persisting the revealed task ID or changing any validation state. Invalid proof or input MUST leave every task, node, account, event, and cache value unchanged.
+Relay MUST verify the task commitments, task ID, VRF proof, public key, creator, and current task states before persisting the revealed task ID or changing any validation state. For a group unit, Relay MUST also require every started member to have identical `ExecutionModelFileHashes`; an inconsistent group MUST be rejected with `permanent_error` and MUST NOT change any validation state. Invalid proof or input MUST leave every task, node, account, event, and cache value unchanged.
 
 Relay MUST return one of these outcomes for each unit:
 

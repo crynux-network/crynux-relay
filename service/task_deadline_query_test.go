@@ -16,6 +16,7 @@ func TestGetDueTaskDeadlinesIsBoundedAndOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
 		t.Fatalf("migrate inference tasks: %v", err)
 	}

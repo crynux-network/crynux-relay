@@ -23,7 +23,7 @@ In relay, the `version` field sent by node join, joined-node capability synchron
 
 Validation entry points:
 
-- Task creation validates `task_version` in `api/v1/inference_tasks/create_task.go`
+- Task creation parses `version` from TaskArgs in `api/v1/inference_tasks/create_task.go` and `api/v1/inference_tasks/batch.go`, requires `major.minor.patch` numeric format, and stores it as `InferenceTask.TaskVersion`. Create MUST NOT accept a separate `task_version` field and MUST NOT reject a specific release number.
 - Node join validates `version` in `api/v2/nodes/join.go`
 - Joined-node capability synchronization validates `version` in `api/v2/nodes/capabilities.go`
 - Node version update validates `version` in `api/v1/nodes/version.go`

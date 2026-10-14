@@ -25,7 +25,7 @@ Both endpoints MUST accept:
 |-----------|----------|-------|
 | `model` | yes | Non-empty. Relay MUST apply `NormalizeModelName`. |
 | `dtype` | no | When present and non-empty, Relay MUST store the lowercased value as `RequestedDType`. When absent or empty, `RequestedDType` MUST be `auto`. |
-| `quantize_bits` | no | Unsigned integer. When present, Relay MUST use that value as `QuantizeBits`. When absent, `QuantizeBits` MUST be `0`. A negative value MUST return 400. |
+| `quantization_config` | no | The complete `quantization_config` as one JSON value. Relay MUST compute `QuantizationConfigHash` as the SHA-256 of its canonical JSON. When absent or empty, Relay MUST hash the canonical JSON `null`. A value that is not valid JSON MUST return 400. |
 | `min_vram` | exclusive | Positive integer GB. |
 | `gpu_name` | exclusive with `gpu_vram` | Non-empty GPU name. |
 | `gpu_vram` | exclusive with `gpu_name` | Positive integer GB. |
@@ -46,7 +46,7 @@ Relay MUST return 400 when:
 - `min_vram` is `0`.
 - `gpu_vram` is `0`.
 - `gpu_name` is empty after whitespace normalization.
-- `quantize_bits` is negative.
+- `quantization_config` is not valid JSON.
 
 `gpu_name` MUST match stored calibration `GPUName` values, including letter case. Relay MUST apply the same whitespace normalization used for node-reported GPU names. After that normalization, the name MUST be compared exactly.
 

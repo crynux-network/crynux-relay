@@ -1,26 +1,30 @@
 # Model Distribution Mechanism
 
-This document specifies how Relay distributes base models across nodes ahead of task assignment. A periodic model distribution controller tracks, per base model, how many nodes hold the model on disk and how frequently tasks require it, and emits `DownloadModel` events to spread the model to more nodes when demand exceeds coverage. Task matching never emits download events; it only applies the base-model gate specified in [node_selection.md](./node_selection.md) and leaves blocked tasks queued.
+This document specifies how Relay distributes model files across nodes ahead of task assignment. A periodic model distribution controller tracks, per required model file set, how many nodes hold the files on disk and how frequently tasks require them, and emits `DownloadModel` events to spread the files to more nodes when demand exceeds coverage. Task matching never emits download events; it only applies the model file gate specified in [node_selection.md](./node_selection.md) and leaves blocked tasks queued.
 
 ## Inventory Versus Loaded Projection
 
-`node_models` is the authoritative on-disk inventory for currently joined nodes. Model distribution coverage, download completion, the task-matching base-model gate, and create-time HuggingFace validation skip decisions MUST use exact `node_models.model_id` matches, including any `+variant` suffix.
+`node_models` is the authoritative on-disk inventory for currently joined nodes. Each row is one `(node_address, model_file_hash)` pair that references the `model_files` catalog, whose primary key is the exact model file hash and whose canonical JSON includes the revision. Model distribution coverage, download completion, the task-matching model file gate, and create-time HuggingFace validation skip decisions MUST use exact model file hash matches or, for revision-less requirements, source hash matches through the catalog.
+
+`node_in_memory_models` is the authoritative in-memory model of each node and MUST NOT participate in model distribution.
 
 `loaded_models` is a historical successful-execution projection used by `GET /v2/loaded-models`. It MUST NOT drive model distribution, task matching, or create-time Hub skip decisions. See [loaded_models.md](./loaded_models.md).
 
-## Single Base Model
+## Required Model File Set
 
-Every inference task requires exactly one base model. `InferenceTask.ModelIDs` stores entries in the dispatch format `<usage>:<name>`, and exactly one entry carries the `base:` usage; all other entries are auxiliary `lora:` and `controlnet:` models that are downloaded as part of task execution on the assigned node.
+A task requires the model files that Relay derives from its TaskArgs when the task is created. For an LLM task the set contains the model repository. For an image task the set contains the diffusers base model and every component repository. LoRA and quantization configuration are not model files. Each member is a model file entry with source type, repository, optional revision, format, and format kwargs.
 
-Relay MUST treat a task's base model as a single scalar value, extracted as the lowercase `base:` entry of `ModelIDs`. Model distribution, readiness evaluation, and download scheduling MUST operate on this single model ID. Auxiliary model IDs MUST NOT participate in model distribution.
+Relay stores the set on the task as `RequiredModelFileHashes` (exact hashes of members with a revision) and `RequiredModelFileSourceHashes` (source hashes of members without a revision). Relay resolves a TaskArgs revision to its commit SHA at task creation unless the exact file is already held by a node. Validation-group members pin exact revisions inside TaskArgs before create, as specified in [task_validation_and_slashing.md](./task_validation_and_slashing.md).
+
+The required model file set of a task is identified by its distribution key, the SHA-256 of the sorted concatenation of all exact and source member hashes. Model distribution, readiness evaluation, and download scheduling MUST operate on the complete set as one unit. `InferenceTask.ModelIDs` MUST NOT participate in model distribution.
 
 ## Demand Groups and VRAM Requirements
 
-The unit of model distribution is the demand group: one base model combined with one VRAM demand and, for LLM tasks, the Darwin exclusion. A task's VRAM demand is `RequiredGPUVRAM` when the task sets `RequiredGPU`, and `MinVRAM` otherwise. A node satisfies a demand group when its VRAM is at least the group's VRAM demand and, for LLM demand groups, the node is not a Darwin node. Model distribution MUST NOT match GPU names against `RequiredGPU`; exact-GPU matching is a task-matching concern.
+The unit of model distribution is the demand group: one required model file set combined with one VRAM demand and, for LLM tasks, the Darwin exclusion. A task's VRAM demand is `RequiredGPUVRAM` when the task sets `RequiredGPU`, and `MinVRAM` otherwise. A node satisfies a demand group when its VRAM is at least the group's VRAM demand and, for LLM demand groups, the node is not a Darwin node. Model distribution MUST NOT match GPU names against `RequiredGPU`; exact-GPU matching is a task-matching concern.
 
-Tasks requiring the same base model but different VRAM demands form separate demand groups. Demand measurement, target computation, coverage, deficit, and download target selection MUST all be evaluated per demand group. A node MUST count toward the coverage of a demand group, and MUST be eligible as a download target for it, only when the node satisfies the group. Task versions and node-status filters beyond the rules in this document remain task-matching concerns specified in [node_selection.md](./node_selection.md).
+Tasks requiring the same model file set but different VRAM demands form separate demand groups. Demand measurement, target computation, coverage, deficit, and download target selection MUST all be evaluated per demand group. A node MUST count toward the coverage of a demand group, and MUST be eligible as a download target for it, only when the node satisfies the group. Task versions and node-status filters beyond the rules in this document remain task-matching concerns specified in [node_selection.md](./node_selection.md).
 
-Selection records and `DownloadModel` events remain keyed by base model ID only: a download commanded for one demand group produces an on-disk copy that serves every demand group of that model on nodes that satisfy them.
+Selection records remain keyed by the distribution key only: a download commanded for one demand group produces on-disk files that serve every demand group of that set on nodes that satisfy them.
 
 ## Controller Loop
 
@@ -28,8 +32,8 @@ Relay MUST run one model distribution controller. The controller MUST run on a f
 
 A demand group has current demand when at least one of these holds:
 
-- At least one queued task requires the model with the group's VRAM demand.
-- At least one task requiring the model with the group's VRAM demand was created within the demand window of `model_distribution.demand_window_seconds`.
+- At least one queued task requires the model file set with the group's VRAM demand.
+- At least one task requiring the model file set with the group's VRAM demand was created within the demand window of `model_distribution.demand_window_seconds`.
 
 A controller run MUST execute these steps for each demand group with current demand:
 
@@ -58,7 +62,7 @@ A demand group with current demand MUST receive at least `model_distribution.min
 
 ## Coverage and Deficit
 
-A node holds a base model when the node is currently joined in `Available` or `Busy` status and its authoritative on-disk model set contains the model ID. Holding MUST be computed from `node_models`. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT count toward coverage, because they cannot accept new tasks.
+A node holds a model file set when the node is currently joined in `Available` or `Busy` status and its authoritative on-disk model file inventory contains every exact hash and at least one file of every source hash of the set. Holding MUST be computed from `node_models` and the `model_files` catalog. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT count toward coverage, because they cannot accept new tasks.
 
 The deficit of a demand group is:
 
@@ -66,7 +70,7 @@ The deficit of a demand group is:
 deficit = target - (qualified_holding_node_count + qualified_pending_selection_count)
 ```
 
-`qualified_holding_node_count` counts holding nodes that satisfy the group. `qualified_pending_selection_count` counts nodes with a non-expired pending selection for the model that satisfy the group. A holding node or pending selection on a node that does not satisfy the group MUST NOT count toward the group's coverage.
+`qualified_holding_node_count` counts holding nodes that satisfy the group. `qualified_pending_selection_count` counts nodes with a non-expired pending selection for the model file set that satisfy the group. A holding node or pending selection on a node that does not satisfy the group MUST NOT count toward the group's coverage.
 
 When the deficit is zero or negative, the controller MUST NOT select nodes or emit events for the group. Coverage above the target MUST NOT be reduced by the controller; it converges as demand falls because no new selections are created.
 
@@ -74,22 +78,22 @@ When the deficit is zero or negative, the controller MUST NOT select nodes or em
 
 When the deficit is positive, the controller MUST select up to `deficit` new download target nodes for the demand group.
 
-The selection pool consists of currently joined nodes in `Available` or `Busy` status that satisfy the group, pass the node-name policy filter of [node_selection.md](./node_selection.md) and do not hold the model. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT be selected. Model downloads run on the node independently of inference execution, so a node executing a task remains a valid download target. The controller MUST additionally exclude from the pool:
+The selection pool consists of currently joined nodes in `Available` or `Busy` status that satisfy the group, pass the node-name policy filter of [node_selection.md](./node_selection.md) and do not hold the model file set. Nodes in `Paused`, `PendingPause`, `PendingQuit`, or `Quit` status MUST NOT be selected. Model downloads run on the node independently of inference execution, so a node executing a task remains a valid download target. The controller MUST additionally exclude from the pool:
 
-- nodes with a non-expired pending selection for the model
-- nodes with any selection record for the model created during the model's current demand period
+- nodes with a non-expired pending selection for the model file set
+- nodes with any selection record for the model file set created during the set's current demand period
 
-Only when the pool is otherwise empty MAY the controller re-admit nodes whose previous selection for the model expired, ordered so that every eligible node is attempted once before any node is attempted twice. A re-selection is a new attempt and emits a new event.
+Only when the pool is otherwise empty MAY the controller re-admit nodes whose previous selection for the model file set expired, ordered so that every eligible node is attempted once before any node is attempted twice. A re-selection is a new attempt and emits a new event.
 
-Sampling MUST be weighted sampling without replacement using the staking and QoS base weights defined in [node_selection.md](./node_selection.md). The base-model gate and the in-memory locality boost MUST NOT apply. Candidates with zero weight MUST be selected only after all positive-weight candidates are exhausted, in ascending node address order.
+Sampling MUST be weighted sampling without replacement using the staking and QoS base weights defined in [node_selection.md](./node_selection.md). The model file gate and the in-memory locality boost MUST NOT apply. Candidates with zero weight MUST be selected only after all positive-weight candidates are exhausted, in ascending node address order.
 
-For each selected node, the controller MUST emit one `DownloadModel` event carrying the base model ID.
+For each selected node, the controller MUST emit one `DownloadModel` event carrying the complete required model file set.
 
 ## Selection Records
 
 Relay SHALL persist one selection record per selection attempt in `node_model_download_selections`. Each record MUST contain:
 
-- the base model ID
+- the distribution key of the required model file set, together with the exact and source member hash lists
 - the selected node address
 - `min_vram`, the VRAM requirement of the demand group that triggered the selection, used to derive the `vram_tier` label of the model download metrics
 - `sent_at`, the selection time
@@ -97,11 +101,11 @@ Relay SHALL persist one selection record per selection attempt in `node_model_do
 - `status`, one of `pending`, `completed`, `expired`
 - creation and update timestamps
 
-More than one non-expired record per base model and node address MUST NOT exist. The controller MUST insert the selection record and the corresponding `DownloadModel` event in one database transaction. Concurrent controller runs MUST be prevented from creating duplicate non-expired records for the same model and node through this uniqueness constraint.
+More than one non-expired record per distribution key and node address MUST NOT exist. The controller MUST insert the selection record and the corresponding `DownloadModel` event in one database transaction. Concurrent controller runs MUST be prevented from creating duplicate non-expired records for the same model and node through this uniqueness constraint.
 
 ### Status Transitions
 
-- A `pending` selection becomes `completed` when a controller run observes that the node's authoritative on-disk model set contains the model ID. Completion is derived from `node_models`; it does not require any coupling to the reporting transaction.
+- A `pending` selection becomes `completed` when a controller run observes that the node's authoritative on-disk model file inventory covers the required model file set. Completion is derived from `node_models`; it does not require any coupling to the reporting transaction.
 - A `pending` selection becomes `expired` when a controller run observes that `deadline` has passed without completion.
 - `completed` and `expired` are terminal for that record. A later attempt for the same model and node creates a new record.
 
@@ -109,25 +113,25 @@ Before its deadline, a `pending` selection MUST keep occupying capacity regardle
 
 When a node quits or is slashed, Relay MUST delete the node's selection records in the same transaction that deletes its `node_models` rows, so a rejoining node can be selected again.
 
-When joined-node capability synchronization commits a full on-disk inventory, Relay MUST delete that node's selection records for every model ID absent from the reported inventory, in the same transaction. This includes models that still have a `node_models` row being deleted by the synchronization, and models whose `node_models` row is already absent while a stale selection remains. Pending, completed, and expired attempts for those absent models MUST all be deleted so the node can be selected again while the demand period is still open. Selection records for models retained or newly reported by the synchronization MUST remain unchanged.
+When joined-node capability synchronization commits a full on-disk inventory, Relay MUST delete that node's selection records whose required model file set is not covered by the reported inventory, in the same transaction. Pending, completed, and expired attempts for those sets MUST all be deleted so the node can be selected again while the demand period is still open. Selection records whose set is covered by the reported inventory MUST remain unchanged.
 
-When a controller run finds a base model without current demand, it MUST delete the model's selection records. Downloads already commanded on nodes are not cancelled; models that finish downloading later enter the on-disk inventory through the normal reporting paths and count toward coverage if demand returns.
+When a controller run finds a model file set without current demand, it MUST delete the set's selection records. Downloads already commanded on nodes are not cancelled; files that finish downloading later enter the on-disk inventory through the normal reporting paths and count toward coverage if demand returns.
 
 ### Demand Period
 
-A demand period of a base model starts at the first controller run that finds the model with current demand while holding no selection records, and ends at the first controller run that finds the model without current demand. The exclusion of already-attempted nodes applies within one demand period. A new demand period starts with no attempted-node history.
+A demand period of a model file set starts at the first controller run that finds the set with current demand while holding no selection records, and ends at the first controller run that finds the set without current demand. The exclusion of already-attempted nodes applies within one demand period. A new demand period starts with no attempted-node history.
 
 ## Completion and On-Disk Authority
 
-The signed AddModelID node API is the authoritative incremental report that a model is present on disk. Relay MUST normalize the reported model ID and create the `node_models` row when it does not already exist. Model IDs reported at node join MUST create `node_models` rows through the same normalization.
+The signed AddModelID node API is the authoritative incremental report that one model file is present on disk. The reported model file entry MUST have source type `huggingface`, a non-empty repository, and a concrete revision. Relay MUST upsert the entry into the `model_files` catalog and create the `node_models` row when it does not already exist. Model files reported at node join MUST create `node_models` rows through the same validation, and node join MUST clear the node's in-memory model record.
 
-The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST normalize and deduplicate the reported IDs, permanently delete `node_models` rows absent from the report, delete the node's selection records for every model ID absent from the reported inventory in the same transaction, preserve `in_use` on retained rows, and create newly reported rows with `in_use = false`. The synchronization MUST refresh the node scheduling index after the inventory transaction commits.
+The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST validate and deduplicate the reported entries, upsert them into the catalog, permanently delete `node_models` rows absent from the report, create rows for newly reported entries, and delete the node's selection records whose required model file set is no longer covered, all in one transaction. The synchronization MUST refresh the node scheduling index after the inventory transaction commits.
 
 An AddModelID report MUST remain authoritative even when no matching selection exists. Relay MUST retain the reported `node_models` row and MUST NOT require a selection before accepting the report.
 
-`node_models` rows MUST NOT use soft delete. When a node quits, Relay MUST permanently remove its rows. All rows MUST be created through `NewNodeModel`, which normalizes `model_id` to lowercase and derives the lowercase `hf_model_id` when the ID is a supported Hugging Face base model.
+`node_models` rows MUST NOT use soft delete. When a node quits, Relay MUST permanently remove its rows, its in-memory model record, and its selection records. All rows MUST be created through `NewNodeModel`.
 
-A queued task MUST start as soon as task matching finds a qualified node that holds the task's base model on disk, independent of any selection state. Outstanding downloads on other nodes continue and serve later tasks.
+A queued task MUST start as soon as task matching finds a qualified node that holds the task's required model files on disk, independent of any selection state. Outstanding downloads on other nodes continue and serve later tasks.
 
 ## Failure Behavior
 
@@ -135,17 +139,13 @@ A queued task MUST start as soon as task matching finds a qualified node that ho
 - Silent node-side failure: the node reports nothing on download failure. Handling is identical to event loss.
 - Expiry racing with completion: a node that reports after its selection expired still enters the on-disk inventory and counts toward coverage. The expired record stays expired.
 - Relay restart: selection records, deadlines, and demand history are persisted; the controller resumes from persisted state. `DownloadModel` events emitted while a node was offline are not redelivered; the affected selections expire and are replaced through the normal deficit path.
-- Node capability mismatch: a node may hold a base model without qualifying for every task that requires it, because the node downloaded the model for a different demand group, reported it at join, or reported it without a selection. Such a copy MUST NOT count toward the coverage of demand groups the node does not satisfy; the controller keeps selecting qualified nodes for those groups. Exact-GPU matching, task version, and node-status filtering remain task-matching concerns; model distribution does not compensate for them.
+- Node capability mismatch: a node may hold a model file set without qualifying for every task that requires it, because the node downloaded the files for a different demand group, reported them at join, or reported them without a selection. Such a copy MUST NOT count toward the coverage of demand groups the node does not satisfy; the controller keeps selecting qualified nodes for those groups. Exact-GPU matching, task version, and node-status filtering remain task-matching concerns; model distribution does not compensate for them.
 
 ## Task Start Model State
 
-Task start MUST NOT create `NodeModel` rows and MUST NOT emit `DownloadModel` events. The base-model gate guarantees that the assigned node has already reported the task's base model.
+Task start MUST NOT create `NodeModel` rows, MUST NOT modify the node in-memory model record, and MUST NOT emit `DownloadModel` events. The model file gate guarantees that the assigned node has already reported every required model file. Task start MUST only store the resolved `ExecutionModelFileHashes` on the task as specified in [task_matching.md](./task_matching.md).
 
-When a task starts, Relay MUST update only existing, node-reported base-model rows:
-
-- The existing row for the task's base model MUST be marked `in_use = true`.
-- Existing base-model rows currently in use but not required by the task MUST be marked `in_use = false`.
-- Missing rows, auxiliary task model IDs, and non-base rows MUST NOT create or modify rows.
+The in-memory model of a node changes only through the signed node in-memory model report, `POST /v2/nodes/:address/in_memory_model`. The report carries the hex `model_cache_hash`, the `model_cache_config` the hash is computed from, the exact `model_files` with revisions, and the `execution_dtype`, or a null model when the node memory is empty. Relay MUST reject a report whose hash is not the SHA-256 of the canonical JSON of the reported config, and MUST refresh the node scheduling index after the report commits.
 
 ## Event Contract
 
@@ -153,13 +153,13 @@ Each emitted request MUST use event type `DownloadModel` with this payload:
 
 ```go
 type DownloadModelEvent struct {
-    NodeAddress string   `json:"node_address"`
-    ModelID     string   `json:"model_id"`
-    TaskType    TaskType `json:"task_type"`
+    NodeAddress string           `json:"node_address"`
+    ModelFiles  []ModelFileEntry `json:"model_files"`
+    TaskType    TaskType         `json:"task_type"`
 }
 ```
 
-`TaskType` MUST be the task type of the most recently created demanding task of the model. The event MUST be stored in the `events` table and addressed to the selected node. Node polling and delivery are specified in [relay_event_stream.md](./relay_event_stream.md).
+`ModelFiles` MUST contain every member of the required model file set. A member with a revision is an exact file; a member with an empty revision is a source of which the node downloads one revision. `TaskType` MUST be the task type of the most recently created demanding task of the set. The event MUST be stored in the `events` table and addressed to the selected node. Node polling and delivery are specified in [relay_event_stream.md](./relay_event_stream.md).
 
 ## Configuration
 
@@ -180,9 +180,12 @@ Relay MUST define these settings in every runtime configuration template with th
 |------|----------------|
 | `service/model_distribution.go` | Model distribution controller loop, demand-group measurement, VRAM qualification, target computation, download-target sampling, and event emission |
 | `models/node_model_download_selection.go` | Persistent selection records, uniqueness, and status transitions |
-| `api/v1/nodes/add_model_id.go` | Authoritative incremental on-disk report |
+| `api/v1/nodes/add_model_id.go` | Authoritative incremental on-disk model file report |
+| `api/v2/nodes/in_memory_model.go` | Authoritative in-memory model report |
+| `service/node_model_state.go` | Model file coverage, node inventory replacement, and in-memory model updates |
 | `api/v2/nodes/capabilities.go` | Authenticated full on-disk inventory report for joined nodes |
 | `service/node_capabilities.go` | Joined-node capability and full model-inventory synchronization |
-| `service/node.go` | Join-time model reporting, quit-time cleanup, and task-start updates to existing base-model in-use state |
-| `models/model_id.go` | Model ID normalization and base-model extraction |
+| `service/node.go` | Join-time model file reporting, join-time in-memory model reset, and quit-time cleanup |
+| `models/model_file.go` | Model file entries, hashes, and the `model_files` catalog |
+| `models/model_file_task.go` | Derivation of task required model files and the requested model cache hash |
 | `models/event.go` | `DownloadModelEvent` payload |

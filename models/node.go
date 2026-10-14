@@ -138,38 +138,20 @@ func GetDelegatedNodes(ctx context.Context, db *gorm.DB) ([]*Node, error) {
 }
 
 type NodeModel struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	NodeAddress string    `json:"node_address" gorm:"index;index:idx_node_models_hf_model_id_node_address,priority:2"`
-	ModelID     string    `json:"model_id" gorm:"index"`
-	HFModelID   string    `json:"hf_model_id" gorm:"column:hf_model_id;not null;default:'';size:191;index:idx_node_models_hf_model_id_node_address,priority:1"`
-	InUse       bool      `json:"in_use"`
-	Node        Node      `gorm:"foreignKey:Address;references:NodeAddress"`
+	ID            uint      `json:"id" gorm:"primaryKey"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	NodeAddress   string    `json:"node_address" gorm:"size:191;not null;uniqueIndex:idx_node_models_node_address_model_file_hash,priority:1"`
+	ModelFileHash []byte    `json:"model_file_hash" gorm:"type:binary(32);not null;index;uniqueIndex:idx_node_models_node_address_model_file_hash,priority:2"`
+	Node          Node      `gorm:"foreignKey:Address;references:NodeAddress"`
 }
 
-// NewNodeModel builds a NodeModel from a dispatch model ID with normalized
-// ModelID and HFModelID values.
-func NewNodeModel(nodeAddress, modelID string, inUse bool) NodeModel {
-	nodeModel := NodeModel{
-		NodeAddress: nodeAddress,
-		InUse:       inUse,
+// NewNodeModel builds a NodeModel for one model file on a node's disk.
+func NewNodeModel(nodeAddress string, modelFileHash Hash32) NodeModel {
+	return NodeModel{
+		NodeAddress:   nodeAddress,
+		ModelFileHash: modelFileHash.Bytes(),
 	}
-	nodeModel.setModelID(modelID)
-	return nodeModel
-}
-
-func (nodeModel *NodeModel) setModelID(modelID string) {
-	nodeModel.ModelID = NormalizeModelID(modelID)
-	nodeModel.HFModelID, _ = BaseModelHuggingFaceID(nodeModel.ModelID)
-}
-
-// BeforeSave normalizes ModelID to lowercase and rederives HFModelID on every
-// create and save, so node_models rows stay lowercase no matter how the
-// struct was constructed.
-func (nodeModel *NodeModel) BeforeSave(tx *gorm.DB) error {
-	nodeModel.setModelID(nodeModel.ModelID)
-	return nil
 }
 
 func (nodeModel *NodeModel) Save(ctx context.Context, db *gorm.DB) error {
@@ -200,84 +182,55 @@ func GetNodeModelsByNodeAddress(ctx context.Context, db *gorm.DB, nodeAddress st
 	return nodeModels, nil
 }
 
-func GetNodeModel(ctx context.Context, db *gorm.DB, nodeAddress, modelID string) (*NodeModel, error) {
+func GetNodeModel(ctx context.Context, db *gorm.DB, nodeAddress string, modelFileHash Hash32) (*NodeModel, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	nodeModel := &NodeModel{NodeAddress: nodeAddress, ModelID: modelID}
-	if err := db.WithContext(dbCtx).Model(nodeModel).Where(nodeModel).First(nodeModel).Error; err != nil {
+	var nodeModel NodeModel
+	if err := db.WithContext(dbCtx).
+		Where("node_address = ?", nodeAddress).
+		Where("model_file_hash = ?", modelFileHash.Bytes()).
+		First(&nodeModel).Error; err != nil {
 		return nil, err
 	}
-	return nodeModel, nil
+	return &nodeModel, nil
 }
 
-type HFModelNodeCount struct {
-	OnDisk   int64
-	InMemory int64
-}
-
-// CountNodesByHFModelID returns, per huggingface base model, the number of
-// distinct nodes that have the model on disk and the number of distinct nodes
-// that currently have it loaded in GPU memory. Node addresses are counted
-// distinctly because one node may hold several variants of the same model.
-func CountNodesByHFModelID(ctx context.Context, db *gorm.DB) (map[string]HFModelNodeCount, error) {
+// CountNodesByModelFileHash returns, per model file hash, the number of nodes
+// that have the file on disk.
+func CountNodesByModelFileHash(ctx context.Context, db *gorm.DB) (map[Hash32]int64, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	type row struct {
-		HFModelID string
-		OnDisk    int64
-		InMemory  int64
+		ModelFileHash []byte
+		NodeCount     int64
 	}
 	var rows []row
 	if err := db.WithContext(dbCtx).Model(&NodeModel{}).
-		Select("hf_model_id, COUNT(DISTINCT node_address) AS on_disk, COUNT(DISTINCT CASE WHEN in_use THEN node_address END) AS in_memory").
-		Where("hf_model_id <> ''").
-		Group("hf_model_id").
+		Select("model_file_hash, COUNT(DISTINCT node_address) AS node_count").
+		Group("model_file_hash").
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 
-	counts := make(map[string]HFModelNodeCount, len(rows))
+	counts := make(map[Hash32]int64, len(rows))
 	for _, r := range rows {
-		counts[r.HFModelID] = HFModelNodeCount{OnDisk: r.OnDisk, InMemory: r.InMemory}
+		hash, err := Hash32FromBytes(r.ModelFileHash)
+		if err != nil {
+			return nil, err
+		}
+		counts[hash] = r.NodeCount
 	}
 	return counts, nil
 }
 
-// CountNodesByBaseDispatchID returns, per exact base dispatch model ID
-// (including +variant when present), on-disk and in-memory node counts.
-func CountNodesByBaseDispatchID(ctx context.Context, db *gorm.DB) (map[string]HFModelNodeCount, error) {
-	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	type row struct {
-		ModelID  string
-		OnDisk   int64
-		InMemory int64
-	}
-	var rows []row
-	if err := db.WithContext(dbCtx).Model(&NodeModel{}).
-		Select("model_id, COUNT(DISTINCT node_address) AS on_disk, COUNT(DISTINCT CASE WHEN in_use THEN node_address END) AS in_memory").
-		Where("hf_model_id <> ''").
-		Group("model_id").
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
-
-	counts := make(map[string]HFModelNodeCount, len(rows))
-	for _, r := range rows {
-		counts[r.ModelID] = HFModelNodeCount{OnDisk: r.OnDisk, InMemory: r.InMemory}
-	}
-	return counts, nil
-}
-
-// NodeModelExists reports whether any node_models row has the exact dispatch model ID.
-func NodeModelExists(ctx context.Context, db *gorm.DB, modelID string) (bool, error) {
+// NodeModelExists reports whether any node has the model file on disk.
+func NodeModelExists(ctx context.Context, db *gorm.DB, modelFileHash Hash32) (bool, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var nodeModel NodeModel
-	err := db.WithContext(dbCtx).Where("model_id = ?", NormalizeModelID(modelID)).Take(&nodeModel).Error
+	err := db.WithContext(dbCtx).Where("model_file_hash = ?", modelFileHash.Bytes()).Take(&nodeModel).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, nil
 	}
@@ -286,7 +239,6 @@ func NodeModelExists(ctx context.Context, db *gorm.DB, modelID string) (bool, er
 	}
 	return true, nil
 }
-
 func GetBusyNodeCount(ctx context.Context, db *gorm.DB) (int64, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

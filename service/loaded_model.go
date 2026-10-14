@@ -14,45 +14,122 @@ const loadedModelFlushInterval = time.Hour
 const loadedModelNodeCountTTL = time.Minute
 
 var loadedModelCache = newLoadedModelMinVRAMCache()
-var loadedModelNodeCountCache = &baseDispatchNodeCountCache{}
+var loadedModelViewCache = &loadedModelViewCacheStore{}
 
+// loadedModelKey is the identity of a loaded model row.
 type loadedModelKey struct {
-	ModelID string
-	Variant string
+	RequiredModelFilesHash models.Hash32
+	ModelCacheHash         models.Hash32
+	ExecutionDType         string
 }
 
-type baseDispatchNodeCountCache struct {
+// LoadedModelView is a loaded model together with the number of nodes that
+// hold its model files on disk and in memory.
+type LoadedModelView struct {
+	Model             models.LoadedModel
+	OnDiskNodeCount   int64
+	InMemoryNodeCount int64
+}
+
+type loadedModelViewCacheStore struct {
 	mu        sync.Mutex
-	counts    map[string]models.HFModelNodeCount
+	views     []LoadedModelView
+	loaded    bool
 	expiresAt time.Time
 }
 
-// GetLoadedModelNodeCounts returns per base-dispatch-ID node counts aggregated
-// from the node_models table, cached in memory so that public API traffic does
-// not translate into database load.
-func GetLoadedModelNodeCounts(ctx context.Context, db *gorm.DB) (map[string]models.HFModelNodeCount, error) {
-	return loadedModelNodeCountCache.get(ctx, db, time.Now())
+// GetLoadedModelViews returns the loaded models with node counts, cached in
+// memory so that public API traffic does not translate into database load.
+func GetLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView, error) {
+	return loadedModelViewCache.get(ctx, db, time.Now())
 }
 
-func (cache *baseDispatchNodeCountCache) get(ctx context.Context, db *gorm.DB, now time.Time) (map[string]models.HFModelNodeCount, error) {
+func (cache *loadedModelViewCacheStore) get(ctx context.Context, db *gorm.DB, now time.Time) ([]LoadedModelView, error) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if cache.counts != nil && now.Before(cache.expiresAt) {
-		return cache.counts, nil
+	if cache.loaded && now.Before(cache.expiresAt) {
+		return cache.views, nil
 	}
-	counts, err := models.CountNodesByBaseDispatchID(ctx, db)
+	views, err := buildLoadedModelViews(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	cache.counts = counts
+	cache.views = views
+	cache.loaded = true
 	cache.expiresAt = now.Add(loadedModelNodeCountTTL)
-	return counts, nil
+	return views, nil
+}
+
+func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView, error) {
+	loadedModels, err := models.ListLoadedModels(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	state, err := loadNodeModelState(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	onDisk := make(map[string]map[models.Hash32]struct{}, len(state.files))
+	for address, rows := range state.files {
+		hashes := make(map[models.Hash32]struct{}, len(rows))
+		for _, row := range rows {
+			hash, err := models.Hash32FromBytes(row.ModelFileHash)
+			if err != nil {
+				return nil, err
+			}
+			hashes[hash] = struct{}{}
+		}
+		onDisk[address] = hashes
+	}
+
+	views := make([]LoadedModelView, 0, len(loadedModels))
+	for _, loadedModel := range loadedModels {
+		members, err := loadedModel.MemberHashes()
+		if err != nil {
+			return nil, err
+		}
+		cacheHash, err := models.Hash32FromBytes(loadedModel.ModelCacheHash)
+		if err != nil {
+			return nil, err
+		}
+		view := LoadedModelView{Model: loadedModel}
+		for _, hashes := range onDisk {
+			if modelFilesCovered(hashes, nil, members, nil) {
+				view.OnDiskNodeCount++
+			}
+		}
+		for _, memory := range state.inMemory {
+			if memory.ExecutionDType != loadedModel.ExecutionDType {
+				continue
+			}
+			memoryCacheHash, err := models.Hash32FromBytes(memory.CurrentModelCacheHash)
+			if err != nil {
+				return nil, err
+			}
+			if memoryCacheHash != cacheHash {
+				continue
+			}
+			memoryFiles, err := memory.FileHashes()
+			if err != nil {
+				return nil, err
+			}
+			if modelFilesCovered(hashSet(memoryFiles), nil, members, nil) {
+				view.InMemoryNodeCount++
+			}
+		}
+		views = append(views, view)
+	}
+	return views, nil
 }
 
 type pendingLoadedModel struct {
-	ModelType models.LoadedModelType
-	MinVRAM   uint64
+	ModelID                 string
+	Variant                 string
+	ModelType               models.LoadedModelType
+	RequiredModelFileHashes []models.Hash32
+	QuantizationConfig      []byte
+	MinVRAM                 uint64
 }
 
 type loadedModelMinVRAMCache struct {
@@ -66,27 +143,40 @@ func newLoadedModelMinVRAMCache() *loadedModelMinVRAMCache {
 	}
 }
 
+// updateLoadedModels records the successful execution of a task as a loaded model.
 func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
-	modelType := models.LoadedModelTypeFromTaskType(task.TaskType)
-	seen := make(map[loadedModelKey]struct{}, len(task.ModelIDs))
-	for _, modelID := range task.ModelIDs {
-		hfModelID, ok := models.BaseModelHuggingFaceID(modelID)
-		if !ok {
-			continue
-		}
-		variant, ok := models.BaseModelVariant(modelID)
-		if !ok {
-			continue
-		}
-		key := loadedModelKey{ModelID: hfModelID, Variant: variant}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		loadedModelCache.record(key, modelType, node.GPUVram)
+	executionHashes, err := task.ExecutionModelFileHashList()
+	if err != nil {
+		log.Errorf("UpdateLoadedModels: decode execution model files of task %s error: %v", task.TaskIDCommitment, err)
+		return
 	}
+	if len(executionHashes) == 0 {
+		return
+	}
+	cacheHash, err := task.RequestedModelCacheHash32()
+	if err != nil {
+		log.Errorf("UpdateLoadedModels: decode model cache hash of task %s error: %v", task.TaskIDCommitment, err)
+		return
+	}
+	quantizationConfig, err := models.TaskQuantizationConfigJSON(task.TaskArgs)
+	if err != nil {
+		log.Errorf("UpdateLoadedModels: decode quantization config of task %s error: %v", task.TaskIDCommitment, err)
+		return
+	}
+	key := loadedModelKey{
+		RequiredModelFilesHash: models.RequiredModelFilesHash(executionHashes),
+		ModelCacheHash:         cacheHash,
+		ExecutionDType:         task.ExecutionDType,
+	}
+	loadedModelCache.record(key, pendingLoadedModel{
+		ModelID:                 task.ModelName,
+		Variant:                 task.ModelVariant,
+		ModelType:               models.LoadedModelTypeFromTaskType(task.TaskType),
+		RequiredModelFileHashes: executionHashes,
+		QuantizationConfig:      quantizationConfig,
+		MinVRAM:                 node.GPUVram,
+	})
 }
-
 func StartLoadedModelFlush(ctx context.Context, db *gorm.DB) {
 	ticker := time.NewTicker(loadedModelFlushInterval)
 	defer ticker.Stop()
@@ -111,10 +201,15 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	loadedModels := make([]models.LoadedModel, 0, len(pending))
 	for key, pendingModel := range pending {
 		loadedModels = append(loadedModels, models.LoadedModel{
-			ModelID:   key.ModelID,
-			Variant:   key.Variant,
-			ModelType: pendingModel.ModelType,
-			MinVRAM:   pendingModel.MinVRAM,
+			RequiredModelFilesHash:  key.RequiredModelFilesHash.Bytes(),
+			ModelCacheHash:          key.ModelCacheHash.Bytes(),
+			ExecutionDType:          key.ExecutionDType,
+			RequiredModelFileHashes: models.EncodeHashList(pendingModel.RequiredModelFileHashes),
+			QuantizationConfig:      pendingModel.QuantizationConfig,
+			ModelID:                 pendingModel.ModelID,
+			Variant:                 pendingModel.Variant,
+			ModelType:               pendingModel.ModelType,
+			MinVRAM:                 pendingModel.MinVRAM,
 		})
 	}
 	if err := models.UpsertLoadedModelMinVRAMs(ctx, db, loadedModels); err != nil {
@@ -123,15 +218,14 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 	}
 }
 
-func (cache *loadedModelMinVRAMCache) record(key loadedModelKey, modelType models.LoadedModelType, minVRAM uint64) {
+func (cache *loadedModelMinVRAMCache) record(key loadedModelKey, model pendingLoadedModel) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if current, ok := cache.pending[key]; !ok || minVRAM < current.MinVRAM {
-		cache.pending[key] = pendingLoadedModel{ModelType: modelType, MinVRAM: minVRAM}
+	if current, ok := cache.pending[key]; !ok || model.MinVRAM < current.MinVRAM {
+		cache.pending[key] = model
 	}
 }
-
 func (cache *loadedModelMinVRAMCache) take() map[loadedModelKey]pendingLoadedModel {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()

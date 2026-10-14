@@ -53,7 +53,7 @@ Timeout = ceil(clamp(
 ))
 ```
 
-After selecting the node and before calculating Timeout, Relay MUST compare the node's current in-use base models with the task's required base models exactly once. Relay MUST pass that result into Timeout calculation and persist the same value in `model_swtiched`. The switch term MUST affect dispatch Timeout only and MUST NOT change queue priority.
+After selecting the node and before calculating Timeout, Relay MUST compare the node's in-memory model with the task's requested model exactly once: the in-memory model matches only when its cache hash equals the task's `RequestedModelCacheHash` and its model files cover the task's required model files. Relay MUST pass that result into Timeout calculation and persist the same value in `model_swtiched`. The switch term MUST affect dispatch Timeout only and MUST NOT change queue priority.
 
 If any selected record has not completed cold start, Relay MUST exclude its incomplete fitted parameters and use the maximum of the configured initial prediction and every selected ready record's complete prediction before applying `timeout_multiplier`, ceiling, and min/max clamp.
 

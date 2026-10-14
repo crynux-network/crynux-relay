@@ -39,25 +39,3 @@ func filterNodesByNodeNamePolicy(ctx context.Context, nodes []models.Node) ([]mo
 	}
 	return filtered, nil
 }
-
-func matchModels(nodeModelIDs, taskModelIDs []string) int {
-	nodeModelIDSet := make(map[string]struct{})
-	for _, nodeModelID := range nodeModelIDs {
-		nodeModelIDSet[nodeModelID] = struct{}{}
-	}
-
-	cnt := 0
-	for _, taskModelID := range taskModelIDs {
-		if _, ok := nodeModelIDSet[taskModelID]; ok {
-			cnt += 1
-		}
-	}
-	return cnt
-}
-
-func isSameModels(nodeModelIDs, taskModelIDs []string) bool {
-	if len(nodeModelIDs) != len(taskModelIDs) {
-		return false
-	}
-	return matchModels(nodeModelIDs, taskModelIDs) == len(nodeModelIDs)
-}

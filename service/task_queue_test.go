@@ -17,7 +17,7 @@ func TestTaskQueue(t *testing.T) {
 		Model: gorm.Model{
 			ID: 1,
 		},
-		TaskArgs:         `{"base_model":{"name":"crynux-ai/sdxl-turbo", "variant": "fp16"},"prompt":"Self-portrait oil painting,a beautiful cyborg with golden hair,8k","negative_prompt":"","scheduler":{"method":"EulerAncestralDiscreteScheduler","args":{"timestep_spacing":"trailing"}},"task_config":{"num_images":1,"seed":42,"steps":1,"cfg":0}}`,
+		TaskArgs:         `{"base_model":{"name":"crynux-ai/sdxl-turbo", "variant": "fp16"},"prompt":"Self-portrait oil painting,a beautiful cyborg with golden hair,8k","negative_prompt":"","scheduler":{"method":"EulerAncestralDiscreteScheduler","args":{"timestep_spacing":"trailing"}},"task_config":{"num_images_per_prompt":1,"seed":42,"steps":1,"cfg":0}}`,
 		TaskIDCommitment: "0x342ca5ec79994b43f62598cbf5affad9cc0906a7ef21169cae25b61c370b43bf",
 		Creator:          "0x72E420eCAF65263Dd3246601Adf15DdDDfB91774",
 		SamplingSeed:     "0x7712a81425e865bddce9da146e0f697688b24edf162c4c6a70f80628583ddf8a",
@@ -34,7 +34,7 @@ func TestTaskQueue(t *testing.T) {
 		Model: gorm.Model{
 			ID: 2,
 		},
-		TaskArgs:         `{"base_model":{"name":"crynux-ai/stable-diffusion-v1-5", "variant": "fp16"},"prompt":"best quality, ultra high res, photorealistic++++, 1girl, off-shoulder sweater, smiling, faded ash gray messy bun hair+, border light, depth of field, looking at viewer, closeup","task_config":{"num_images":1,"seed":42,"steps":25,"cfg":0,"safety_checker":false}}`,
+		TaskArgs:         `{"base_model":{"name":"crynux-ai/stable-diffusion-v1-5", "variant": "fp16"},"prompt":"best quality, ultra high res, photorealistic++++, 1girl, off-shoulder sweater, smiling, faded ash gray messy bun hair+, border light, depth of field, looking at viewer, closeup","task_config":{"num_images_per_prompt":1,"seed":42,"steps":25,"cfg":0,"safety_checker":false}}`,
 		TaskIDCommitment: "0xf3bab6937aad9470cc0a6ec0134c11f5858f483d9c4bda9390f8bf5b0c1e5e63",
 		Creator:          "0x72E420eCAF65263Dd3246601Adf15DdDDfB91774",
 		SamplingSeed:     "0x92d56cd5aa169b0b4babdeebb112ef1abd73303325ebc3d5b29450f1aa521a30",

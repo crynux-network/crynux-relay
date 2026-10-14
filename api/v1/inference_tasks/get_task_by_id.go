@@ -6,6 +6,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
+	"encoding/json"
 	"errors"
 
 	"github.com/gin-gonic/gin"
@@ -61,6 +62,23 @@ func GetTaskById(c *gin.Context, in *GetTaskInputWithSignature) (*TaskResponse, 
 		}
 	}
 
+	executionModelFiles, err := service.TaskExecutionModelFileEntries(c.Request.Context(), config.GetDB(), task)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
+
+	cacheHash, err := requestedModelCacheHashHex(task)
+	if err != nil {
+		return nil, response.NewExceptionResponse(err)
+	}
+	var cacheConfig json.RawMessage
+	if cacheHash != "" {
+		cacheConfig, err = task.RequestedModelCacheConfig()
+		if err != nil {
+			return nil, response.NewExceptionResponse(err)
+		}
+	}
+
 	qosScore := uint64(0)
 	if task.QOSScore.Valid {
 		qosScore = uint64(task.QOSScore.Int64)
@@ -83,11 +101,16 @@ func GetTaskById(c *gin.Context, in *GetTaskInputWithSignature) (*TaskResponse, 
 		TaskFee:          task.TaskFee,
 		TaskSize:         task.TaskSize,
 		ModelIDs:         task.ModelIDs,
+		RequestedModelCacheHash:   cacheHash,
+		RequestedModelCacheConfig: cacheConfig,
 		AbortReason:      task.AbortReason,
 		TaskError:        task.TaskError,
 		Score:            task.Score,
 		QOSScore:         qosScore,
 		SelectedNode:     task.SelectedNode,
+	}
+	if len(executionModelFiles) > 0 {
+		t.ExecutionModelFiles = executionModelFiles
 	}
 	if task.CreateTime.Valid {
 		t.CreateTime = &task.CreateTime.Time

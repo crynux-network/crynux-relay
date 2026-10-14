@@ -25,6 +25,7 @@ func newQueuedPrioritySnapshotTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	sqlDB, err := db.DB()
 	if err != nil {
 		t.Fatalf("failed to get sql db: %v", err)

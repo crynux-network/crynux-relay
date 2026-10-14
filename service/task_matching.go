@@ -16,6 +16,10 @@ import (
 	"gonum.org/v1/gonum/stat/sampleuv"
 )
 
+// modelLocalityWeight multiplies the sampling weight of a node whose in-memory
+// model already satisfies the task.
+const modelLocalityWeight = 1.3
+
 // matchingCandidateSet is the computed candidate set for one requirement
 // signature: base-ready entries with their sampling weights.
 type matchingCandidateSet struct {
@@ -37,9 +41,9 @@ type matchedPair struct {
 // requirementSignature identifies the tuple that determines a task's
 // candidate set, so tasks sharing it reuse one computed set within a round.
 func requirementSignature(task *models.InferenceTask) string {
-	return fmt.Sprintf("%d|%d|%s|%d|%s|%s",
+	return fmt.Sprintf("%d|%d|%s|%d|%s|%x|%x|%x",
 		task.TaskType, task.MinVRAM, task.RequiredGPU, task.RequiredGPUVRAM, task.TaskVersion,
-		strings.Join(task.ModelIDs, ";"))
+		task.RequiredModelFileHashes, task.RequiredModelFileSourceHashes, task.RequestedModelCacheHash)
 }
 
 func entryMatchesTaskVersion(entry *NodeIndexEntry, taskVersionNumbers [3]uint64) bool {
@@ -132,18 +136,8 @@ func filterIndexEntriesByNodeNamePolicy(ctx context.Context, entries []*NodeInde
 	return filtered, nil
 }
 
-func matchEntryModels(modelIDSet map[string]struct{}, taskModelIDs []string) int {
-	cnt := 0
-	for _, taskModelID := range taskModelIDs {
-		if _, ok := modelIDSet[taskModelID]; ok {
-			cnt += 1
-		}
-	}
-	return cnt
-}
-
 // buildMatchingCandidateSet computes the candidate set for one requirement
-// signature: hard filters, node name policy, the base-model availability gate,
+// signature: hard filters, node name policy, the model file availability gate,
 // sampling weights and the in-memory model locality boost.
 func buildMatchingCandidateSet(ctx context.Context, task *models.InferenceTask, entries []*NodeIndexEntry) (*matchingCandidateSet, error) {
 	now := time.Now().UTC()
@@ -161,18 +155,20 @@ func buildMatchingCandidateSet(ctx context.Context, task *models.InferenceTask, 
 		probs[i] = prob
 	}
 
-	baseModelIDs := models.BaseModelIDs(task.ModelIDs)
+	requirements, err := newTaskModelRequirements(task)
+	if err != nil {
+		return nil, err
+	}
 	readyEntries := make([]*NodeIndexEntry, 0, len(filtered))
 	readyScores := make([]float64, 0, len(filtered))
 	readyProbs := make([]NodeSelectingProb, 0, len(filtered))
 	for i, entry := range filtered {
-		if matchEntryModels(entry.OnDiskModelIDs, baseModelIDs) != len(baseModelIDs) {
+		if !entry.holdsRequiredModelFiles(requirements) {
 			continue
 		}
 		score := scores[i]
-		if len(baseModelIDs) > 0 {
-			inUseCnt := matchEntryModels(entry.InUseModelIDs, baseModelIDs)
-			score *= 1 + 0.3*float64(inUseCnt)/float64(len(baseModelIDs))
+		if entry.holdsRequiredModelInMemory(requirements) {
+			score *= modelLocalityWeight
 		}
 		readyEntries = append(readyEntries, entry)
 		readyScores = append(readyScores, score)
@@ -385,7 +381,7 @@ func startMatchedPairs(ctx context.Context, pairs []*matchedPair) {
 func startMatchedPair(ctx context.Context, pair *matchedPair) {
 	task := pair.task
 	err := ExecuteNodeStateUpdate(ctx, config.GetDB(), []string{pair.nodeAddress}, func() error {
-		node, err := models.GetNodeWithModelsByAddress(ctx, config.GetDB(), pair.nodeAddress)
+		node, err := models.GetNodeByAddress(ctx, config.GetDB(), pair.nodeAddress)
 		if err != nil {
 			return err
 		}

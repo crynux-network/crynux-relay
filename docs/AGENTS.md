@@ -6,22 +6,22 @@
 | [task_execution_parameters.md](./task_execution_parameters.md) | SD and LLM workload fields, exact GPU execution parameter calibration, cold start, persistence, and base-unit metrics |
 | [task_execution_time.md](./task_execution_time.md) | Public SD and LLM execution-time coefficient APIs, min_vram and exact-GPU selection, and token-unit conversion |
 | [task-pricing.md](./task-pricing.md) | Queue execution-time estimate, VRAM weighting, immutable task priority, parameter aggregation, dispatch ordering, and the public queued-task priority snapshot API |
-| [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, base-model readiness handling, in-round reservation, and dispatch consistency |
-| [node_selection.md](./node_selection.md) | Qualification filters, base-model gate, staking and QoS weight, in-memory locality, and weighted sampling |
-| [task_batch_api.md](./task_batch_api.md) | Creator-facing batch creation, status, validation, cancellation, and whole-task result-download contracts |
+| [task_matching.md](./task_matching.md) | Node scheduling index, batch matching rounds, model file readiness handling, execution model file resolution, in-round reservation, and dispatch consistency |
+| [node_selection.md](./node_selection.md) | Qualification filters, model file gate, staking and QoS weight, in-memory locality, and weighted sampling |
+| [task_batch_api.md](./task_batch_api.md) | Creator-facing batch creation, required model file handling, status, validation, cancellation, and whole-task result-download contracts |
 | [qos.md](./qos.md) | Long-term performance score (`Q_long`) and short-term reliability factor (`H`) that compose the runtime QoS |
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | [task_timeout.md](./task_timeout.md) | Queue, execution, creator-validation, and result-upload deadlines with abort, fee, Node Busy, health, and API behavior |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
 | [deterministic_execution.md](./deterministic_execution.md) | Operational determinism, rare LLM result divergence, token-decision boundaries, and execution-mode validation requirements |
-| [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, base-ready candidate snapshots, validation, upload, and missing-data reporting |
+| [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, model-ready candidate snapshots, validation, upload, and missing-data reporting |
 | [task_error_reporting.md](./task_error_reporting.md) | Node task diagnostic signature authorization, protocol isolation, idempotent storage, and Admin exact-query contract |
 | [task_history_retention.md](./task_history_retention.md) | Configurable retention cleanup for terminal inference tasks, node task errors, task artifacts, and the `events` stream |
 | [passive_slash_model.md](./passive_slash_model.md) | Passive slash review mode, slash evidence capture, pending slash states, and admin approval flow |
-| [relay_event_stream.md](./relay_event_stream.md) | Relay `events` table, v1 event APIs, node watcher polling, and single-shot base-model download events |
-| [model_distribution.md](./model_distribution.md) | Demand-driven model distribution controller, persisted download selections, timeout and replacement, and on-disk authority |
-| [loaded_models.md](./loaded_models.md) | Successful model execution projection, authoritative node model reports, node counts, and public v2 loaded models API |
+| [relay_event_stream.md](./relay_event_stream.md) | Relay `events` table, v1 event APIs, node watcher polling, and single-shot model file download events |
+| [model_distribution.md](./model_distribution.md) | Demand-driven model file set distribution controller, persisted download selections, timeout and replacement, and on-disk authority |
+| [loaded_models.md](./loaded_models.md) | Successful model execution projection keyed by exact model files, cache hash and execution dtype, authoritative node model reports, node counts, and public v2 loaded models API |
 | [all_nodes_data.md](./all_nodes_data.md) | Historical joined-node public snapshot, join upsert behavior, quit retention, and SyncNetwork refresh rules |
 | [deposit_withdraw_and_risk_control.md](./deposit_withdraw_and_risk_control.md) | Deposit and withdrawal lifecycle across Relay and Wallet, relay account ledger, and risk control checks |
 | [deposit-withdraw-only-networks.md](./deposit-withdraw-only-networks.md) | Deposit and withdrawal only network configuration, processing, BenefitAddress |

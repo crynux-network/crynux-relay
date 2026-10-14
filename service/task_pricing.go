@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	defaultSDNumImages          = uint64(6)
-	defaultSDImageWidth         = uint64(512)
-	defaultSDImageHeight        = uint64(512)
-	defaultSDSteps              = uint64(1)
+	defaultSDNumImages          = uint64(1)
+	defaultSDImageWidth         = uint64(1024)
+	defaultSDImageHeight        = uint64(1024)
+	defaultSDSteps              = uint64(30)
 	minEstimatedNodeSeconds     = 1.0
 	llmInputBytesPerPublicToken = 4
 )
@@ -33,10 +33,11 @@ type TaskExecutionTimeQuery struct {
 	ModelName      string
 	ModelVariant   string
 	RequestedDType string
-	QuantizeBits   uint64
-	MinVRAM        uint64
-	GPUName        string
-	GPUVRAM        uint64
+	// QuantizationConfigHash is the hash of the complete quantization_config.
+	QuantizationConfigHash models.Hash32
+	MinVRAM                uint64
+	GPUName                string
+	GPUVRAM                uint64
 }
 
 type SDExecutionTimeCoefficients struct {
@@ -54,7 +55,7 @@ type LLMExecutionTimeCoefficients struct {
 }
 
 type sdPricingTaskConfig struct {
-	NumImages   *uint64 `json:"num_images"`
+	NumImages   *uint64 `json:"num_images_per_prompt"`
 	ImageWidth  *uint64 `json:"image_width"`
 	ImageHeight *uint64 `json:"image_height"`
 	Steps       *uint64 `json:"steps"`
@@ -352,11 +353,11 @@ func executionTimeLookupTask(query TaskExecutionTimeQuery) *models.InferenceTask
 		requestedDType = models.AutoExecutionDType
 	}
 	task := &models.InferenceTask{
-		TaskType:       query.TaskType,
-		ModelName:      models.NormalizeModelName(query.ModelName),
-		ModelVariant:   strings.ToLower(query.ModelVariant),
-		RequestedDType: requestedDType,
-		QuantizeBits:   query.QuantizeBits,
+		TaskType:               query.TaskType,
+		ModelName:              models.NormalizeModelName(query.ModelName),
+		ModelVariant:           strings.ToLower(query.ModelVariant),
+		RequestedDType:         requestedDType,
+		QuantizationConfigHash: query.QuantizationConfigHash.Bytes(),
 	}
 	if query.GPUName != "" {
 		task.RequiredGPU = models.NormalizeGPUName(query.GPUName)

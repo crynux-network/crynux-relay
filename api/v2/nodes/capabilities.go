@@ -14,11 +14,11 @@ import (
 )
 
 type NodeCapabilitiesInput struct {
-	Address  string   `json:"address" path:"address" description:"address" validate:"required"`
-	GPUName  string   `json:"gpu_name" description:"gpu_name" validate:"required"`
-	GPUVram  uint64   `json:"gpu_vram" description:"gpu_vram" validate:"required"`
-	Version  string   `json:"version" description:"version" validate:"required"`
-	ModelIDs []string `json:"model_ids" description:"complete node local model ids"`
+	Address    string                  `json:"address" path:"address" description:"address" validate:"required"`
+	GPUName    string                  `json:"gpu_name" description:"gpu_name" validate:"required"`
+	GPUVram    uint64                  `json:"gpu_vram" description:"gpu_vram" validate:"required"`
+	Version    string                  `json:"version" description:"version" validate:"required"`
+	ModelFiles []models.ModelFileEntry `json:"model_files" description:"complete node local model files with concrete revisions"`
 }
 
 type NodeCapabilitiesInputWithSignature struct {
@@ -38,8 +38,12 @@ func SyncNodeCapabilities(c *gin.Context, in *NodeCapabilitiesInputWithSignature
 	if address != in.Address {
 		return nil, response.NewValidationErrorResponse("address", "Signer not allowed")
 	}
-	if in.ModelIDs == nil {
-		return nil, response.NewValidationErrorResponse("model_ids", "required")
+	if in.ModelFiles == nil {
+		return nil, response.NewValidationErrorResponse("model_files", "required")
+	}
+	modelFiles, err := service.BuildHeldModelFiles(in.ModelFiles)
+	if err != nil {
+		return nil, response.NewValidationErrorResponse("model_files", err.Error())
 	}
 
 	major, minor, patch, err := service.ParseNodeVersion(in.Version)
@@ -53,7 +57,7 @@ func SyncNodeCapabilities(c *gin.Context, in *NodeCapabilitiesInputWithSignature
 		MajorVersion: major,
 		MinorVersion: minor,
 		PatchVersion: patch,
-		ModelIDs:     models.NormalizeModelIDs(in.ModelIDs),
+		ModelFiles:   modelFiles,
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, response.NewValidationErrorResponse("address", "Node not found")

@@ -29,9 +29,10 @@ func setupNodeIndexTestDB(t *testing.T) {
 	t.Helper()
 	initServiceTestConfig(t)
 	resetNodeIndexForTest()
-	if err := config.GetDB().AutoMigrate(&models.Node{}, &models.NodeModel{}); err != nil {
+	if err := config.GetDB().AutoMigrate(&models.Node{}); err != nil {
 		t.Fatalf("failed to migrate tables: %v", err)
 	}
+	migrateModelStateTables(t, config.GetDB())
 }
 
 func TestInitNodeIndexRebuildsNonQuitNodes(t *testing.T) {
@@ -49,8 +50,13 @@ func TestInitNodeIndexRebuildsNonQuitNodes(t *testing.T) {
 			t.Fatalf("failed to create node: %v", err)
 		}
 	}
-	if err := db.Create(&models.NodeModel{NodeAddress: "0xavailable", ModelID: "base:model-a", InUse: true}).Error; err != nil {
-		t.Fatalf("failed to create node model: %v", err)
+	file := testModelFile(t, "model-a", "rev-a")
+	seedNodeModelFiles(t, db, "0xavailable", file)
+	fileHash := testModelFileHash(t, "model-a", "rev-a")
+	cacheHash := models.Hash32{4}
+	memory := models.NewNodeInMemoryModel("0xavailable", cacheHash, []models.Hash32{fileHash}, []byte(`{}`), "auto")
+	if err := db.Create(&memory).Error; err != nil {
+		t.Fatalf("failed to create in-memory model: %v", err)
 	}
 
 	if err := InitNodeIndex(ctx, db); err != nil {
@@ -69,11 +75,17 @@ func TestInitNodeIndexRebuildsNonQuitNodes(t *testing.T) {
 	if entry == nil {
 		t.Fatal("expected available node in the index")
 	}
-	if _, ok := entry.OnDiskModelIDs["base:model-a"]; !ok {
-		t.Fatal("expected on-disk model set to contain base:model-a")
+	if _, ok := entry.OnDiskModelFileHashes[fileHash]; !ok {
+		t.Fatal("expected on-disk exact hashes to contain the model file")
 	}
-	if _, ok := entry.InUseModelIDs["base:model-a"]; !ok {
-		t.Fatal("expected in-use model set to contain base:model-a")
+	if _, ok := entry.OnDiskModelFileSourceHashes[testModelFileSourceHash(t, "model-a")]; !ok {
+		t.Fatal("expected on-disk source hashes to contain the model source")
+	}
+	if entry.CurrentModelCacheHash == nil || *entry.CurrentModelCacheHash != cacheHash {
+		t.Fatalf("unexpected in-memory cache hash: %v", entry.CurrentModelCacheHash)
+	}
+	if _, ok := entry.CurrentModelFileHashes[fileHash]; !ok {
+		t.Fatal("expected in-memory exact hashes to contain the model file")
 	}
 }
 

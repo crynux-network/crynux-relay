@@ -114,11 +114,19 @@ type InferenceTask struct {
 	RequestedDType   string     `json:"requested_dtype" gorm:"column:requested_dtype;size:64;not null;default:'auto'"`
 	ExecutionDType   string     `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;default:''"`
 	QuantizeBits     uint64     `json:"quantize_bits" gorm:"not null;default:0"`
-	Timeout          uint64     `json:"timeout"`
-	MinVRAM          uint64     `json:"min_vram"`
-	RequiredGPU      string     `json:"required_gpu"`
-	RequiredGPUVRAM  uint64     `json:"required_gpu_vram"`
-	TaskFee          BigInt     `json:"task_fee"`
+	// RequiredModelFileHashes and RequiredModelFileSourceHashes are sorted
+	// concatenations of 32-byte hashes of the exact and revision-less model files.
+	RequiredModelFileHashes       []byte `json:"-" gorm:"type:longblob;not null"`
+	RequiredModelFileSourceHashes []byte `json:"-" gorm:"type:longblob;not null"`
+	// ExecutionModelFileHashes is set once the selected node resolves the exact model files.
+	ExecutionModelFileHashes []byte `json:"-" gorm:"type:longblob;null"`
+	RequestedModelCacheHash  []byte `json:"-" gorm:"type:binary(32);not null"`
+	QuantizationConfigHash   []byte `json:"-" gorm:"type:binary(32);not null"`
+	Timeout                  uint64 `json:"timeout"`
+	MinVRAM                  uint64 `json:"min_vram"`
+	RequiredGPU              string `json:"required_gpu"`
+	RequiredGPUVRAM          uint64 `json:"required_gpu_vram"`
+	TaskFee                  BigInt `json:"task_fee"`
 	// Priority orders queued tasks for dispatch: task_fee divided by the
 	// VRAM-weighted estimated node seconds, floored to an integer.
 	Priority                BigInt          `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`
