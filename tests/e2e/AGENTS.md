@@ -63,9 +63,13 @@
 ## Prepare accounts
 
 - Required account fields in `<mount-root>/config/config.yml`:
-  - `blockchains.dymension.account.address`: signer address for dymension operations. It must match `blockchain_system_private_key.txt`.
-  - `blockchains.near.account.address`: signer address for near operations. It must match `blockchain_system_private_key.txt`.
-  - `withdraw.relay_wallet_address`: authorization address for Relay Wallet calls to Relay Wallet APIs on Relay. It must equal the address derived from the key `relay.api.private_key_file` in the Relay Wallet's config file.
+  - `blockchains.crynux-on-base-sepolia.account.address`: signer address for crynux-on-base-sepolia operations. It must match `blockchain_system_private_key.txt`.
+  - `withdraw.relay_wallet_address`: authorization address for Relay Wallet calls to Relay Wallet APIs on Relay. It must equal the address derived from the key `relay.api.private_key_file` in the Relay Wallet's config file when Relay Wallet is used.
   - `withdraw.withdrawal_fee_address`: relay operator fee income address for withdrawal fees.
   - `dao.task_fee_share_address`: task fee share recipient address and one of the withdrawal fee waiver addresses.
   - `relay_account.deposit_address`: on-chain deposit target address for relay account top-ups.
+
+- Blockchain network rule for this e2e:
+  - `blockchains` MUST contain only `crynux-on-base-sepolia`.
+  - Contract addresses MUST match `crynux-contracts/deployments/primary/testnet/crynux-on-base-sepolia/contracts.json` `nodeContracts`.
+  - Before start, set `blockchains.crynux-on-base-sepolia.start_block_num` to the current chain tip from Crynux MCP `get_latest_block_number` with `network = crynux-on-base-sepolia`.
