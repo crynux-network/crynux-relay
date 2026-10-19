@@ -158,6 +158,29 @@ func (c *Client) fetchModelInfo(ctx context.Context, modelID string) (*modelInfo
 	return &info, nil
 }
 
+// FetchRepoFileJSON downloads one repository file as JSON through the Hub
+// resolve URL. revision MUST be a branch, tag, or commit; empty revision uses main.
+func (c *Client) FetchRepoFileJSON(ctx context.Context, repository, revision, filePath string, target any) error {
+	repository = strings.TrimSpace(repository)
+	filePath = strings.Trim(strings.TrimSpace(filePath), "/")
+	if repository == "" || filePath == "" {
+		return ErrModelNotFound
+	}
+	if strings.TrimSpace(revision) == "" {
+		revision = "main"
+	}
+	endpoint := c.baseURL + "/" + repository + "/resolve/" + url.PathEscape(revision) + "/" + pathEscapeSegments(filePath)
+	return c.fetchJSON(ctx, endpoint, target)
+}
+
+func pathEscapeSegments(filePath string) string {
+	parts := strings.Split(filePath, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
 func (c *Client) fetchJSON(ctx context.Context, endpoint string, target any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

@@ -16,13 +16,15 @@ import (
 )
 
 // modelDemandKey identifies one distribution unit: a required model file set
-// together with the VRAM demand and the LLM Darwin exclusion of the tasks
-// requiring it. Tasks with different VRAM demands form separate demand groups
-// because a node only counts toward coverage of the groups it can execute.
+// together with the VRAM demand, the LLM Darwin exclusion, and RequireLinuxCuda
+// of the tasks requiring it. Tasks with different VRAM demands form separate
+// demand groups because a node only counts toward coverage of the groups it
+// can execute.
 type modelDemandKey struct {
-	setKey        models.Hash32
-	minVRAM       uint64
-	excludeDarwin bool
+	setKey           models.Hash32
+	minVRAM          uint64
+	excludeDarwin    bool
+	requireLinuxCuda bool
 }
 
 // taskVRAMDemand is the VRAM amount a task requires from a node: the exact
@@ -49,20 +51,25 @@ func modelDemandKeyOf(task *models.InferenceTask) (key modelDemandKey, exact, so
 		return key, nil, nil, false, nil
 	}
 	key = modelDemandKey{
-		setKey:        models.DistributionKey(exact, source),
-		minVRAM:       taskVRAMDemand(task),
-		excludeDarwin: task.TaskType == models.TaskTypeLLM,
+		setKey:           models.DistributionKey(exact, source),
+		minVRAM:          taskVRAMDemand(task),
+		excludeDarwin:    task.TaskType == models.TaskTypeLLM,
+		requireLinuxCuda: task.RequireLinuxCuda,
 	}
 	return key, exact, source, true, nil
 }
 
 // nodeSatisfiesDemand reports whether a node's VRAM covers the demand
-// group's requirement and, for LLM demand, the node is not a Darwin node.
+// group's requirement, the node is not a Darwin node for LLM demand, and the
+// node is a Linux CUDA platform when RequireLinuxCuda is set.
 func nodeSatisfiesDemand(gpuName string, gpuVram uint64, key modelDemandKey) bool {
 	if gpuVram < key.minVRAM {
 		return false
 	}
 	if key.excludeDarwin && isDarwinGPUName(gpuName) {
+		return false
+	}
+	if key.requireLinuxCuda && !isLinuxCudaPlatform(gpuName) {
 		return false
 	}
 	return true

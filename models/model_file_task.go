@@ -22,6 +22,9 @@ type TaskModelRequirements struct {
 	RequestedModelCacheConfig []byte
 	// QuantizationConfigHash identifies the complete canonical quantization_config.
 	QuantizationConfigHash Hash32
+	// RequireLinuxCuda is true when matching and distribution may use only
+	// docker or Linux GPU-name platforms.
+	RequireLinuxCuda bool
 }
 
 type taskArgsModelSource struct {
@@ -219,6 +222,7 @@ func (task *InferenceTask) SetModelRequirements(r *TaskModelRequirements) {
 	task.RequiredModelFileSourceHashes = EncodeHashList(r.RequiredModelFileSourceHashes)
 	task.RequestedModelCacheHash = r.RequestedModelCacheHash.Bytes()
 	task.QuantizationConfigHash = r.QuantizationConfigHash.Bytes()
+	task.RequireLinuxCuda = r.RequireLinuxCuda
 }
 
 // RequiredModelFileHashList returns the exact model file hashes required by the task.

@@ -14,7 +14,8 @@ Task matching covers the dispatch path between the task queue and the task start
 - Model file: one independently downloadable model source, identified by an exact model file hash over its canonical JSON including the revision, and by a source hash over the same canonical JSON without the revision. A model file entry carries no dtype, quantization, LoRA, component usage name, executor, or GPU.
 - Required model files: the model files derived from the task's TaskArgs when the task is created and stored on the task as `RequiredModelFileHashes` (entries with a revision) and `RequiredModelFileSourceHashes` (entries without a revision). A source hash is satisfied by any revision of that source.
 - Requested model cache hash: the SHA-256 of the canonical cache config that identifies the in-memory model the task requests. Revisions do not participate in it.
-- Requirement signature: the tuple (`TaskType`, `MinVRAM`, `RequiredGPU`, `RequiredGPUVRAM`, `TaskVersion`, `RequiredModelFileHashes`, `RequiredModelFileSourceHashes`, `RequestedModelCacheHash`) that determines a task's candidate set.
+- Requirement signature: the tuple (`TaskType`, `MinVRAM`, `RequiredGPU`, `RequiredGPUVRAM`, `TaskVersion`, `RequiredModelFileHashes`, `RequiredModelFileSourceHashes`, `RequestedModelCacheHash`, `RequireLinuxCuda`) that determines a task's candidate set.
+- RequireLinuxCuda: an immutable task flag set at creation when the task's quantization load can execute only on Linux CUDA platforms (`docker` or `Linux` GPU-name suffixes). Detection, caching, and matching effects are specified in [quantization_platform_support.md](./quantization_platform_support.md).
 - Qualified node: a node that passes availability, hardware, version, task-specific, and node-name policy filters.
 - Model-ready node: a qualified node whose on-disk model files cover every exact hash and at least one file for every source hash of the task's required model files.
 
@@ -119,6 +120,10 @@ The matching scheduler, the node scheduling index, and the in-round reservation 
 ## Dispatch Path Exclusivity
 
 The matching scheduler is the only task dispatch path. Relay MUST NOT run per-task dispatch loops that independently query the database for candidate nodes, and MUST NOT query the node table with model preloading as part of per-task dispatch attempts. Candidate node data at dispatch time MUST come from the node scheduling index.
+
+## Create-Time Platform Constraint
+
+Task creation MUST detect and persist `RequireLinuxCuda` as specified in [quantization_platform_support.md](./quantization_platform_support.md). Matching rounds MUST read the stored flag and MUST NOT re-detect Hub quantization metadata at dispatch time.
 
 ## Configuration
 

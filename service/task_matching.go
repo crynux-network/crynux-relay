@@ -41,9 +41,10 @@ type matchedPair struct {
 // requirementSignature identifies the tuple that determines a task's
 // candidate set, so tasks sharing it reuse one computed set within a round.
 func requirementSignature(task *models.InferenceTask) string {
-	return fmt.Sprintf("%d|%d|%s|%d|%s|%x|%x|%x",
+	return fmt.Sprintf("%d|%d|%s|%d|%s|%x|%x|%x|%t",
 		task.TaskType, task.MinVRAM, task.RequiredGPU, task.RequiredGPUVRAM, task.TaskVersion,
-		task.RequiredModelFileHashes, task.RequiredModelFileSourceHashes, task.RequestedModelCacheHash)
+		task.RequiredModelFileHashes, task.RequiredModelFileSourceHashes, task.RequestedModelCacheHash,
+		task.RequireLinuxCuda)
 }
 
 func entryMatchesTaskVersion(entry *NodeIndexEntry, taskVersionNumbers [3]uint64) bool {
@@ -64,9 +65,26 @@ func isDarwinEntry(entry *NodeIndexEntry) bool {
 	return isDarwinGPUName(entry.GPUName)
 }
 
+// platformFromGPUName returns the GPU-name platform suffix after the first +,
+// or empty when the name has no platform suffix.
+func platformFromGPUName(gpuName string) string {
+	names := strings.SplitN(gpuName, "+", 2)
+	if len(names) != 2 {
+		return ""
+	}
+	return strings.TrimSpace(names[1])
+}
+
+// isLinuxCudaPlatform reports whether the GPU name identifies a docker or
+// Linux CUDA execution platform.
+func isLinuxCudaPlatform(gpuName string) bool {
+	platform := platformFromGPUName(gpuName)
+	return platform == "docker" || platform == "Linux"
+}
+
 // filterIndexEntriesForTask applies the hard filters over the round's node
-// view: node availability, GPU or VRAM requirement, version compatibility and
-// the LLM Darwin exclusion.
+// view: node availability, GPU or VRAM requirement, version compatibility,
+// the LLM Darwin exclusion, and RequireLinuxCuda platform filtering.
 func filterIndexEntriesForTask(task *models.InferenceTask, entries []*NodeIndexEntry) []*NodeIndexEntry {
 	return filterIndexEntriesForTaskAt(task, entries, time.Now().UTC())
 }
@@ -83,6 +101,9 @@ func filterIndexEntriesForTaskAt(task *models.InferenceTask, entries []*NodeInde
 			continue
 		}
 		if !entryMatchesTaskVersion(entry, taskVersionNumbers) {
+			continue
+		}
+		if task.RequireLinuxCuda && !isLinuxCudaPlatform(entry.GPUName) {
 			continue
 		}
 		if len(task.RequiredGPU) > 0 {

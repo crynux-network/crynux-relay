@@ -175,6 +175,65 @@ func TestFilterIndexEntriesForTaskExcludesDarwinForLLM(t *testing.T) {
 	}
 }
 
+func TestFilterIndexEntriesForTaskRequireLinuxCuda(t *testing.T) {
+	task := newMatchingTestTask(t)
+	task.RequireLinuxCuda = true
+	task.TaskType = models.TaskTypeSD
+
+	linux := newMatchingTestEntry("0xlinux")
+	linux.GPUName = "NVIDIA GeForce RTX 4090+Linux"
+	docker := newMatchingTestEntry("0xdocker")
+	docker.GPUName = "NVIDIA GeForce RTX 4090+docker"
+	windows := newMatchingTestEntry("0xwindows")
+	windows.GPUName = "NVIDIA GeForce RTX 4090+Windows"
+	darwin := newMatchingTestEntry("0xdarwin")
+	darwin.GPUName = "Apple M3+Darwin"
+	bare := newMatchingTestEntry("0xbare")
+
+	filtered := filterIndexEntriesForTask(task, []*NodeIndexEntry{linux, docker, windows, darwin, bare})
+	if len(filtered) != 2 {
+		t.Fatalf("expected linux and docker only, got %d", len(filtered))
+	}
+	addresses := map[string]bool{filtered[0].Address: true, filtered[1].Address: true}
+	if !addresses["0xlinux"] || !addresses["0xdocker"] {
+		t.Fatalf("unexpected filtered set: %+v", filtered)
+	}
+}
+
+func TestFilterIndexEntriesForTaskRequireLinuxCudaWithRequiredGPU(t *testing.T) {
+	task := newMatchingTestTask(t)
+	task.RequireLinuxCuda = true
+	task.RequiredGPU = "NVIDIA GeForce RTX 4090+Windows"
+	task.RequiredGPUVRAM = 24
+
+	windows := newMatchingTestEntry("0xwindows")
+	windows.GPUName = "NVIDIA GeForce RTX 4090+Windows"
+	windows.GPUVram = 24
+	linux := newMatchingTestEntry("0xlinux")
+	linux.GPUName = "NVIDIA GeForce RTX 4090+Linux"
+	linux.GPUVram = 24
+
+	filtered := filterIndexEntriesForTask(task, []*NodeIndexEntry{windows, linux})
+	if len(filtered) != 0 {
+		t.Fatalf("expected empty candidates when RequiredGPU is Windows under RequireLinuxCuda, got %d", len(filtered))
+	}
+}
+
+func TestPlatformFromGPUNameAndLinuxCuda(t *testing.T) {
+	if platformFromGPUName("GPU+Linux") != "Linux" {
+		t.Fatal("expected Linux platform")
+	}
+	if platformFromGPUName("GPU") != "" {
+		t.Fatal("expected empty platform")
+	}
+	if !isLinuxCudaPlatform("A+docker") || !isLinuxCudaPlatform("A+Linux") {
+		t.Fatal("expected docker and Linux to qualify")
+	}
+	if isLinuxCudaPlatform("A+Windows") || isLinuxCudaPlatform("A+Darwin") || isLinuxCudaPlatform("A") {
+		t.Fatal("expected non-linux platforms to be rejected")
+	}
+}
+
 func TestRequirementSignatureGroupsEqualRequirements(t *testing.T) {
 	task1 := newMatchingTestTask(t)
 	task2 := newMatchingTestTask(t)
@@ -192,6 +251,12 @@ func TestRequirementSignatureGroupsEqualRequirements(t *testing.T) {
 	setTaskModelRequirements(t, task3)
 	if requirementSignature(task1) == requirementSignature(task3) {
 		t.Fatal("expected different signatures when model files differ")
+	}
+
+	task4 := newMatchingTestTask(t)
+	task4.RequireLinuxCuda = true
+	if requirementSignature(task1) == requirementSignature(task4) {
+		t.Fatal("expected different signatures when RequireLinuxCuda differs")
 	}
 }
 

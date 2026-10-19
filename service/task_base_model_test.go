@@ -21,9 +21,11 @@ func newTaskBaseModelTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.ModelFile{}, &models.NodeModel{}); err != nil {
+	if err := db.AutoMigrate(&models.ModelFile{}, &models.NodeModel{}, &models.ModelRuntimeConstraint{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	ClearRuntimeConstraintMemoryForTest()
+	t.Cleanup(ClearRuntimeConstraintMemoryForTest)
 	return db
 }
 
@@ -35,9 +37,27 @@ func useHuggingFaceServer(t *testing.T, handler http.HandlerFunc) {
 	t.Cleanup(func() { SetHuggingFaceClientForTest(nil) })
 }
 
+func seedRuntimeConstraint(t *testing.T, db *gorm.DB, repository, revision string, requireLinuxCuda bool) {
+	t.Helper()
+	if err := models.UpsertModelRuntimeConstraint(context.Background(), db, &models.ModelRuntimeConstraint{
+		Repository:       repository,
+		Revision:         revision,
+		RequireLinuxCuda: requireLinuxCuda,
+		Source:           "hub_config",
+		DetectedAt:       time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed runtime constraint: %v", err)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, body any) {
+	_ = json.NewEncoder(w).Encode(body)
+}
+
 func TestPrepareTaskModelRequirementsSkipsHubWhenNodeHasModel(t *testing.T) {
 	db := newTaskBaseModelTestDB(t)
 	seedNodeModelFiles(t, db, "0x1", testModelFile(t, "org/model", "rev-1"))
+	seedRuntimeConstraint(t, db, "org/model", "rev-1", false)
 
 	calls := 0
 	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -56,16 +76,22 @@ func TestPrepareTaskModelRequirementsSkipsHubWhenNodeHasModel(t *testing.T) {
 	if len(requirements.RequiredModelFileHashes) != 1 || requirements.RequiredModelFileHashes[0] != want {
 		t.Fatalf("unexpected required hashes: %v", requirements.RequiredModelFileHashes)
 	}
+	if requirements.RequireLinuxCuda {
+		t.Fatal("expected RequireLinuxCuda false from cached constraint")
+	}
 }
 
 func TestPrepareTaskModelRequirementsResolvesRevisionToCommit(t *testing.T) {
 	db := newTaskBaseModelTestDB(t)
 	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/models/org/model/revision/main" {
+		switch r.URL.Path {
+		case "/api/models/org/model/revision/main":
+			writeJSON(w, map[string]string{"sha": "commit-sha"})
+		case "/org/model/resolve/commit-sha/config.json":
+			writeJSON(w, map[string]any{})
+		default:
 			w.WriteHeader(http.StatusNotFound)
-			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"sha": "commit-sha"})
 	})
 
 	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("org/model", "main"))
@@ -122,12 +148,19 @@ func TestPrepareTaskModelRequirementsTemporaryOnHubOutage(t *testing.T) {
 func TestPrepareTaskModelRequirementsKeepsSourceIdentityWithoutRevision(t *testing.T) {
 	db := newTaskBaseModelTestDB(t)
 	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"siblings": []map[string]string{
-				{"rfilename": "model_index.json"},
-				{"rfilename": "unet/diffusion_pytorch_model.safetensors"},
-			},
-		})
+		switch r.URL.Path {
+		case "/api/models/org/sd":
+			writeJSON(w, map[string]interface{}{
+				"siblings": []map[string]string{
+					{"rfilename": "model_index.json"},
+					{"rfilename": "unet/diffusion_pytorch_model.safetensors"},
+				},
+			})
+		case "/org/sd/resolve/main/model_index.json":
+			writeJSON(w, map[string]any{"_class_name": "StableDiffusionPipeline"})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	})
 
 	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeSD, imageTaskArgs("org/sd", ""))
@@ -155,6 +188,7 @@ func TestPrepareTaskModelRequirementsRejectsInvalidArgs(t *testing.T) {
 func TestPrepareTaskModelRequirementsAcceptsAnyFormattedVersion(t *testing.T) {
 	db := newTaskBaseModelTestDB(t)
 	seedNodeModelFiles(t, db, "0x1", testModelFile(t, "org/model", "rev-1"))
+	seedRuntimeConstraint(t, db, "org/model", "rev-1", false)
 	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
@@ -175,7 +209,7 @@ func TestPrepareTaskModelRequirementsAcceptsDiffusersComponentWithoutModelIndex(
 	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/models/org/sd":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			writeJSON(w, map[string]interface{}{
 				"siblings": []map[string]string{
 					{"rfilename": "model_index.json"},
 					{"rfilename": "vae/config.json"},
@@ -183,12 +217,16 @@ func TestPrepareTaskModelRequirementsAcceptsDiffusersComponentWithoutModelIndex(
 				},
 			})
 		case "/api/models/org/vae":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			writeJSON(w, map[string]interface{}{
 				"siblings": []map[string]string{
 					{"rfilename": "config.json"},
 					{"rfilename": "diffusion_pytorch_model.safetensors"},
 				},
 			})
+		case "/org/sd/resolve/main/model_index.json":
+			writeJSON(w, map[string]any{"_class_name": "StableDiffusionPipeline", "transformer": []string{"diffusers", "Transformer2DModel"}})
+		case "/org/sd/resolve/main/transformer/config.json":
+			writeJSON(w, map[string]any{})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

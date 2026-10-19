@@ -121,7 +121,10 @@ type InferenceTask struct {
 	ExecutionModelFileHashes []byte `json:"-" gorm:"type:longblob;null"`
 	RequestedModelCacheHash  []byte `json:"-" gorm:"type:binary(32);not null"`
 	QuantizationConfigHash   []byte `json:"-" gorm:"type:binary(32);not null"`
-	Timeout                  uint64 `json:"timeout"`
+	// RequireLinuxCuda is set at creation when the task can run only on
+	// docker or Linux GPU-name platforms.
+	RequireLinuxCuda bool `json:"require_linux_cuda" gorm:"column:require_linux_cuda;not null;default:false"`
+	Timeout          uint64 `json:"timeout"`
 	MinVRAM                  uint64 `json:"min_vram"`
 	RequiredGPU              string `json:"required_gpu"`
 	RequiredGPUVRAM          uint64 `json:"required_gpu_vram"`

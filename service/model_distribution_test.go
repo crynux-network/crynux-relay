@@ -337,6 +337,7 @@ func TestRunModelDistributionRoundRespectsTaskHardwareRequirement(t *testing.T) 
 
 func TestNodeSatisfiesDemand(t *testing.T) {
 	llmDemand := modelDemandKey{minVRAM: 100, excludeDarwin: true}
+	linuxOnly := modelDemandKey{minVRAM: 24, requireLinuxCuda: true}
 	if nodeSatisfiesDemand("NVIDIA RTX PRO 6000 Blackwell Server Edition+docker", 96, llmDemand) {
 		t.Fatal("expected a node below min VRAM to be disqualified")
 	}
@@ -348,6 +349,15 @@ func TestNodeSatisfiesDemand(t *testing.T) {
 	}
 	if !nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, modelDemandKey{minVRAM: 100}) {
 		t.Fatal("expected a Darwin node to qualify without the LLM exclusion")
+	}
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+Linux", 24, linuxOnly) {
+		t.Fatal("expected Linux node to satisfy RequireLinuxCuda demand")
+	}
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, linuxOnly) {
+		t.Fatal("expected docker node to satisfy RequireLinuxCuda demand")
+	}
+	if nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+Windows", 24, linuxOnly) {
+		t.Fatal("expected Windows node to fail RequireLinuxCuda demand")
 	}
 }
 

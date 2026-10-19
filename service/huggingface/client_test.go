@@ -83,3 +83,24 @@ func TestValidateBaseModelNotFoundAndUnavailable(t *testing.T) {
 		t.Fatalf("expected ErrServiceUnavailable, got %v", err)
 	}
 }
+
+func TestFetchRepoFileJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/org/model/resolve/main/config.json" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"quantization_config":{"quant_method":"gptq"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, time.Second, time.Minute)
+	var cfg map[string]any
+	if err := client.FetchRepoFileJSON(context.Background(), "org/model", "", "config.json", &cfg); err != nil {
+		t.Fatalf("FetchRepoFileJSON: %v", err)
+	}
+	qc, _ := cfg["quantization_config"].(map[string]any)
+	if qc["quant_method"] != "gptq" {
+		t.Fatalf("unexpected config: %#v", cfg)
+	}
+}

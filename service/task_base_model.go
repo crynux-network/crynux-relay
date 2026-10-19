@@ -111,6 +111,11 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 	if err := models.UpsertModelFiles(ctx, db, files); err != nil {
 		return nil, err
 	}
+	requireLinuxCuda, err := ResolveRequireLinuxCuda(ctx, db, taskType, taskArgs, requirements)
+	if err != nil {
+		return nil, err
+	}
+	requirements.RequireLinuxCuda = requireLinuxCuda
 	return requirements, nil
 }
 
