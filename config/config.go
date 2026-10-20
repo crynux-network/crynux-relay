@@ -352,6 +352,25 @@ func checkModelDistributionConfig() error {
 	if distribution.DownloadTimeoutSeconds <= 0 {
 		return errors.New("model_distribution.download_timeout_seconds is not set")
 	}
+	for i, item := range distribution.RequiredModelsByVRAM {
+		if item.MinVRAM == 0 {
+			return fmt.Errorf("model_distribution.required_models_by_vram[%d].min_vram is not set", i)
+		}
+		if item.TaskType > 2 {
+			return fmt.Errorf("model_distribution.required_models_by_vram[%d].task_type is invalid", i)
+		}
+		if len(item.ModelFiles) == 0 {
+			return fmt.Errorf("model_distribution.required_models_by_vram[%d].model_files is empty", i)
+		}
+		for j, file := range item.ModelFiles {
+			if strings.TrimSpace(file.SourceType) == "" {
+				return fmt.Errorf("model_distribution.required_models_by_vram[%d].model_files[%d].source_type is not set", i, j)
+			}
+			if strings.TrimSpace(file.Repository) == "" {
+				return fmt.Errorf("model_distribution.required_models_by_vram[%d].model_files[%d].repository is not set", i, j)
+			}
+		}
+	}
 	return nil
 }
 

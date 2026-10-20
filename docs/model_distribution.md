@@ -1,6 +1,6 @@
 # Model Distribution Mechanism
 
-This document specifies how Relay distributes model files across nodes ahead of task assignment. A periodic model distribution controller tracks, per required model file set, how many nodes hold the files on disk and how frequently tasks require them, and emits `DownloadModel` events to spread the files to more nodes when demand exceeds coverage. Task matching never emits download events; it only applies the model file gate specified in [node_selection.md](./node_selection.md) and leaves blocked tasks queued.
+This document specifies how Relay distributes model files across nodes ahead of task assignment. A periodic model distribution controller tracks, per required model file set, how many nodes hold the files on disk and how frequently tasks require them, and emits `DownloadModel` events to spread the files to more nodes when demand exceeds coverage. Separately, Relay can force-download configured model file sets onto nodes whose GPU VRAM meets a configured minimum, so competing nodes share the same on-disk inventory for fairness. Task matching never emits download events; it only applies the model file gate specified in [node_selection.md](./node_selection.md) and leaves blocked tasks queued.
 
 ## Inventory Versus Loaded Projection
 
@@ -115,17 +115,25 @@ When a node quits or is slashed, Relay MUST delete the node's selection records 
 
 When joined-node capability synchronization commits a full on-disk inventory, Relay MUST delete that node's selection records whose required model file set is not covered by the reported inventory, in the same transaction. Pending, completed, and expired attempts for those sets MUST all be deleted so the node can be selected again while the demand period is still open. Selection records whose set is covered by the reported inventory MUST remain unchanged.
 
-When a controller run finds a model file set without current demand, it MUST delete the set's selection records. Downloads already commanded on nodes are not cancelled; files that finish downloading later enter the on-disk inventory through the normal reporting paths and count toward coverage if demand returns.
+When a controller run finds a model file set without current demand, and the set is not listed in `required_models_by_vram`, it MUST delete the set's selection records. When the set is listed in `required_models_by_vram` and has no current task demand, the controller MUST delete only `completed` and `expired` selection records for that set and MUST retain `pending` records until they complete or expire. Downloads already commanded on nodes are not cancelled; files that finish downloading later enter the on-disk inventory through the normal reporting paths and count toward coverage if demand returns.
 
 ### Demand Period
 
 A demand period of a model file set starts at the first controller run that finds the set with current demand while holding no selection records, and ends at the first controller run that finds the set without current demand. The exclusion of already-attempted nodes applies within one demand period. A new demand period starts with no attempted-node history.
 
+## Required Models by VRAM
+
+Relay MAY configure a list of required model file sets under `model_distribution.required_models_by_vram`. Each entry binds a `min_vram`, a `task_type`, and a `model_files` list that forms one required model file set. An empty list disables the feature.
+
+After a successful node join commit, and after a successful joined-node capability synchronization commit, Relay MUST evaluate every configured entry whose `min_vram` is less than or equal to the node's `GPUVram`. For each matching set that the node's authoritative on-disk inventory does not cover, and for which the node has no non-expired selection record, Relay MUST insert a selection record and emit one `DownloadModel` event in the same transaction, using the entry's `task_type` and `model_distribution.download_timeout_seconds`. A node whose VRAM is below an entry's `min_vram` MUST NOT receive that entry's set. When several entries match the same node, Relay MUST emit downloads for every unmatched set.
+
+Required-model downloads reuse `node_model_download_selections` and share uniqueness with demand-driven selections. Relay MUST NOT scan already-online nodes for required models outside join and capability synchronization. An expired required-model selection is retried only when the node joins again or synchronizes capabilities again while still missing the set.
+
 ## Completion and On-Disk Authority
 
-The signed AddModelID node API is the authoritative incremental report that one model file is present on disk. The reported model file entry MUST have source type `huggingface`, a non-empty repository, and a concrete revision. Relay MUST upsert the entry into the `model_files` catalog and create the `node_models` row when it does not already exist. Model files reported at node join MUST create `node_models` rows through the same validation, and node join MUST clear the node's in-memory model record.
+The signed AddModelID node API is the authoritative incremental report that one model file is present on disk. The reported model file entry MUST have source type `huggingface`, a non-empty repository, and a concrete revision. Relay MUST upsert the entry into the `model_files` catalog and create the `node_models` row when it does not already exist. Model files reported at node join MUST create `node_models` rows through the same validation, and node join MUST clear the node's in-memory model record. After the join transaction commits, Relay MUST run the required-models-by-VRAM evaluation for that node.
 
-The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST validate and deduplicate the reported entries, upsert them into the catalog, permanently delete `node_models` rows absent from the report, create rows for newly reported entries, and delete the node's selection records whose required model file set is no longer covered, all in one transaction. The synchronization MUST refresh the node scheduling index after the inventory transaction commits.
+The signed joined-node capability synchronization is the authoritative full on-disk inventory report after node startup. Relay MUST validate and deduplicate the reported entries, upsert them into the catalog, permanently delete `node_models` rows absent from the report, create rows for newly reported entries, and delete the node's selection records whose required model file set is no longer covered, all in one transaction. The synchronization MUST refresh the node scheduling index after the inventory transaction commits. After that commit, Relay MUST run the required-models-by-VRAM evaluation for that node.
 
 An AddModelID report MUST remain authoritative even when no matching selection exists. Relay MUST retain the reported `node_models` row and MUST NOT require a selection before accepting the report.
 
@@ -159,7 +167,7 @@ type DownloadModelEvent struct {
 }
 ```
 
-`ModelFiles` MUST contain every member of the required model file set. A member with a revision is an exact file; a member with an empty revision is a source of which the node downloads one revision. `TaskType` MUST be the task type of the most recently created demanding task of the set. The event MUST be stored in the `events` table and addressed to the selected node. Node polling and delivery are specified in [relay_event_stream.md](./relay_event_stream.md).
+`ModelFiles` MUST contain every member of the required model file set. A member with a revision is an exact file; a member with an empty revision is a source of which the node downloads one revision. For demand-driven downloads, `TaskType` MUST be the task type of the most recently created demanding task of the set. For required-models-by-VRAM downloads, `TaskType` MUST be the configured `task_type` of the matching entry. The event MUST be stored in the `events` table and addressed to the selected node. Node polling and delivery are specified in [relay_event_stream.md](./relay_event_stream.md).
 
 ## Configuration
 
@@ -173,12 +181,14 @@ Relay MUST define these settings in every runtime configuration template with th
 | `model_distribution.min_nodes` | `1` |
 | `model_distribution.max_nodes` | `10` |
 | `model_distribution.download_timeout_seconds` | `1800` |
+| `model_distribution.required_models_by_vram` | `[]` |
 
 ## Relevant Source Files
 
 | File | Responsibility |
 |------|----------------|
 | `service/model_distribution.go` | Model distribution controller loop, demand-group measurement, VRAM qualification, target computation, download-target sampling, and event emission |
+| `service/required_model_downloads.go` | Config-driven required model downloads by minimum VRAM after join and capability synchronization |
 | `models/node_model_download_selection.go` | Persistent selection records, uniqueness, and status transitions |
 | `api/v1/nodes/add_model_id.go` | Authoritative incremental on-disk model file report |
 | `api/v2/nodes/in_memory_model.go` | Authoritative in-memory model report |

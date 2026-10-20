@@ -28,6 +28,25 @@ type WithdrawalFeeTierConfig struct {
 	FeeRatio  float64 `mapstructure:"fee_ratio" description:"proportional fee ratio applied to the whole withdraw amount in this tier"`
 }
 
+// RequiredModelFileEntryConfig is one independently downloadable model file in
+// a required-models-by-VRAM set. Revision may be empty for a source download.
+type RequiredModelFileEntryConfig struct {
+	SourceType   string         `mapstructure:"source_type"`
+	Repository   string         `mapstructure:"repository"`
+	Revision     string         `mapstructure:"revision"`
+	Format       string         `mapstructure:"format"`
+	FormatKwargs map[string]any `mapstructure:"format_kwargs"`
+}
+
+// RequiredModelsByVRAMConfig binds a minimum GPU VRAM to a required model file
+// set. Nodes with GPUVram >= MinVRAM receive DownloadModel events for the set
+// when their on-disk inventory does not already cover it.
+type RequiredModelsByVRAMConfig struct {
+	MinVRAM    uint64                        `mapstructure:"min_vram"`
+	TaskType   uint8                         `mapstructure:"task_type"`
+	ModelFiles []RequiredModelFileEntryConfig `mapstructure:"model_files"`
+}
+
 type SystemBlockchainConfig struct {
 	RPS                            uint64                          `mapstructure:"rps"`
 	RpcEndpoint                    string                          `mapstructure:"rpc_endpoint"`
@@ -187,12 +206,13 @@ type AppConfig struct {
 	} `mapstructure:"task_matching"`
 
 	ModelDistribution struct {
-		ControllerIntervalSeconds float64 `mapstructure:"controller_interval_seconds"`
-		DemandWindowSeconds       float64 `mapstructure:"demand_window_seconds"`
-		SafetyFactor              float64 `mapstructure:"safety_factor"`
-		MinNodes                  int     `mapstructure:"min_nodes"`
-		MaxNodes                  int     `mapstructure:"max_nodes"`
-		DownloadTimeoutSeconds    float64 `mapstructure:"download_timeout_seconds"`
+		ControllerIntervalSeconds float64                     `mapstructure:"controller_interval_seconds"`
+		DemandWindowSeconds       float64                     `mapstructure:"demand_window_seconds"`
+		SafetyFactor              float64                     `mapstructure:"safety_factor"`
+		MinNodes                  int                         `mapstructure:"min_nodes"`
+		MaxNodes                  int                         `mapstructure:"max_nodes"`
+		DownloadTimeoutSeconds    float64                     `mapstructure:"download_timeout_seconds"`
+		RequiredModelsByVRAM      []RequiredModelsByVRAMConfig `mapstructure:"required_models_by_vram"`
 	} `mapstructure:"model_distribution"`
 
 	HuggingFace struct {
