@@ -20,7 +20,7 @@
 | [task_history_retention.md](./task_history_retention.md) | Configurable retention cleanup for terminal inference tasks, node task errors, task artifacts, and the `events` stream |
 | [passive_slash_model.md](./passive_slash_model.md) | Passive slash review mode, slash evidence capture, pending slash states, and admin approval flow |
 | [relay_event_stream.md](./relay_event_stream.md) | Relay `events` table, v1 event APIs, node watcher polling, and single-shot model file download events |
-| [model_distribution.md](./model_distribution.md) | Demand-driven model file set distribution controller, persisted download selections, timeout and replacement, and on-disk authority |
+| [model_distribution.md](./model_distribution.md) | Demand-driven model file set distribution controller, required models by VRAM, persisted download selections, timeout and replacement, and on-disk authority |
 | [quantization_platform_support.md](./quantization_platform_support.md) | Linux-CUDA-only quantization detection, `RequireLinuxCuda`, platform suffix filtering for matching and model distribution, and the supported-load matrix |
 | [loaded_models.md](./loaded_models.md) | Successful model execution projection keyed by exact model files, cache hash and execution dtype, authoritative node model reports, node counts, and public v2 loaded models API |
 | [all_nodes_data.md](./all_nodes_data.md) | Historical joined-node public snapshot, join upsert behavior, quit retention, and SyncNetwork refresh rules |

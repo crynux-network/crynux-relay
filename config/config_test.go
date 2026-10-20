@@ -358,6 +358,65 @@ staking_score:
 	}
 }
 
+func TestCheckModelDistributionRequiredModelsByVRAM(t *testing.T) {
+	original := appConfig
+	t.Cleanup(func() {
+		appConfig = original
+	})
+
+	validDistribution := func() *AppConfig {
+		cfg := &AppConfig{}
+		cfg.ModelDistribution.ControllerIntervalSeconds = 60
+		cfg.ModelDistribution.DemandWindowSeconds = 1800
+		cfg.ModelDistribution.SafetyFactor = 2.0
+		cfg.ModelDistribution.MinNodes = 1
+		cfg.ModelDistribution.MaxNodes = 10
+		cfg.ModelDistribution.DownloadTimeoutSeconds = 1800
+		cfg.ModelDistribution.RequiredModelsByVRAM = []RequiredModelsByVRAMConfig{{
+			MinVRAM:  24,
+			TaskType: 1,
+			ModelFiles: []RequiredModelFileEntryConfig{{
+				SourceType: "huggingface",
+				Repository: "org/model",
+				Revision:   "abc",
+			}},
+		}}
+		return cfg
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*AppConfig)
+		wantErr bool
+	}{
+		{name: "valid", mutate: func(*AppConfig) {}, wantErr: false},
+		{name: "empty list", mutate: func(cfg *AppConfig) { cfg.ModelDistribution.RequiredModelsByVRAM = nil }, wantErr: false},
+		{name: "min vram zero", mutate: func(cfg *AppConfig) { cfg.ModelDistribution.RequiredModelsByVRAM[0].MinVRAM = 0 }, wantErr: true},
+		{name: "task type invalid", mutate: func(cfg *AppConfig) { cfg.ModelDistribution.RequiredModelsByVRAM[0].TaskType = 3 }, wantErr: true},
+		{name: "model files empty", mutate: func(cfg *AppConfig) { cfg.ModelDistribution.RequiredModelsByVRAM[0].ModelFiles = nil }, wantErr: true},
+		{name: "source type empty", mutate: func(cfg *AppConfig) {
+			cfg.ModelDistribution.RequiredModelsByVRAM[0].ModelFiles[0].SourceType = ""
+		}, wantErr: true},
+		{name: "repository empty", mutate: func(cfg *AppConfig) {
+			cfg.ModelDistribution.RequiredModelsByVRAM[0].ModelFiles[0].Repository = ""
+		}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appConfig = validDistribution()
+			tt.mutate(appConfig)
+			err := checkModelDistributionConfig()
+			if tt.wantErr && err == nil {
+				t.Fatal("expected invalid config")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected valid config, got %v", err)
+			}
+		})
+	}
+}
+
 func TestCheckQosConfigHealthParameters(t *testing.T) {
 	original := appConfig
 	t.Cleanup(func() {

@@ -110,6 +110,7 @@ model_distribution:
   min_nodes: 1
   max_nodes: 10
   download_timeout_seconds: 1800
+  required_models_by_vram: []
 huggingface:
   api_base_url: "https://huggingface.co"
   timeout_seconds: 5

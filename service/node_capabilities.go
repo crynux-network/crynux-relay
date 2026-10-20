@@ -113,7 +113,13 @@ func SyncNodeCapabilities(ctx context.Context, db *gorm.DB, address string, capa
 		ApplyNodeNameCountDeltaToCache(newTuple.GPUName, newTuple.GPUVram, newTuple.Version, 1)
 	}
 	if refreshStakeableSnapshot {
-		return RefreshDelegatedStakingNodeListSnapshot(ctx, db, address)
+		if err := RefreshDelegatedStakingNodeListSnapshot(ctx, db, address); err != nil {
+			return err
+		}
 	}
-	return nil
+	node, err := models.GetNodeByAddress(ctx, db, address)
+	if err != nil {
+		return err
+	}
+	return EnsureRequiredModelDownloads(ctx, db, node)
 }

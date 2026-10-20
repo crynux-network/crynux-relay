@@ -129,7 +129,7 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 	}
 	metrics.NodeEvents.WithLabelValues("join").Inc()
 	LogNodeStatusChange(node, "join")
-	return nil
+	return EnsureRequiredModelDownloads(ctx, db, node)
 }
 
 func normalizeChainDelegations(delegatorAddresses []common.Address, amounts []*big.Int) ([]chainDelegation, *big.Int, error) {

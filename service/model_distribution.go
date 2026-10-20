@@ -490,19 +490,37 @@ func buildModelSelectionStates(selections []models.NodeModelDownloadSelection) (
 
 // cleanupSelectionsWithoutDemand deletes the selection records of model file
 // sets that no longer have current demand in any demand group, ending their
-// demand period.
+// demand period. Sets listed in required_models_by_vram keep pending
+// selections; only their completed and expired rows are removed.
 func cleanupSelectionsWithoutDemand(ctx context.Context, db *gorm.DB, selectionStates map[models.Hash32]*modelSelectionState, demands map[modelDemandKey]*modelDemand) error {
 	demandedSets := make(map[models.Hash32]struct{})
 	for key := range demands {
 		demandedSets[key.setKey] = struct{}{}
 	}
-	staleSets := make([]models.Hash32, 0)
-	for setKey := range selectionStates {
-		if _, ok := demandedSets[setKey]; !ok {
-			staleSets = append(staleSets, setKey)
+	requiredSets := map[models.Hash32]struct{}{}
+	if appCfg := config.GetConfig(); appCfg != nil {
+		var err error
+		requiredSets, err = requiredModelSetKeysFromConfig(appCfg.ModelDistribution.RequiredModelsByVRAM)
+		if err != nil {
+			return err
 		}
 	}
-	return models.DeleteNodeModelDownloadSelectionsByModelFileHashes(ctx, db, staleSets)
+	staleSets := make([]models.Hash32, 0)
+	requiredOnlySets := make([]models.Hash32, 0)
+	for setKey := range selectionStates {
+		if _, ok := demandedSets[setKey]; ok {
+			continue
+		}
+		if _, ok := requiredSets[setKey]; ok {
+			requiredOnlySets = append(requiredOnlySets, setKey)
+			continue
+		}
+		staleSets = append(staleSets, setKey)
+	}
+	if err := models.DeleteNodeModelDownloadSelectionsByModelFileHashes(ctx, db, staleSets); err != nil {
+		return err
+	}
+	return models.DeleteTerminalNodeModelDownloadSelectionsByModelFileHashes(ctx, db, requiredOnlySets)
 }
 
 // getModelHoldingNodes returns, per demand group, the addresses of the given
@@ -702,8 +720,35 @@ func loadDemandModelFiles(ctx context.Context, db *gorm.DB, demand *modelDemand)
 // emitModelDownloadSelection inserts the selection record and the DownloadModel
 // event in one database transaction.
 func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, demand *modelDemand, modelFiles []models.ModelFileEntry, nodeAddress string, sentAt time.Time, downloadTimeoutSeconds float64) error {
+	return emitModelDownloadForNode(
+		ctx,
+		db,
+		demand.exact,
+		demand.source,
+		modelFiles,
+		nodeAddress,
+		demand.key.minVRAM,
+		demand.latestTaskType,
+		sentAt,
+		downloadTimeoutSeconds,
+	)
+}
+
+// emitModelDownloadForNode inserts one selection record and one DownloadModel
+// event for the given required model file set and node.
+func emitModelDownloadForNode(
+	ctx context.Context,
+	db *gorm.DB,
+	exact, source []models.Hash32,
+	modelFiles []models.ModelFileEntry,
+	nodeAddress string,
+	minVRAM uint64,
+	taskType models.TaskType,
+	sentAt time.Time,
+	downloadTimeoutSeconds float64,
+) error {
 	deadline := sentAt.Add(time.Duration(downloadTimeoutSeconds * float64(time.Second)))
-	selection := models.NewNodeModelDownloadSelection(demand.exact, demand.source, nodeAddress, demand.key.minVRAM, sentAt, deadline)
+	selection := models.NewNodeModelDownloadSelection(exact, source, nodeAddress, minVRAM, sentAt, deadline)
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := models.CreateNodeModelDownloadSelection(ctx, tx, selection); err != nil {
 			return err
@@ -711,11 +756,11 @@ func emitModelDownloadSelection(ctx context.Context, db *gorm.DB, demand *modelD
 		return emitEvent(ctx, tx, &models.DownloadModelEvent{
 			NodeAddress: nodeAddress,
 			ModelFiles:  modelFiles,
-			TaskType:    demand.latestTaskType,
+			TaskType:    taskType,
 		})
 	}); err != nil {
 		return err
 	}
-	metrics.ModelDownloadsDispatched.WithLabelValues(metrics.TaskTypeLabel(demand.latestTaskType), metrics.VramTierLabel(demand.key.minVRAM)).Inc()
+	metrics.ModelDownloadsDispatched.WithLabelValues(metrics.TaskTypeLabel(taskType), metrics.VramTierLabel(minVRAM)).Inc()
 	return nil
 }

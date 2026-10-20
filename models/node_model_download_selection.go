@@ -124,6 +124,23 @@ func DeleteNodeModelDownloadSelectionsByModelFileHashes(ctx context.Context, db 
 		Delete(&NodeModelDownloadSelection{}).Error
 }
 
+// DeleteTerminalNodeModelDownloadSelectionsByModelFileHashes deletes completed
+// and expired selections for the given model file sets, leaving pending rows.
+func DeleteTerminalNodeModelDownloadSelectionsByModelFileHashes(ctx context.Context, db *gorm.DB, modelFileHashes []Hash32) error {
+	if len(modelFileHashes) == 0 {
+		return nil
+	}
+	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return db.WithContext(dbCtx).
+		Where("model_file_hash IN ?", hashesToBytes(modelFileHashes)).
+		Where("status IN ?", []NodeModelDownloadSelectionStatus{
+			NodeModelDownloadSelectionCompleted,
+			NodeModelDownloadSelectionExpired,
+		}).
+		Delete(&NodeModelDownloadSelection{}).Error
+}
+
 func DeleteNodeModelDownloadSelectionsByNodeAddress(ctx context.Context, db *gorm.DB, nodeAddress string) error {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
