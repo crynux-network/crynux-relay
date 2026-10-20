@@ -180,7 +180,7 @@ func TestSetNodeStatusJoinDoesNotIncrementHealthRecovered(t *testing.T) {
 
 	beforeJoin := nodeEventCounterValue(t, "join")
 	beforeRecovered := nodeEventCounterValue(t, "health_recovered")
-	if err := SetNodeStatusJoin(ctx, db, &node, []string{"model-a"}); err != nil {
+	if err := SetNodeStatusJoin(ctx, db, &node, []models.ModelFile{testModelFile(t, "model-a", "rev-a")}); err != nil {
 		t.Fatalf("SetNodeStatusJoin failed: %v", err)
 	}
 	if got := nodeEventCounterValue(t, "join") - beforeJoin; got != 1 {

@@ -33,8 +33,16 @@ type NodeIndexEntry struct {
 	HealthUpdatedAt sql.NullTime
 	HealthExcluded  bool
 	StakeAmount     *big.Int
-	OnDiskModelIDs  map[string]struct{}
-	InUseModelIDs   map[string]struct{}
+	// OnDiskModelFileHashes holds the exact hashes of the model files on disk.
+	OnDiskModelFileHashes map[models.Hash32]struct{}
+	// OnDiskModelFileSourceHashes holds the source hashes of the model files on disk.
+	OnDiskModelFileSourceHashes map[models.Hash32]struct{}
+	// CurrentModelCacheHash is the cache hash of the in-memory model; nil when memory is empty.
+	CurrentModelCacheHash *models.Hash32
+	// CurrentModelFileHashes holds the exact model files of the in-memory model.
+	CurrentModelFileHashes map[models.Hash32]struct{}
+	// CurrentModelFileSourceHashes holds the source hashes of the in-memory model files.
+	CurrentModelFileSourceHashes map[models.Hash32]struct{}
 }
 
 // scoreNode converts the entry to the minimal models.Node view consumed by
@@ -70,34 +78,103 @@ var globalNodeIndex = &nodeIndex{
 	slots: make(map[string]*nodeIndexSlot),
 }
 
-func buildNodeIndexEntry(node *models.Node) *NodeIndexEntry {
+func buildNodeIndexEntry(node *models.Node, files []models.NodeModelFileRow, inMemory *models.NodeInMemoryModel) (*NodeIndexEntry, error) {
 	entry := &NodeIndexEntry{
-		Address:         node.Address,
-		Network:         node.Network,
-		Status:          node.Status,
-		HasCurrentTask:  node.CurrentTaskIDCommitment.Valid,
-		GPUName:         node.GPUName,
-		GPUVram:         node.GPUVram,
-		MajorVersion:    node.MajorVersion,
-		MinorVersion:    node.MinorVersion,
-		PatchVersion:    node.PatchVersion,
-		QOSScore:        node.QOSScore,
-		HealthBase:      node.HealthBase,
-		HealthUpdatedAt: node.HealthUpdatedAt,
-		HealthExcluded:  node.HealthExcluded,
-		StakeAmount:     new(big.Int).Set(&node.StakeAmount.Int),
-		OnDiskModelIDs:  make(map[string]struct{}, len(node.Models)),
-		InUseModelIDs:   make(map[string]struct{}),
+		Address:                      node.Address,
+		Network:                      node.Network,
+		Status:                       node.Status,
+		HasCurrentTask:               node.CurrentTaskIDCommitment.Valid,
+		GPUName:                      node.GPUName,
+		GPUVram:                      node.GPUVram,
+		MajorVersion:                 node.MajorVersion,
+		MinorVersion:                 node.MinorVersion,
+		PatchVersion:                 node.PatchVersion,
+		QOSScore:                     node.QOSScore,
+		HealthBase:                   node.HealthBase,
+		HealthUpdatedAt:              node.HealthUpdatedAt,
+		HealthExcluded:               node.HealthExcluded,
+		StakeAmount:                  new(big.Int).Set(&node.StakeAmount.Int),
+		OnDiskModelFileHashes:        make(map[models.Hash32]struct{}, len(files)),
+		OnDiskModelFileSourceHashes:  make(map[models.Hash32]struct{}, len(files)),
+		CurrentModelFileHashes:       make(map[models.Hash32]struct{}),
+		CurrentModelFileSourceHashes: make(map[models.Hash32]struct{}),
 	}
-	for _, model := range node.Models {
-		entry.OnDiskModelIDs[model.ModelID] = struct{}{}
-		if model.InUse {
-			entry.InUseModelIDs[model.ModelID] = struct{}{}
+	sourceOf := make(map[models.Hash32]models.Hash32, len(files))
+	for _, file := range files {
+		hash, err := models.Hash32FromBytes(file.ModelFileHash)
+		if err != nil {
+			return nil, err
+		}
+		sourceHash, err := models.Hash32FromBytes(file.ModelFileSourceHash)
+		if err != nil {
+			return nil, err
+		}
+		entry.OnDiskModelFileHashes[hash] = struct{}{}
+		entry.OnDiskModelFileSourceHashes[sourceHash] = struct{}{}
+		sourceOf[hash] = sourceHash
+	}
+	if inMemory == nil {
+		return entry, nil
+	}
+	cacheHash, err := models.Hash32FromBytes(inMemory.CurrentModelCacheHash)
+	if err != nil {
+		return nil, err
+	}
+	currentFiles, err := inMemory.FileHashes()
+	if err != nil {
+		return nil, err
+	}
+	entry.CurrentModelCacheHash = &cacheHash
+	for _, hash := range currentFiles {
+		entry.CurrentModelFileHashes[hash] = struct{}{}
+		if sourceHash, ok := sourceOf[hash]; ok {
+			entry.CurrentModelFileSourceHashes[sourceHash] = struct{}{}
 		}
 	}
-	return entry
+	return entry, nil
 }
 
+// nodeModelState is the model inventory of nodes loaded for index building.
+type nodeModelState struct {
+	files    map[string][]models.NodeModelFileRow
+	inMemory map[string]*models.NodeInMemoryModel
+}
+
+// loadNodeModelState loads the disk inventory and in-memory model of the given
+// nodes, or of every node when no address is given.
+func loadNodeModelState(ctx context.Context, db *gorm.DB, addresses ...string) (*nodeModelState, error) {
+	rows, err := models.ListNodeModelFileRows(ctx, db, addresses...)
+	if err != nil {
+		return nil, err
+	}
+	state := &nodeModelState{
+		files:    make(map[string][]models.NodeModelFileRow),
+		inMemory: make(map[string]*models.NodeInMemoryModel),
+	}
+	for _, row := range rows {
+		state.files[row.NodeAddress] = append(state.files[row.NodeAddress], row)
+	}
+	if len(addresses) == 0 {
+		memoryRows, err := models.ListNodeInMemoryModels(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+		for i := range memoryRows {
+			state.inMemory[memoryRows[i].NodeAddress] = &memoryRows[i]
+		}
+		return state, nil
+	}
+	for _, address := range addresses {
+		memory, err := models.GetNodeInMemoryModel(ctx, db, address)
+		if err != nil {
+			return nil, err
+		}
+		if memory != nil {
+			state.inMemory[address] = memory
+		}
+	}
+	return state, nil
+}
 func (idx *nodeIndex) getSlot(address string) *nodeIndexSlot {
 	idx.mu.RLock()
 	slot, ok := idx.slots[address]
@@ -129,16 +206,23 @@ func InitNodeIndex(ctx context.Context, db *gorm.DB) error {
 
 	var nodes []models.Node
 	if err := db.WithContext(dbCtx).Model(&models.Node{}).
-		Preload("Models").
 		Where("status != ?", models.NodeStatusQuit).
 		Find(&nodes).Error; err != nil {
+		return err
+	}
+	state, err := loadNodeModelState(dbCtx, db)
+	if err != nil {
 		return err
 	}
 
 	slots := make(map[string]*nodeIndexSlot, len(nodes))
 	for i := range nodes {
+		entry, err := buildNodeIndexEntry(&nodes[i], state.files[nodes[i].Address], state.inMemory[nodes[i].Address])
+		if err != nil {
+			return err
+		}
 		slot := &nodeIndexSlot{}
-		slot.entry.Store(buildNodeIndexEntry(&nodes[i]))
+		slot.entry.Store(entry)
 		slots[nodes[i].Address] = slot
 	}
 
@@ -157,7 +241,6 @@ func refreshNodeIndexLocked(ctx context.Context, db *gorm.DB, slot *nodeIndexSlo
 
 	var node models.Node
 	err := db.WithContext(dbCtx).Model(&models.Node{}).
-		Preload("Models").
 		Where("address = ?", address).
 		First(&node).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -171,7 +254,15 @@ func refreshNodeIndexLocked(ctx context.Context, db *gorm.DB, slot *nodeIndexSlo
 		globalNodeIndex.removeSlot(address)
 		return nil
 	}
-	slot.entry.Store(buildNodeIndexEntry(&node))
+	state, err := loadNodeModelState(dbCtx, db, address)
+	if err != nil {
+		return err
+	}
+	entry, err := buildNodeIndexEntry(&node, state.files[address], state.inMemory[address])
+	if err != nil {
+		return err
+	}
+	slot.entry.Store(entry)
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"database/sql"
+	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -29,32 +30,84 @@ func initMatchingTestConfig(t *testing.T) {
 
 func newMatchingTestEntry(address string) *NodeIndexEntry {
 	return &NodeIndexEntry{
-		Address:        address,
-		Status:         models.NodeStatusAvailable,
-		GPUName:        "NVIDIA GeForce RTX 4090",
-		GPUVram:        24,
-		MajorVersion:   3,
-		MinorVersion:   1,
-		PatchVersion:   0,
-		QOSScore:       float64(TASK_SCORE_REWARDS[0]),
-		HealthBase:     1.0,
-		StakeAmount:    big.NewInt(1),
-		OnDiskModelIDs: map[string]struct{}{},
-		InUseModelIDs:  map[string]struct{}{},
+		Address:                      address,
+		Status:                       models.NodeStatusAvailable,
+		GPUName:                      "NVIDIA GeForce RTX 4090",
+		GPUVram:                      24,
+		MajorVersion:                 3,
+		MinorVersion:                 1,
+		PatchVersion:                 0,
+		QOSScore:                     float64(TASK_SCORE_REWARDS[0]),
+		HealthBase:                   1.0,
+		StakeAmount:                  big.NewInt(1),
+		OnDiskModelFileHashes:        map[models.Hash32]struct{}{},
+		OnDiskModelFileSourceHashes:  map[models.Hash32]struct{}{},
+		CurrentModelFileHashes:       map[models.Hash32]struct{}{},
+		CurrentModelFileSourceHashes: map[models.Hash32]struct{}{},
 	}
 }
 
-func newMatchingTestTask() *models.InferenceTask {
-	return &models.InferenceTask{
+func newMatchingTestTask(t *testing.T) *models.InferenceTask {
+	t.Helper()
+	task := &models.InferenceTask{
 		TaskType:    models.TaskTypeSD,
 		TaskVersion: "3.0.0",
 		MinVRAM:     8,
-		ModelIDs:    models.StringArray{"base:model-a"},
+		TaskArgs:    imageTaskArgs("model-a", "rev-a"),
 	}
+	setTaskModelRequirements(t, task)
+	return task
 }
 
+var matchingVAEEntry = models.ModelFileEntry{
+	SourceType: models.ModelSourceTypeHuggingFace, Repository: "org/vae", Revision: "rev-v", Format: "vae",
+}
+
+func matchingFileEntry(repository, revision string) models.ModelFileEntry {
+	if repository == matchingVAEEntry.Repository {
+		entry := matchingVAEEntry
+		entry.Revision = revision
+		return entry
+	}
+	return testImageBaseModelFileEntry(repository, revision)
+}
+
+func holdOnDisk(t *testing.T, entry *NodeIndexEntry, repository, revision string) {
+	t.Helper()
+	file := matchingFileEntry(repository, revision)
+	hash, err := file.ModelFileHash()
+	if err != nil {
+		t.Fatalf("hash model file: %v", err)
+	}
+	sourceHash, err := file.ModelFileSourceHash()
+	if err != nil {
+		t.Fatalf("hash model file source: %v", err)
+	}
+	entry.OnDiskModelFileHashes[hash] = struct{}{}
+	entry.OnDiskModelFileSourceHashes[sourceHash] = struct{}{}
+}
+
+func holdInMemory(t *testing.T, entry *NodeIndexEntry, task *models.InferenceTask, repository, revision string) {
+	t.Helper()
+	cacheHash, err := task.RequestedModelCacheHash32()
+	if err != nil {
+		t.Fatalf("decode cache hash: %v", err)
+	}
+	file := matchingFileEntry(repository, revision)
+	hash, err := file.ModelFileHash()
+	if err != nil {
+		t.Fatalf("hash model file: %v", err)
+	}
+	sourceHash, err := file.ModelFileSourceHash()
+	if err != nil {
+		t.Fatalf("hash model file source: %v", err)
+	}
+	entry.CurrentModelCacheHash = &cacheHash
+	entry.CurrentModelFileHashes[hash] = struct{}{}
+	entry.CurrentModelFileSourceHashes[sourceHash] = struct{}{}
+}
 func TestFilterIndexEntriesForTaskHardFilters(t *testing.T) {
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 
 	available := newMatchingTestEntry("0xavailable")
 	busy := newMatchingTestEntry("0xbusy")
@@ -73,7 +126,7 @@ func TestFilterIndexEntriesForTaskHardFilters(t *testing.T) {
 }
 
 func TestFilterIndexEntriesForTaskRequiresNodeMinorVersion(t *testing.T) {
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	task.TaskVersion = "3.6.0"
 
 	current := newMatchingTestEntry("0xcurrent")
@@ -88,7 +141,7 @@ func TestFilterIndexEntriesForTaskRequiresNodeMinorVersion(t *testing.T) {
 }
 
 func TestFilterIndexEntriesForTaskRequiredGPU(t *testing.T) {
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	task.RequiredGPU = "NVIDIA A100"
 	task.RequiredGPUVRAM = 40
 
@@ -107,7 +160,7 @@ func TestFilterIndexEntriesForTaskRequiredGPU(t *testing.T) {
 }
 
 func TestFilterIndexEntriesForTaskExcludesDarwinForLLM(t *testing.T) {
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	task.TaskType = models.TaskTypeLLM
 
 	linux := newMatchingTestEntry("0xlinux")
@@ -122,9 +175,68 @@ func TestFilterIndexEntriesForTaskExcludesDarwinForLLM(t *testing.T) {
 	}
 }
 
+func TestFilterIndexEntriesForTaskRequireLinuxCuda(t *testing.T) {
+	task := newMatchingTestTask(t)
+	task.RequireLinuxCuda = true
+	task.TaskType = models.TaskTypeSD
+
+	linux := newMatchingTestEntry("0xlinux")
+	linux.GPUName = "NVIDIA GeForce RTX 4090+Linux"
+	docker := newMatchingTestEntry("0xdocker")
+	docker.GPUName = "NVIDIA GeForce RTX 4090+docker"
+	windows := newMatchingTestEntry("0xwindows")
+	windows.GPUName = "NVIDIA GeForce RTX 4090+Windows"
+	darwin := newMatchingTestEntry("0xdarwin")
+	darwin.GPUName = "Apple M3+Darwin"
+	bare := newMatchingTestEntry("0xbare")
+
+	filtered := filterIndexEntriesForTask(task, []*NodeIndexEntry{linux, docker, windows, darwin, bare})
+	if len(filtered) != 2 {
+		t.Fatalf("expected linux and docker only, got %d", len(filtered))
+	}
+	addresses := map[string]bool{filtered[0].Address: true, filtered[1].Address: true}
+	if !addresses["0xlinux"] || !addresses["0xdocker"] {
+		t.Fatalf("unexpected filtered set: %+v", filtered)
+	}
+}
+
+func TestFilterIndexEntriesForTaskRequireLinuxCudaWithRequiredGPU(t *testing.T) {
+	task := newMatchingTestTask(t)
+	task.RequireLinuxCuda = true
+	task.RequiredGPU = "NVIDIA GeForce RTX 4090+Windows"
+	task.RequiredGPUVRAM = 24
+
+	windows := newMatchingTestEntry("0xwindows")
+	windows.GPUName = "NVIDIA GeForce RTX 4090+Windows"
+	windows.GPUVram = 24
+	linux := newMatchingTestEntry("0xlinux")
+	linux.GPUName = "NVIDIA GeForce RTX 4090+Linux"
+	linux.GPUVram = 24
+
+	filtered := filterIndexEntriesForTask(task, []*NodeIndexEntry{windows, linux})
+	if len(filtered) != 0 {
+		t.Fatalf("expected empty candidates when RequiredGPU is Windows under RequireLinuxCuda, got %d", len(filtered))
+	}
+}
+
+func TestPlatformFromGPUNameAndLinuxCuda(t *testing.T) {
+	if platformFromGPUName("GPU+Linux") != "Linux" {
+		t.Fatal("expected Linux platform")
+	}
+	if platformFromGPUName("GPU") != "" {
+		t.Fatal("expected empty platform")
+	}
+	if !isLinuxCudaPlatform("A+docker") || !isLinuxCudaPlatform("A+Linux") {
+		t.Fatal("expected docker and Linux to qualify")
+	}
+	if isLinuxCudaPlatform("A+Windows") || isLinuxCudaPlatform("A+Darwin") || isLinuxCudaPlatform("A") {
+		t.Fatal("expected non-linux platforms to be rejected")
+	}
+}
+
 func TestRequirementSignatureGroupsEqualRequirements(t *testing.T) {
-	task1 := newMatchingTestTask()
-	task2 := newMatchingTestTask()
+	task1 := newMatchingTestTask(t)
+	task2 := newMatchingTestTask(t)
 	if requirementSignature(task1) != requirementSignature(task2) {
 		t.Fatal("expected equal requirement signatures for identical requirements")
 	}
@@ -134,111 +246,116 @@ func TestRequirementSignatureGroupsEqualRequirements(t *testing.T) {
 		t.Fatal("expected different signatures when MinVRAM differs")
 	}
 
-	task3 := newMatchingTestTask()
-	task3.ModelIDs = models.StringArray{"base:model-b"}
+	task3 := newMatchingTestTask(t)
+	task3.TaskArgs = imageTaskArgs("model-b", "rev-a")
+	setTaskModelRequirements(t, task3)
 	if requirementSignature(task1) == requirementSignature(task3) {
-		t.Fatal("expected different signatures when model IDs differ")
+		t.Fatal("expected different signatures when model files differ")
+	}
+
+	task4 := newMatchingTestTask(t)
+	task4.RequireLinuxCuda = true
+	if requirementSignature(task1) == requirementSignature(task4) {
+		t.Fatal("expected different signatures when RequireLinuxCuda differs")
 	}
 }
 
-func TestBuildMatchingCandidateSetLocalityRestriction(t *testing.T) {
+const matchingMultiFileTaskArgs = `{"version":"3.7.0","base_model":{"name":"model-a","revision":"rev-a"},"components":{"vae":{"format":"vae","repo":"org/vae","revision":"rev-v"}},"dtype":"float16","prompt":"a cat"}`
+
+func TestBuildMatchingCandidateSetRequiresEveryExactFile(t *testing.T) {
 	initMatchingTestConfig(t)
 
-	task := newMatchingTestTask()
-	task.ModelIDs = models.StringArray{"base:model-a", "lora:adapter", "base:model-b"}
-	withAllBaseModels := newMatchingTestEntry("0xwithall")
-	withAllBaseModels.StakeAmount = big.NewInt(100)
-	withAllBaseModels.OnDiskModelIDs["base:model-a"] = struct{}{}
-	withAllBaseModels.OnDiskModelIDs["base:model-b"] = struct{}{}
-	withOneBaseModel := newMatchingTestEntry("0xwithone")
-	withOneBaseModel.StakeAmount = big.NewInt(100)
-	withOneBaseModel.OnDiskModelIDs["base:model-a"] = struct{}{}
+	task := newMatchingTestTask(t)
+	task.TaskArgs = matchingMultiFileTaskArgs
+	setTaskModelRequirements(t, task)
+	withAll := newMatchingTestEntry("0xwithall")
+	withAll.StakeAmount = big.NewInt(100)
+	holdOnDisk(t, withAll, "model-a", "rev-a")
+	holdOnDisk(t, withAll, "org/vae", "rev-v")
+	withOne := newMatchingTestEntry("0xwithone")
+	withOne.StakeAmount = big.NewInt(100)
+	holdOnDisk(t, withOne, "model-a", "rev-a")
+	otherRevision := newMatchingTestEntry("0xotherrevision")
+	otherRevision.StakeAmount = big.NewInt(100)
+	holdOnDisk(t, otherRevision, "model-a", "rev-a")
+	holdOnDisk(t, otherRevision, "org/vae", "rev-other")
 
-	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{withAllBaseModels, withOneBaseModel})
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{withAll, withOne, otherRevision})
 	if err != nil {
 		t.Fatalf("build candidate set: %v", err)
 	}
 	if len(set.entries) != 1 || set.entries[0].Address != "0xwithall" {
-		t.Fatalf("expected only the node with every base model, got %d entries", len(set.entries))
+		t.Fatalf("expected only the node with every exact file, got %d entries", len(set.entries))
 	}
 	if set.scores[0] != set.probs[0].ProbWeight {
-		t.Fatalf("expected no on-disk weight boost, base %f, got %f", set.probs[0].ProbWeight, set.scores[0])
+		t.Fatalf("expected no locality weight without in-memory model, base %f, got %f", set.probs[0].ProbWeight, set.scores[0])
 	}
 }
 
-func TestBuildMatchingCandidateSetInMemoryBoostExceedsOnDisk(t *testing.T) {
+func TestBuildMatchingCandidateSetSourceRequirementAcceptsAnyRevision(t *testing.T) {
 	initMatchingTestConfig(t)
 
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
+	task.TaskArgs = imageTaskArgs("model-a", "")
+	setTaskModelRequirements(t, task)
+	anyRevision := newMatchingTestEntry("0xany")
+	anyRevision.StakeAmount = big.NewInt(100)
+	holdOnDisk(t, anyRevision, "model-a", "rev-z")
+	missing := newMatchingTestEntry("0xmissing")
+	missing.StakeAmount = big.NewInt(100)
+	holdOnDisk(t, missing, "model-b", "rev-a")
+
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{anyRevision, missing})
+	if err != nil {
+		t.Fatalf("build candidate set: %v", err)
+	}
+	if len(set.entries) != 1 || set.entries[0].Address != "0xany" {
+		t.Fatalf("expected only the node holding some revision, got %d entries", len(set.entries))
+	}
+}
+
+func TestBuildMatchingCandidateSetInMemoryLocalityWeight(t *testing.T) {
+	initMatchingTestConfig(t)
+
+	task := newMatchingTestTask(t)
 	onDisk := newMatchingTestEntry("0xondisk")
 	onDisk.StakeAmount = big.NewInt(100)
-	onDisk.OnDiskModelIDs["base:model-a"] = struct{}{}
+	holdOnDisk(t, onDisk, "model-a", "rev-a")
 	inMemory := newMatchingTestEntry("0xinmemory")
 	inMemory.StakeAmount = big.NewInt(100)
-	inMemory.OnDiskModelIDs["base:model-a"] = struct{}{}
-	inMemory.InUseModelIDs["base:model-a"] = struct{}{}
+	holdOnDisk(t, inMemory, "model-a", "rev-a")
+	holdInMemory(t, inMemory, task, "model-a", "rev-a")
+	otherCache := newMatchingTestEntry("0xothercache")
+	otherCache.StakeAmount = big.NewInt(100)
+	holdOnDisk(t, otherCache, "model-a", "rev-a")
+	holdInMemory(t, otherCache, task, "model-a", "rev-a")
+	otherCacheHash := models.Hash32{0xff}
+	otherCache.CurrentModelCacheHash = &otherCacheHash
 
-	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{onDisk, inMemory})
+	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{onDisk, inMemory, otherCache})
 	if err != nil {
 		t.Fatalf("build candidate set: %v", err)
 	}
-	if len(set.entries) != 2 {
-		t.Fatalf("expected both nodes in the candidate set, got %d", len(set.entries))
+	if len(set.entries) != 3 {
+		t.Fatalf("expected all nodes in the candidate set, got %d", len(set.entries))
 	}
-	var onDiskScore, inMemoryScore float64
 	for i, entry := range set.entries {
-		if entry.Address == "0xondisk" {
-			onDiskScore = set.scores[i]
-		} else {
-			inMemoryScore = set.scores[i]
+		want := set.probs[i].ProbWeight
+		if entry.Address == "0xinmemory" {
+			want *= modelLocalityWeight
+		}
+		if math.Abs(set.scores[i]-want) > 1e-9 {
+			t.Fatalf("unexpected score for %s: want %f, got %f", entry.Address, want, set.scores[i])
 		}
 	}
-	if inMemoryScore <= onDiskScore {
-		t.Fatalf("expected in-memory boost %f to exceed base score %f", inMemoryScore, onDiskScore)
-	}
 }
-
-func TestBuildMatchingCandidateSetIgnoresAuxiliaryModels(t *testing.T) {
-	initMatchingTestConfig(t)
-
-	task := newMatchingTestTask()
-	task.ModelIDs = models.StringArray{"base:model-a", "lora:adapter"}
-	entry := newMatchingTestEntry("0xnode")
-	entry.OnDiskModelIDs["base:model-a"] = struct{}{}
-
-	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{entry})
-	if err != nil {
-		t.Fatalf("build candidate set: %v", err)
-	}
-	if len(set.entries) != 1 {
-		t.Fatalf("expected auxiliary model to be ignored by the hard gate, got %d candidates", len(set.entries))
-	}
-}
-
-func TestBuildMatchingCandidateSetHasNoFallbackWithoutAllBaseModels(t *testing.T) {
-	initMatchingTestConfig(t)
-
-	task := newMatchingTestTask()
-	task.ModelIDs = models.StringArray{"base:model-a", "base:model-b"}
-	entry := newMatchingTestEntry("0xnode")
-	entry.OnDiskModelIDs["base:model-a"] = struct{}{}
-
-	set, err := buildMatchingCandidateSet(context.Background(), task, []*NodeIndexEntry{entry})
-	if err != nil {
-		t.Fatalf("build candidate set: %v", err)
-	}
-	if len(set.entries) != 0 {
-		t.Fatalf("expected no base-ready candidates, got %d", len(set.entries))
-	}
-}
-
 func TestBuildMatchingCandidateSetHardFiltersActiveHealthExclusion(t *testing.T) {
 	initMatchingTestConfig(t)
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	eligible := newMatchingTestEntry("0xeligible")
-	eligible.OnDiskModelIDs["base:model-a"] = struct{}{}
+	holdOnDisk(t, eligible, "model-a", "rev-a")
 	excluded := newMatchingTestEntry("0xexcluded")
-	excluded.OnDiskModelIDs["base:model-a"] = struct{}{}
+	holdOnDisk(t, excluded, "model-a", "rev-a")
 	excluded.HealthExcluded = true
 	excluded.HealthBase = 0.5
 	excluded.HealthUpdatedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
@@ -254,9 +371,9 @@ func TestBuildMatchingCandidateSetHardFiltersActiveHealthExclusion(t *testing.T)
 
 func TestBuildMatchingCandidateSetDoesNotFallbackWhenAllNodesHealthExcluded(t *testing.T) {
 	initMatchingTestConfig(t)
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	excluded := newMatchingTestEntry("0xexcluded")
-	excluded.OnDiskModelIDs["base:model-a"] = struct{}{}
+	holdOnDisk(t, excluded, "model-a", "rev-a")
 	excluded.HealthExcluded = true
 	excluded.HealthBase = 0.5
 	excluded.HealthUpdatedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
@@ -272,9 +389,9 @@ func TestBuildMatchingCandidateSetDoesNotFallbackWhenAllNodesHealthExcluded(t *t
 
 func TestBuildMatchingCandidateSetIncludesRecoveredHealthExcludedNode(t *testing.T) {
 	initMatchingTestConfig(t)
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	recovered := newMatchingTestEntry("0xrecovered")
-	recovered.OnDiskModelIDs["base:model-a"] = struct{}{}
+	holdOnDisk(t, recovered, "model-a", "rev-a")
 	recovered.HealthExcluded = true
 	recovered.HealthBase = config.GetConfig().QoS.HealthExcludeExitThreshold
 	recovered.HealthUpdatedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
@@ -289,7 +406,7 @@ func TestBuildMatchingCandidateSetIncludesRecoveredHealthExcludedNode(t *testing
 }
 
 func TestMatchTaskFromCandidateSetRespectsReservations(t *testing.T) {
-	task := newMatchingTestTask()
+	task := newMatchingTestTask(t)
 	entry1 := newMatchingTestEntry("0xnode1")
 	entry2 := newMatchingTestEntry("0xnode2")
 	set := &matchingCandidateSet{

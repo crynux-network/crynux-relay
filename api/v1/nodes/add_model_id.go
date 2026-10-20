@@ -14,8 +14,8 @@ import (
 )
 
 type AddModelIDInput struct {
-	Address string `json:"address" path:"address" description:"address" validate:"required"`
-	ModelID string `json:"model_id" description:"new local model ID" validate:"required"`
+	Address   string                `json:"address" path:"address" description:"address" validate:"required"`
+	ModelFile models.ModelFileEntry `json:"model_file" description:"new local model file with a concrete revision" validate:"required"`
 }
 
 type AddModelIDInputWithSignature struct {
@@ -54,19 +54,15 @@ func AddModelID(c *gin.Context, in *AddModelIDInputWithSignature) (*response.Res
 		return nil, response.NewValidationErrorResponse("address", "Illegal node status")
 	}
 
-	in.ModelID = models.NormalizeModelID(in.ModelID)
-
-	err = service.ExecuteNodeStateUpdate(c.Request.Context(), config.GetDB(), []string{in.Address}, func() error {
-		return config.GetDB().Transaction(func(tx *gorm.DB) error {
-			_, err := models.GetNodeModel(c.Request.Context(), tx, in.Address, in.ModelID)
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				nodeModel := models.NewNodeModel(in.Address, in.ModelID, false)
-				return nodeModel.Save(c.Request.Context(), tx)
-			}
-			return err
-		})
-	})
+	files, err := service.BuildHeldModelFiles([]models.ModelFileEntry{in.ModelFile})
 	if err != nil {
+		return nil, response.NewValidationErrorResponse("model_file", err.Error())
+	}
+
+	if err := service.AddNodeModelFile(c.Request.Context(), config.GetDB(), in.Address, files[0]); err != nil {
+		if errors.Is(err, service.ErrNodeModelStateIllegal) {
+			return nil, response.NewValidationErrorResponse("address", "Illegal node status")
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 	return &response.Response{}, nil

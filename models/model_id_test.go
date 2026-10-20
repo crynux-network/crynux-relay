@@ -160,9 +160,9 @@ func TestExtractModelExecutionConfig(t *testing.T) {
 			want: ModelExecutionConfig{ModelName: "crynux/sdxl", ModelVariant: "fp16", RequestedDType: AutoExecutionDType},
 		},
 		{
-			name: "llm dtype and quantization", taskType: TaskTypeLLM,
-			args: `{"model":"Qwen/Qwen3","dtype":"BFloat16","quantize_bits":4}`,
-			want: ModelExecutionConfig{ModelName: "qwen/qwen3", RequestedDType: "bfloat16", QuantizeBits: 4},
+			name: "llm dtype", taskType: TaskTypeLLM,
+			args: `{"model":"Qwen/Qwen3","dtype":"BFloat16"}`,
+			want: ModelExecutionConfig{ModelName: "qwen/qwen3", RequestedDType: "bfloat16"},
 		},
 	}
 	for _, tt := range tests {

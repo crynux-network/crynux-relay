@@ -11,9 +11,9 @@ Node selection runs inside the matching scheduler specified in [task_matching.md
 Node selection is a pipeline:
 
 1. **Qualification Filters** enforce availability, hardware, version, task-specific, and node-name policy requirements.
-2. **Base-Model Gate** retains only qualified nodes that have the task's base model on disk.
+2. **Model File Gate** retains only qualified nodes whose on-disk model files cover the task's required model files.
 3. **Base Weight** computes a base weight per ready candidate from staking and QoS.
-4. **In-Memory Locality Weight** boosts ready-candidate weights when the task's base model is already in use.
+4. **In-Memory Locality Weight** boosts ready-candidate weights when the task's requested model is already in memory.
 5. **Weighted Sampling** selects the final node using the effective weights.
 
 ## Qualification Filters
@@ -24,16 +24,16 @@ Relay MUST first apply these hard filters to form the qualified node set:
 - **Short-term health**. A node with persistent `health_excluded = true` and effective health below `qos.health_exclude_exit_threshold` MUST be removed from the candidate set. Relay MUST apply this as a hard filter and MUST NOT depend on a zero selection weight. A node whose effective health is equal to or above the exit threshold MAY pass this filter while its persistent flag remains set; the task-start transaction MUST recheck health and clear the flag atomically.
 - **Hardware compatibility**. If the task specifies a required GPU, the node must match both that GPU model and the required VRAM exactly. Otherwise, the node must satisfy the task's minimum VRAM requirement.
 - **Version compatibility**. For task and node version compatibility rules used by this selection flow, see [task_version.md](./task_version.md).
-- **Task-specific exclusions**. `LLM` tasks exclude nodes on `Darwin`.
+- **Task-specific exclusions**. `LLM` tasks exclude nodes on `Darwin` when the task does not pin `RequiredGPU`. When `InferenceTask.RequireLinuxCuda` is true, Relay MUST retain only nodes whose GPU name platform suffix is `docker` or `Linux`, and MUST apply this filter whether or not the task pins `RequiredGPU`. Platform suffixes other than `docker` and `Linux`, including `Windows`, `Darwin`, and a missing `+` suffix, MUST be excluded for `RequireLinuxCuda` tasks. See [quantization_platform_support.md](./quantization_platform_support.md).
 - **Node name policy**. Relay MAY enforce node-name restrictions using the exact tuple (`GPUName`, `GPUVram`, `NodeVersion`), where `NodeVersion` is the node-reported `major.minor.patch`. When `task.node_name_whitelist_enabled` is true, only tuples in the node-name whitelist are eligible. Eligible tuples MUST also satisfy `task.minimum_node_name_number` using active-count data. Active counts include statuses `Available`, `Busy`, `PendingPause`, and `PendingQuit`, and exclude `Paused` and `Quit`. All GPU names MUST be stored and compared in normalized form: leading and trailing whitespace is removed, and every internal run of whitespace is collapsed into a single space. Relay MUST apply this normalization at every input boundary that accepts a GPU name: node join (`gpu_name`), joined-node capability synchronization (`gpu_name`), task creation (`required_gpu`), and the admin node-name whitelist APIs. When an active joined node changes any member of the tuple through capability synchronization, Relay MUST atomically decrement the persisted count for the old tuple and increment the count for the new tuple, then apply the same transfer to the in-memory count cache after commit. Capability synchronization for `Paused` nodes MUST NOT change active counts.
 
-## Base-Model Gate
+## Model File Gate
 
-Every inference task requires exactly one base model: the single lowercase `base:` entry of `InferenceTask.ModelIDs`. All other entries are auxiliary `lora:` and `controlnet:` models and MUST be ignored by Relay matching.
+Every task carries required model files derived from its TaskArgs: `RequiredModelFileHashes` holds the exact hashes of the entries with a revision, and `RequiredModelFileSourceHashes` holds the source hashes of the entries without a revision. `InferenceTask.ModelIDs` MUST be ignored by Relay matching.
 
-A qualified node is base-ready only when its on-disk model ID set contains the task's base model ID. When no qualified node is base-ready, Relay MUST leave the task queued and MUST NOT fall back to hardware-only or other qualification-only selection.
+A qualified node is model-ready only when its on-disk model file inventory contains every exact hash and at least one file of every source hash. When no qualified node is model-ready, Relay MUST leave the task queued and MUST NOT fall back to hardware-only or other qualification-only selection.
 
-A task with no base model ID passes the base-model gate without an on-disk model requirement.
+A task with no required model files passes the model file gate without an on-disk requirement.
 
 ## Base Weight
 
@@ -67,14 +67,14 @@ If either `StakingScore` or `QoS` is `0`, then `BaseWeight` is `0`.
 
 ## In-Memory Locality Weight
 
-All candidates that reach weighting already have the task's base model on disk. On-disk locality therefore acts only as a hard gate and MUST NOT add a weight component. Relay MUST apply only the `0.3` in-memory locality component to ready candidates:
+All candidates that reach weighting already hold the task's required model files on disk. On-disk locality therefore acts only as a hard gate and MUST NOT add a weight component. Relay MUST apply only the `0.3` in-memory locality component to ready candidates:
 
 ```
-localityWeight = 1 + 0.3 (when the task's base model is in the node's in-use model set)
+localityWeight = 1 + 0.3 (when the node's in-memory model has the task's RequestedModelCacheHash and its model files cover the task's required model files)
 localityWeight = 1   (otherwise)
 ```
 
-When the task has no base model ID, Relay MUST use a locality weight of `1`.
+The in-memory model of a node MUST come from the node's authoritative in-memory model report. The cache hash comparison MUST be exact; the node cache hash does not include revisions, so the model file coverage check MUST additionally require every exact required hash and one file of every source required hash among the in-memory model files.
 
 ## Final Effective Weight
 
@@ -91,5 +91,5 @@ Nodes are sampled by weighted random selection using `EffectiveWeight`.
 | File | Description |
 |------|-------------|
 | `service/selecting_prob.go` | Staking score and base weight calculation |
-| `service/task_matching.go` | Qualification filters, base-model gate, in-memory locality weight, and weighted sampling |
+| `service/task_matching.go` | Qualification filters, model file gate, in-memory locality weight, and weighted sampling |
 | `service/qos.go` | QoS score calculation (`CalculateQosScore`) |

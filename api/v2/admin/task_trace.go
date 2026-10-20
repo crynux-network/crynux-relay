@@ -7,6 +7,7 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -255,28 +256,28 @@ func (b *taskTraceBuilder) addTaskCreated() {
 		b.markStored("task_created.timestamp")
 	}
 	details := map[string]interface{}{
-		"task_args":              b.task.TaskArgs,
-		"task_type":              b.task.TaskType,
-		"task_version":           b.task.TaskVersion,
-		"model_name":             b.task.ModelName,
-		"model_variant":          b.task.ModelVariant,
-		"requested_dtype":        b.task.RequestedDType,
-		"execution_dtype":        b.task.ExecutionDType,
-		"quantize_bits":          b.task.QuantizeBits,
-		"timeout":                b.task.Timeout,
-		"min_vram":               b.task.MinVRAM,
-		"required_gpu":           b.task.RequiredGPU,
-		"required_gpu_vram":      b.task.RequiredGPUVRAM,
-		"task_fee":               b.task.TaskFee.String(),
-		"priority":               b.task.Priority.String(),
-		"estimated_node_seconds": b.task.EstimatedNodeSeconds,
-		"vram_weight":            b.task.VRAMWeight,
-		"pricing_units":          b.task.PricingUnits,
-		"task_size":              b.task.TaskSize,
-		"model_ids":              []string(b.task.ModelIDs),
-		"creator":                b.task.Creator,
-		"nonce":                  b.task.Nonce,
-		"sampling_seed":          b.task.SamplingSeed,
+		"task_args":                b.task.TaskArgs,
+		"task_type":                b.task.TaskType,
+		"task_version":             b.task.TaskVersion,
+		"model_name":               b.task.ModelName,
+		"model_variant":            b.task.ModelVariant,
+		"requested_dtype":          b.task.RequestedDType,
+		"execution_dtype":          b.task.ExecutionDType,
+		"quantization_config_hash": hex.EncodeToString(b.task.QuantizationConfigHash),
+		"timeout":                  b.task.Timeout,
+		"min_vram":                 b.task.MinVRAM,
+		"required_gpu":             b.task.RequiredGPU,
+		"required_gpu_vram":        b.task.RequiredGPUVRAM,
+		"task_fee":                 b.task.TaskFee.String(),
+		"priority":                 b.task.Priority.String(),
+		"estimated_node_seconds":   b.task.EstimatedNodeSeconds,
+		"vram_weight":              b.task.VRAMWeight,
+		"pricing_units":            b.task.PricingUnits,
+		"task_size":                b.task.TaskSize,
+		"model_ids":                []string(b.task.ModelIDs),
+		"creator":                  b.task.Creator,
+		"nonce":                    b.task.Nonce,
+		"sampling_seed":            b.task.SamplingSeed,
 	}
 	if b.task.SDUnits != nil {
 		details["sd_units"] = *b.task.SDUnits
@@ -439,7 +440,7 @@ func (b *taskTraceBuilder) addTaskStarted() {
 				details["calibration_model_name"] = description.ModelName
 				details["calibration_model_variant"] = description.ModelVariant
 				details["calibration_requested_dtype"] = description.RequestedDType
-				details["calibration_quantize_bits"] = description.QuantizeBits
+				details["calibration_quantization_config_hash"] = description.QuantizationConfigHash
 				details["calibration_selected_execution_dtype"] = description.SelectedExecutionDType
 				details["calibration_min_vram_requirement"] = description.MinVRAMRequirement
 				details["calibration_max_vram_requirement"] = description.MaxVRAMRequirement

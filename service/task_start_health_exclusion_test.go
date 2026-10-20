@@ -16,16 +16,19 @@ func createHealthExclusionTaskStartFixture(t *testing.T, recovered bool) (*model
 	t.Helper()
 	initServiceTestConfig(t)
 	db := config.GetDB()
-	if err := db.AutoMigrate(&models.InferenceTask{}, &models.Node{}, &models.NodeModel{}, &models.Event{}); err != nil {
+	if err := db.AutoMigrate(&models.InferenceTask{}, &models.Node{}, &models.Event{}); err != nil {
 		t.Fatalf("migrate task start tables: %v", err)
 	}
+	migrateModelStateTables(t, db)
 	task := &models.InferenceTask{
-		TaskIDCommitment: "0xhealth-start-task",
-		Status:           models.TaskQueued,
-		TaskType:         models.TaskTypeSDFTLora,
-		TaskVersion:      "1.0.0",
-		Timeout:          60,
-		CreateTime:       sql.NullTime{Time: time.Now().UTC(), Valid: true},
+		TaskIDCommitment:        "0xhealth-start-task",
+		Status:                  models.TaskQueued,
+		TaskType:                models.TaskTypeSDFTLora,
+		TaskVersion:             "1.0.0",
+		Timeout:                 60,
+		RequestedModelCacheHash: models.Hash32{1}.Bytes(),
+		QuantizationConfigHash:  models.Hash32{2}.Bytes(),
+		CreateTime:              sql.NullTime{Time: time.Now().UTC(), Valid: true},
 	}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
@@ -99,20 +102,10 @@ func TestSetTaskStatusStartedClearsRecoveredExclusionWithTaskStart(t *testing.T)
 func TestSetTaskStatusStartedRollsBackTaskAndExclusionClear(t *testing.T) {
 	task, node := createHealthExclusionTaskStartFixture(t, true)
 	db := config.GetDB()
-	model := models.NewNodeModel(node.Address, "base:model-a", false)
-	if err := model.Save(t.Context(), db); err != nil {
-		t.Fatalf("create model: %v", err)
-	}
-	node.Models = []models.NodeModel{model}
-	task.ModelIDs = models.StringArray{"base:model-a"}
-	if err := db.Model(task).Update("model_ids", task.ModelIDs).Error; err != nil {
-		t.Fatalf("update task models: %v", err)
-	}
-
-	callbackName := "test:fail_task_start_node_model_update"
+	callbackName := "test:fail_task_start_node_update"
 	if err := db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
-		if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "NodeModel" {
-			tx.AddError(errors.New("forced node model update failure"))
+		if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Node" {
+			tx.AddError(errors.New("forced node update failure"))
 		}
 	}); err != nil {
 		t.Fatalf("register callback: %v", err)

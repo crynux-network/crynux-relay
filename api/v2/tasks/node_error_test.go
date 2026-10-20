@@ -93,9 +93,13 @@ func TestReportNodeTaskErrorAcceptsTerminalTaskAndIsIdempotent(t *testing.T) {
 	db := newNodeTaskErrorAPITestDB(t)
 	input := newSignedNodeTaskErrorInput(t, nodeTaskErrorTestPrivateKey, "task-terminal")
 	task := models.InferenceTask{
-		TaskIDCommitment: input.TaskIDCommitment,
-		SelectedNode:     input.NodeAddress,
-		Status:           models.TaskEndSuccess,
+		RequiredModelFileHashes:       []byte{},
+		RequiredModelFileSourceHashes: []byte{},
+		RequestedModelCacheHash:       make([]byte, 32),
+		QuantizationConfigHash:        make([]byte, 32),
+		TaskIDCommitment:              input.TaskIDCommitment,
+		SelectedNode:                  input.NodeAddress,
+		Status:                        models.TaskEndSuccess,
 	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("failed to create task: %v", err)
@@ -133,9 +137,13 @@ func TestReportNodeTaskErrorRejectsSignerThatIsNotSelectedNode(t *testing.T) {
 	db := newNodeTaskErrorAPITestDB(t)
 	input := newSignedNodeTaskErrorInput(t, nodeTaskErrorTestPrivateKey, "task-wrong-node")
 	task := models.InferenceTask{
-		TaskIDCommitment: input.TaskIDCommitment,
-		SelectedNode:     "0x1111111111111111111111111111111111111111",
-		Status:           models.TaskStarted,
+		RequiredModelFileHashes:       []byte{},
+		RequiredModelFileSourceHashes: []byte{},
+		RequestedModelCacheHash:       make([]byte, 32),
+		QuantizationConfigHash:        make([]byte, 32),
+		TaskIDCommitment:              input.TaskIDCommitment,
+		SelectedNode:                  "0x1111111111111111111111111111111111111111",
+		Status:                        models.TaskStarted,
 	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("failed to create task: %v", err)
@@ -177,9 +185,13 @@ func TestReportNodeTaskErrorAcceptsCapturedAtOutsideSignature(t *testing.T) {
 	input := newSignedNodeTaskErrorInput(t, nodeTaskErrorTestPrivateKey, "task-unsigned-capture-time")
 	input.CapturedAt = 1_700_000_000
 	task := models.InferenceTask{
-		TaskIDCommitment: input.TaskIDCommitment,
-		SelectedNode:     input.NodeAddress,
-		Status:           models.TaskStarted,
+		RequiredModelFileHashes:       []byte{},
+		RequiredModelFileSourceHashes: []byte{},
+		RequestedModelCacheHash:       make([]byte, 32),
+		QuantizationConfigHash:        make([]byte, 32),
+		TaskIDCommitment:              input.TaskIDCommitment,
+		SelectedNode:                  input.NodeAddress,
+		Status:                        models.TaskStarted,
 	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("failed to create task: %v", err)

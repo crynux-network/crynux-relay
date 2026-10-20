@@ -6,7 +6,6 @@ import (
 	"crynux_relay/models"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"io"
 	"math/big"
 	"os"
@@ -164,22 +163,10 @@ func buildSlashEvidenceTaskSnapshot(task *models.InferenceTask) models.SlashEvid
 }
 
 func buildSlashEvidenceNodeSnapshot(ctx context.Context, db *gorm.DB, node *models.Node) (models.SlashEvidenceNodeSnapshot, error) {
-	modelsSnapshot := make([]models.SlashEvidenceNodeModel, 0, len(node.Models))
-	nodeModels := node.Models
-	if len(nodeModels) == 0 {
-		var err error
-		nodeModels, err = models.GetNodeModelsByNodeAddress(ctx, db, node.Address)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.SlashEvidenceNodeSnapshot{}, err
-		}
+	modelsSnapshot, err := buildSlashEvidenceNodeModels(ctx, db, node.Address)
+	if err != nil {
+		return models.SlashEvidenceNodeSnapshot{}, err
 	}
-	for _, nodeModel := range nodeModels {
-		modelsSnapshot = append(modelsSnapshot, models.SlashEvidenceNodeModel{
-			ModelID: nodeModel.ModelID,
-			InUse:   nodeModel.InUse,
-		})
-	}
-
 	delegatorCount, delegatedStakingAmount, err := getSlashEvidenceDelegationSummary(ctx, db, node.Address, node.Network)
 	if err != nil {
 		return models.SlashEvidenceNodeSnapshot{}, err
@@ -202,6 +189,40 @@ func buildSlashEvidenceNodeSnapshot(ctx context.Context, db *gorm.DB, node *mode
 		DelegatedStakingAmount: delegatedStakingAmount.String(),
 		Models:                 modelsSnapshot,
 	}, nil
+}
+
+// buildSlashEvidenceNodeModels lists the disk inventory of a node and marks the
+// files of its in-memory model.
+func buildSlashEvidenceNodeModels(ctx context.Context, db *gorm.DB, nodeAddress string) ([]models.SlashEvidenceNodeModel, error) {
+	nodeModels, err := models.GetNodeModelsByNodeAddress(ctx, db, nodeAddress)
+	if err != nil {
+		return nil, err
+	}
+	inMemory, err := models.GetNodeInMemoryModel(ctx, db, nodeAddress)
+	if err != nil {
+		return nil, err
+	}
+	inMemoryHashes := make(map[models.Hash32]struct{})
+	if inMemory != nil {
+		hashes, err := inMemory.FileHashes()
+		if err != nil {
+			return nil, err
+		}
+		inMemoryHashes = hashSet(hashes)
+	}
+	snapshot := make([]models.SlashEvidenceNodeModel, 0, len(nodeModels))
+	for _, nodeModel := range nodeModels {
+		hash, err := models.Hash32FromBytes(nodeModel.ModelFileHash)
+		if err != nil {
+			return nil, err
+		}
+		_, held := inMemoryHashes[hash]
+		snapshot = append(snapshot, models.SlashEvidenceNodeModel{
+			ModelFileHash: hash.Hex(),
+			InMemory:      held,
+		})
+	}
+	return snapshot, nil
 }
 
 func getSlashEvidenceDelegationSummary(ctx context.Context, db *gorm.DB, nodeAddress, network string) (int64, *big.Int, error) {

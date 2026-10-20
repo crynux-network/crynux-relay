@@ -33,6 +33,7 @@ func TestRefreshValidationGroupReturnsAlreadyAppliedAfterConcurrentValidation(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +64,7 @@ func TestValidationGroupLockRejectsFreshCreatorValidationTimeoutWithoutTaskIDWri
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
 		t.Fatalf("failed to migrate inference tasks: %v", err)
 	}
@@ -108,6 +110,7 @@ func TestRefreshValidationGroupTasksForFinalUpdateRejectsCreatorValidationTimeou
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.InferenceTask{}); err != nil {
 		t.Fatalf("failed to migrate inference tasks: %v", err)
 	}
@@ -300,5 +303,34 @@ func newValidationGroupTask(status models.TaskStatus, abortReason models.TaskAbo
 		Status:       status,
 		AbortReason:  abortReason,
 		SelectedNode: selectedNode,
+	}
+}
+
+func TestCheckGroupExecutionModelFiles(t *testing.T) {
+	hashesA := models.EncodeHashList([]models.Hash32{{1}, {2}})
+	hashesB := models.EncodeHashList([]models.Hash32{{1}, {3}})
+	task := func(status models.TaskStatus, hashes []byte) *models.InferenceTask {
+		return &models.InferenceTask{Status: status, ExecutionModelFileHashes: hashes}
+	}
+
+	consistent := []*models.InferenceTask{
+		task(models.TaskScoreReady, hashesA), task(models.TaskErrorReported, hashesA), task(models.TaskScoreReady, hashesA),
+	}
+	if err := checkGroupExecutionModelFiles(consistent); err != nil {
+		t.Fatalf("expected consistent group to pass: %v", err)
+	}
+
+	abortedIgnored := []*models.InferenceTask{
+		task(models.TaskScoreReady, hashesA), task(models.TaskEndAborted, nil), task(models.TaskScoreReady, hashesA),
+	}
+	if err := checkGroupExecutionModelFiles(abortedIgnored); err != nil {
+		t.Fatalf("expected aborted member to be ignored: %v", err)
+	}
+
+	inconsistent := []*models.InferenceTask{
+		task(models.TaskScoreReady, hashesA), task(models.TaskScoreReady, hashesB), task(models.TaskScoreReady, hashesA),
+	}
+	if err := checkGroupExecutionModelFiles(inconsistent); !errors.Is(err, ErrInconsistentExecutionModelFiles) {
+		t.Fatalf("expected ErrInconsistentExecutionModelFiles, got %v", err)
 	}
 }

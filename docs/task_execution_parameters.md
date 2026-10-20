@@ -7,7 +7,7 @@ This document specifies the execution-time parameters that Relay derives from co
 For SD tasks, Relay MUST compute:
 
 ```
-sd_units = num_images * image_width * image_height * steps
+sd_units = num_images_per_prompt * image_width * image_height * steps
 ```
 
 One SD unit is one pixel executed for one step. Relay MUST store this integer as `SDUnits` when the task is created.
@@ -20,13 +20,13 @@ For LLM tasks, Relay MUST also resolve `max_new_tokens` at creation from an expl
 
 Relay MUST use stored workload fields in every later estimate and calibration update. Relay MUST use the stored `LLMMaxNewTokens` in every later estimate and Timeout calculation. Relay MUST NOT parse mutable `TaskArgs` again for these values.
 
-At creation Relay MUST extract and store the normalized base `model_name`, requested `dtype`, SD base-model `variant`, and LLM `quantize_bits`. Missing `dtype` MUST be stored as `auto`, and missing `quantize_bits` MUST be stored as `0`. These fields MUST remain unchanged for the task lifetime. Score submission MAY include a signed `execution_dtype`. When it is absent, Relay MUST use the stored requested dtype for calibration, including the literal value `auto`.
+At creation Relay MUST extract and store the normalized base `model_name`, requested `dtype`, SD base-model `variant`, and `QuantizationConfigHash`. Missing `dtype` MUST be stored as `auto`. `QuantizationConfigHash` MUST be the SHA-256 of the canonical JSON of the complete `quantization_config` of the TaskArgs, and a missing `quantization_config` MUST hash the canonical JSON `null`. These fields MUST remain unchanged for the task lifetime. Score submission MAY include a signed `execution_dtype`. When it is absent, Relay MUST use the stored requested dtype for calibration, including the literal value `auto`.
 
 An LLM calibration sample MUST use the actual `usage.completion_tokens` from the uploaded `0.json`. Relay MUST accept this value only after the SHA-256 hash of the complete uploaded JSON equals the task's validated `Score`. A missing, incorrectly typed, negative, or otherwise invalid completion-token value MUST cause Relay to log a structured error and skip that calibration sample without changing validation, upload, fee, QoS, or terminal-state processing.
 
 ## GPU Parameter Identity
 
-Relay MUST maintain one parameter record for each exact `(TaskType, GPUName, GPUVram, ModelName, ModelVariant, ExecutionDType, QuantizeBits)` key. The record MUST contain:
+Relay MUST maintain one parameter record for each exact `(TaskType, GPUName, GPUVram, ModelName, ModelVariant, ExecutionDType, RequiredModelFilesHash, QuantizationConfigHash)` key. `RequiredModelFilesHash` MUST be the SHA-256 of the sorted concatenation of the task's `ExecutionModelFileHashes`. The record MUST contain:
 
 - SD `overhead_seconds`.
 - SD `seconds_per_sd_pixel_step`.
@@ -43,7 +43,7 @@ Relay MUST maintain one parameter record for each exact `(TaskType, GPUName, GPU
 - The persisted LLM six-dimensional weighted least-squares matrices.
 - The minimum and maximum task `MinVRAM` observed across valid samples in the record.
 
-Each valid sample MUST update both VRAM bounds without creating another row for a different `MinVRAM`. Model architecture, scheduler, and auxiliary models MUST NOT be calibration-key fields.
+Each valid sample MUST update both VRAM bounds without creating another row for a different `MinVRAM`. Model architecture, scheduler, and LoRA MUST NOT be calibration-key fields.
 
 ## Execution GPU Snapshot
 
@@ -117,7 +117,7 @@ Every runtime configuration template MUST explicitly define positive SD initial 
 
 ## Initialization and Cold Start
 
-For a known model configuration, Relay MUST select records with the same task type, model name, variant, and quantization. An explicit requested dtype MUST select the same execution dtype. A requested dtype of `auto` MUST select both `auto` records from old Nodes and all reported actual execution dtypes. Priority aggregation MUST give every selected record equal weight. Timeout selection MUST calculate the complete prediction from each selected record and use the maximum.
+For a known model configuration, Relay MUST select records with the same task type, model name, variant, and `QuantizationConfigHash`. An explicit requested dtype MUST select the same execution dtype. A requested dtype of `auto` MUST select both `auto` records from old Nodes and all reported actual execution dtypes. Priority aggregation MUST give every selected record equal weight. Timeout selection MUST calculate the complete prediction from each selected record and use the maximum.
 
 If no record matches the model configuration, Relay MUST compare the task `MinVRAM` with every candidate record interval. Distance MUST be `0` when the interval contains `MinVRAM`; otherwise distance MUST be the difference to the nearest interval boundary. For a selected GPU, Relay MUST first use nearest records for the exact GPU name and VRAM, and MUST use other GPU names with the same VRAM only when the exact GPU has no records. Equal-distance priority candidates MUST be averaged with equal weight. Equal-distance Timeout candidates MUST use the maximum complete prediction. If no candidate exists, Relay MUST use configured initial parameters.
 

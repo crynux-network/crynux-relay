@@ -30,9 +30,7 @@ type chainDelegation struct {
 	Amount           *big.Int
 }
 
-func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, modelIDs []string) error {
-	modelIDs = models.NormalizeModelIDs(modelIDs)
-
+func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, modelFiles []models.ModelFile) error {
 	unfinishedSlashJob, err := models.HasUnfinishedDelegatedSlashJobForNode(ctx, db, node.Address)
 	if err != nil {
 		return err
@@ -80,11 +78,10 @@ func SetNodeStatusJoin(ctx context.Context, db *gorm.DB, node *models.Node, mode
 		if err := syncNodeDelegationsFromChainTx(tx, node.Address, node.Network, chainDelegations); err != nil {
 			return err
 		}
-		var nodeModels []models.NodeModel
-		for _, modelID := range modelIDs {
-			nodeModels = append(nodeModels, models.NewNodeModel(node.Address, modelID, false))
+		if err := replaceNodeModelFiles(ctx, tx, node.Address, modelFiles); err != nil {
+			return err
 		}
-		if err := models.CreateNodeModels(ctx, tx, nodeModels); err != nil {
+		if err := models.ClearNodeInMemoryModel(ctx, tx, node.Address); err != nil {
 			return err
 		}
 		networkNodeData := models.NetworkNodeData{
@@ -215,12 +212,7 @@ func SetNodeStatusQuit(ctx context.Context, db *gorm.DB, node *models.Node, slas
 
 func setNodeStatusQuitTx(ctx context.Context, tx *gorm.DB, node *models.Node, slashed bool) (bool, uint, error) {
 	wasActiveBeforeQuit := IsNodeStatusActiveForNodeNameCount(node.Status)
-	// delete all node local models
-	err := tx.Where("node_address = ?", node.Address).Delete(&models.NodeModel{}).Error
-	if err != nil {
-		return false, 0, err
-	}
-	if err := models.DeleteNodeModelDownloadSelectionsByNodeAddress(ctx, tx, node.Address); err != nil {
+	if err := clearNodeModelState(ctx, tx, node.Address); err != nil {
 		return false, 0, err
 	}
 
@@ -274,40 +266,12 @@ func applyNodeQuitPostCommit(node *models.Node, wasActiveBeforeQuit bool) {
 	}
 }
 
-func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommitment string, taskModelIDs []string) error {
+func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCommitment string) error {
 	if node.Status != models.NodeStatusAvailable || node.CurrentTaskIDCommitment.Valid {
 		return errors.New("node is not available")
 	}
 	if IsHealthExcluded(node, time.Now().UTC()) {
 		return ErrNodeHealthExcluded
-	}
-
-	changedModels := make([]models.NodeModel, 0)
-	baseModelIDs := models.BaseModelIDs(taskModelIDs)
-
-	localModelSet := make(map[string]models.NodeModel)
-	for _, model := range node.Models {
-		localModelSet[model.ModelID] = model
-	}
-	for _, modelID := range baseModelIDs {
-		if model, ok := localModelSet[modelID]; ok && !model.InUse {
-			model.InUse = true
-			changedModels = append(changedModels, model)
-		}
-	}
-	taskModelIDSet := make(map[string]struct{})
-	for _, modelID := range baseModelIDs {
-		taskModelIDSet[modelID] = struct{}{}
-	}
-	for _, model := range node.Models {
-		if !models.IsBaseModelID(model.ModelID) {
-			continue
-		}
-		_, ok := taskModelIDSet[model.ModelID]
-		if model.InUse && !ok {
-			model.InUse = false
-			changedModels = append(changedModels, model)
-		}
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -322,11 +286,6 @@ func nodeStartTask(ctx context.Context, db *gorm.DB, node *models.Node, taskIDCo
 			return err
 		}
 
-		for _, model := range changedModels {
-			if err := model.Save(ctx, tx); err != nil {
-				return err
-			}
-		}
 		node.Status = models.NodeStatusBusy
 		node.CurrentTaskIDCommitment = sql.NullString{String: taskIDCommitment, Valid: true}
 		node.HealthExcluded = false

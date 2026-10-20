@@ -149,9 +149,13 @@ func setupBlockchainProcessorTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(
 		&models.Node{},
 		&models.NodeModel{},
+		&models.ModelFile{},
+		&models.NodeInMemoryModel{},
+		&models.NodeModelDownloadSelection{},
 		&models.Delegation{},
 		&models.Event{},
 		&models.DelegatedSlashJob{},
@@ -704,7 +708,7 @@ func TestSetNodeStatusJoinRebuildsDelegationsFromChain(t *testing.T) {
 		return []common.Address{delegatorAddress}, []*big.Int{big.NewInt(12)}, nil
 	}
 
-	if err := SetNodeStatusJoin(ctx, db, &node, []string{"model-a"}); err != nil {
+	if err := SetNodeStatusJoin(ctx, db, &node, []models.ModelFile{testModelFile(t, "model-a", "rev-a")}); err != nil {
 		t.Fatalf("SetNodeStatusJoin failed: %v", err)
 	}
 
@@ -776,7 +780,7 @@ func TestSetNodeStatusJoinWithZeroShareKeepsDelegationsInEffectiveCache(t *testi
 		return []common.Address{delegatorAddress}, []*big.Int{big.NewInt(12)}, nil
 	}
 
-	if err := SetNodeStatusJoin(ctx, db, &node, []string{"model-a"}); err != nil {
+	if err := SetNodeStatusJoin(ctx, db, &node, []models.ModelFile{testModelFile(t, "model-a", "rev-a")}); err != nil {
 		t.Fatalf("SetNodeStatusJoin failed: %v", err)
 	}
 

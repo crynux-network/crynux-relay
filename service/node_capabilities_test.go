@@ -20,6 +20,8 @@ func newNodeCapabilitiesTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&models.Node{},
 		&models.NodeModel{},
+		&models.ModelFile{},
+		&models.NodeInMemoryModel{},
 		&models.NodeNameCount{},
 		&models.NetworkNodeData{},
 		&models.NodeModelDownloadSelection{},
@@ -44,13 +46,10 @@ func seedNodeCapabilitiesTestNode(t *testing.T, db *gorm.DB, status models.NodeS
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}
-	modelsToCreate := []models.NodeModel{
-		models.NewNodeModel(node.Address, "base:model-retained", true),
-		models.NewNodeModel(node.Address, "base:model-removed", false),
-	}
-	if err := db.Create(&modelsToCreate).Error; err != nil {
-		t.Fatalf("failed to create node models: %v", err)
-	}
+	seedNodeModelFiles(t, db, node.Address,
+		testModelFile(t, "model-retained", "rev-1"),
+		testModelFile(t, "model-removed", "rev-1"),
+	)
 	networkData := models.NetworkNodeData{
 		Address:   node.Address,
 		Network:   node.Network,
@@ -88,13 +87,16 @@ func TestSyncNodeCapabilitiesReplacesInventoryAndRefreshesMatchingState(t *testi
 		MajorVersion: 2,
 		MinorVersion: 1,
 		PatchVersion: 3,
-		ModelIDs:     []string{"BASE:MODEL-RETAINED", "base:model-added", "BASE:MODEL-ADDED"},
+		ModelFiles: []models.ModelFile{
+			testModelFile(t, "model-retained", "rev-1"),
+			testModelFile(t, "model-added", "rev-1"),
+		},
 	})
 	if err != nil {
 		t.Fatalf("sync capabilities failed: %v", err)
 	}
 
-	node, err := models.GetNodeWithModelsByAddress(ctx, db, oldNode.Address)
+	node, err := models.GetNodeByAddress(ctx, db, oldNode.Address)
 	if err != nil {
 		t.Fatalf("failed to load updated node: %v", err)
 	}
@@ -102,20 +104,28 @@ func TestSyncNodeCapabilitiesReplacesInventoryAndRefreshesMatchingState(t *testi
 		node.MajorVersion != 2 || node.MinorVersion != 1 || node.PatchVersion != 3 {
 		t.Fatalf("unexpected updated node: %#v", node)
 	}
-	if len(node.Models) != 2 {
-		t.Fatalf("unexpected model count: %d", len(node.Models))
+	rows, err := models.ListNodeModelFileRows(ctx, db, oldNode.Address)
+	if err != nil {
+		t.Fatalf("failed to load node model rows: %v", err)
 	}
-	modelState := make(map[string]bool, len(node.Models))
-	for _, model := range node.Models {
-		modelState[model.ModelID] = model.InUse
+	if len(rows) != 2 {
+		t.Fatalf("unexpected model count: %d", len(rows))
 	}
-	if !modelState["base:model-retained"] {
-		t.Fatal("retained model should preserve in_use")
+	held := make(map[models.Hash32]struct{}, len(rows))
+	for _, row := range rows {
+		hash, err := models.Hash32FromBytes(row.ModelFileHash)
+		if err != nil {
+			t.Fatalf("invalid model file hash: %v", err)
+		}
+		held[hash] = struct{}{}
 	}
-	if modelState["base:model-added"] {
-		t.Fatal("new model should not be in use")
+	if _, ok := held[testModelFileHash(t, "model-retained", "rev-1")]; !ok {
+		t.Fatal("retained model should remain on disk")
 	}
-	if _, ok := modelState["base:model-removed"]; ok {
+	if _, ok := held[testModelFileHash(t, "model-added", "rev-1")]; !ok {
+		t.Fatal("new model should be on disk")
+	}
+	if _, ok := held[testModelFileHash(t, "model-removed", "rev-1")]; ok {
 		t.Fatal("absent model should be removed")
 	}
 
@@ -139,11 +149,11 @@ func TestSyncNodeCapabilitiesReplacesInventoryAndRefreshesMatchingState(t *testi
 	if entry.GPUName != node.GPUName || entry.GPUVram != node.GPUVram || entry.MajorVersion != 2 {
 		t.Fatalf("unexpected node index capabilities: %#v", entry)
 	}
-	if _, ok := entry.OnDiskModelIDs["base:model-added"]; !ok {
+	if _, ok := entry.OnDiskModelFileHashes[testModelFileHash(t, "model-added", "rev-1")]; !ok {
 		t.Fatal("node index should contain added model")
 	}
-	if _, ok := entry.InUseModelIDs["base:model-retained"]; !ok {
-		t.Fatal("node index should preserve retained in-use model")
+	if _, ok := entry.OnDiskModelFileHashes[testModelFileHash(t, "model-removed", "rev-1")]; ok {
+		t.Fatal("node index should not contain removed model")
 	}
 
 	var networkData models.NetworkNodeData
@@ -167,7 +177,7 @@ func TestSyncNodeCapabilitiesDoesNotTransferPausedNodeNameCount(t *testing.T) {
 		MajorVersion: 2,
 		MinorVersion: 0,
 		PatchVersion: 0,
-		ModelIDs:     []string{"base:model-retained"},
+		ModelFiles:   []models.ModelFile{testModelFile(t, "model-retained", "rev-1")},
 	}); err != nil {
 		t.Fatalf("sync paused node capabilities failed: %v", err)
 	}
@@ -191,10 +201,20 @@ func TestSyncNodeCapabilitiesRejectsQuitNode(t *testing.T) {
 		MajorVersion: node.MajorVersion,
 		MinorVersion: node.MinorVersion,
 		PatchVersion: node.PatchVersion,
+		ModelFiles:   []models.ModelFile{},
 	})
 	if !errors.Is(err, ErrNodeCapabilitiesIllegalStatus) {
 		t.Fatalf("expected illegal status error, got %v", err)
 	}
+}
+
+func testExactSelection(t *testing.T, address, repository string, sentAt time.Time) *models.NodeModelDownloadSelection {
+	t.Helper()
+	selection := models.NewNodeModelDownloadSelection(
+		[]models.Hash32{testModelFileHash(t, repository, "rev-1")}, nil, address, 24, sentAt, sentAt.Add(time.Hour),
+	)
+	selection.Status = models.NodeModelDownloadSelectionCompleted
+	return selection
 }
 
 func TestSyncNodeCapabilitiesClearsSelectionsForRemovedModels(t *testing.T) {
@@ -204,12 +224,9 @@ func TestSyncNodeCapabilitiesClearsSelectionsForRemovedModels(t *testing.T) {
 	node := seedNodeCapabilitiesTestNode(t, db, models.NodeStatusAvailable)
 
 	now := time.Now().UTC()
-	retained := models.NewNodeModelDownloadSelection("base:model-retained", node.Address, 24, now, now.Add(time.Hour))
-	retained.Status = models.NodeModelDownloadSelectionCompleted
-	removed := models.NewNodeModelDownloadSelection("base:model-removed", node.Address, 100, now.Add(-time.Hour), now.Add(time.Hour))
-	removed.Status = models.NodeModelDownloadSelectionCompleted
-	otherNode := models.NewNodeModelDownloadSelection("base:model-removed", "0xother", 100, now, now.Add(time.Hour))
-	otherNode.Status = models.NodeModelDownloadSelectionCompleted
+	retained := testExactSelection(t, node.Address, "model-retained", now)
+	removed := testExactSelection(t, node.Address, "model-removed", now.Add(-time.Hour))
+	otherNode := testExactSelection(t, "0xother", "model-removed", now)
 	for _, selection := range []*models.NodeModelDownloadSelection{retained, removed, otherNode} {
 		if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
 			t.Fatalf("create selection: %v", err)
@@ -222,7 +239,7 @@ func TestSyncNodeCapabilitiesClearsSelectionsForRemovedModels(t *testing.T) {
 		MajorVersion: node.MajorVersion,
 		MinorVersion: node.MinorVersion,
 		PatchVersion: node.PatchVersion,
-		ModelIDs:     []string{"base:model-retained"},
+		ModelFiles:   []models.ModelFile{testModelFile(t, "model-retained", "rev-1")},
 	}); err != nil {
 		t.Fatalf("sync capabilities failed: %v", err)
 	}
@@ -234,17 +251,23 @@ func TestSyncNodeCapabilitiesClearsSelectionsForRemovedModels(t *testing.T) {
 	if len(selections) != 2 {
 		t.Fatalf("expected 2 remaining selections, got %d", len(selections))
 	}
-	remaining := make(map[string]string, len(selections))
+	remaining := make(map[string]struct{}, len(selections))
 	for _, selection := range selections {
-		remaining[selection.NodeAddress+"|"+selection.ModelID] = string(selection.Status)
+		hash, err := models.Hash32FromBytes(selection.ModelFileHash)
+		if err != nil {
+			t.Fatalf("invalid selection hash: %v", err)
+		}
+		remaining[selection.NodeAddress+"|"+hash.Hex()] = struct{}{}
 	}
-	if remaining[node.Address+"|base:model-retained"] != string(models.NodeModelDownloadSelectionCompleted) {
+	retainedKey := models.DistributionKey([]models.Hash32{testModelFileHash(t, "model-retained", "rev-1")}, nil)
+	removedKey := models.DistributionKey([]models.Hash32{testModelFileHash(t, "model-removed", "rev-1")}, nil)
+	if _, ok := remaining[node.Address+"|"+retainedKey.Hex()]; !ok {
 		t.Fatalf("retained model selection should remain, got %#v", remaining)
 	}
-	if _, ok := remaining[node.Address+"|base:model-removed"]; ok {
+	if _, ok := remaining[node.Address+"|"+removedKey.Hex()]; ok {
 		t.Fatal("removed model selection should be deleted for the synced node")
 	}
-	if remaining["0xother|base:model-removed"] != string(models.NodeModelDownloadSelectionCompleted) {
+	if _, ok := remaining["0xother|"+removedKey.Hex()]; !ok {
 		t.Fatal("other node selection for the same model should remain")
 	}
 }
@@ -255,9 +278,7 @@ func TestSyncNodeCapabilitiesClearsStaleSelectionsWithoutNodeModelRows(t *testin
 	db := newNodeCapabilitiesTestDB(t)
 	node := seedNodeCapabilitiesTestNode(t, db, models.NodeStatusAvailable)
 
-	now := time.Now().UTC()
-	stale := models.NewNodeModelDownloadSelection("base:model-stale", node.Address, 100, now.Add(-time.Hour), now.Add(time.Hour))
-	stale.Status = models.NodeModelDownloadSelectionCompleted
+	stale := testExactSelection(t, node.Address, "model-stale", time.Now().UTC().Add(-time.Hour))
 	if err := models.CreateNodeModelDownloadSelection(ctx, db, stale); err != nil {
 		t.Fatalf("create stale selection: %v", err)
 	}
@@ -268,7 +289,7 @@ func TestSyncNodeCapabilitiesClearsStaleSelectionsWithoutNodeModelRows(t *testin
 		MajorVersion: node.MajorVersion,
 		MinorVersion: node.MinorVersion,
 		PatchVersion: node.PatchVersion,
-		ModelIDs:     []string{"base:model-retained"},
+		ModelFiles:   []models.ModelFile{testModelFile(t, "model-retained", "rev-1")},
 	}); err != nil {
 		t.Fatalf("sync capabilities failed: %v", err)
 	}

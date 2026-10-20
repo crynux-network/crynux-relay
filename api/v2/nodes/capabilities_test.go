@@ -108,6 +108,8 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 	if err := config.GetDB().AutoMigrate(
 		&models.Node{},
 		&models.NodeModel{},
+		&models.ModelFile{},
+		&models.NodeInMemoryModel{},
 		&models.NodeModelDownloadSelection{},
 		&models.NodeNameCount{},
 		&models.NetworkNodeData{},
@@ -116,18 +118,32 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 	}
 }
 
+func testModelFileEntry(revision string) models.ModelFileEntry {
+	return models.ModelFileEntry{
+		SourceType:   models.ModelSourceTypeHuggingFace,
+		Repository:   "org/model-new",
+		Revision:     revision,
+		FormatKwargs: map[string]any{},
+	}
+}
+
 func signedNodeCapabilitiesInput(t *testing.T) *NodeCapabilitiesInputWithSignature {
+	t.Helper()
+	return signedNodeCapabilitiesInputWithFiles(t, []models.ModelFileEntry{testModelFileEntry("rev-1")})
+}
+
+func signedNodeCapabilitiesInputWithFiles(t *testing.T, modelFiles []models.ModelFileEntry) *NodeCapabilitiesInputWithSignature {
 	t.Helper()
 	privateKey, err := crypto.HexToECDSA(nodeCapabilitiesTestPrivateKey)
 	if err != nil {
 		t.Fatalf("failed to parse private key: %v", err)
 	}
 	input := NodeCapabilitiesInput{
-		Address:  crypto.PubkeyToAddress(privateKey.PublicKey).Hex(),
-		GPUName:  "RTX 4090+docker",
-		GPUVram:  24,
-		Version:  "2.1.0",
-		ModelIDs: []string{"base:model-new"},
+		Address:    crypto.PubkeyToAddress(privateKey.PublicKey).Hex(),
+		GPUName:    "RTX 4090+docker",
+		GPUVram:    24,
+		Version:    "2.1.0",
+		ModelFiles: modelFiles,
 	}
 	timestamp := time.Now().Unix()
 	data, err := json.Marshal(input)
@@ -194,12 +210,32 @@ func TestSyncNodeCapabilitiesAPIUpdatesJoinedNode(t *testing.T) {
 	if response == nil {
 		t.Fatal("expected response")
 	}
-	updated, err := models.GetNodeWithModelsByAddress(c.Request.Context(), config.GetDB(), node.Address)
+	updated, err := models.GetNodeByAddress(c.Request.Context(), config.GetDB(), node.Address)
 	if err != nil {
 		t.Fatalf("failed to load updated node: %v", err)
 	}
-	if updated.GPUName != input.GPUName || updated.MajorVersion != 2 || len(updated.Models) != 1 {
-		t.Fatalf("unexpected updated node: %#v", updated)
+	rows, err := models.ListNodeModelFileRows(c.Request.Context(), config.GetDB(), node.Address)
+	if err != nil {
+		t.Fatalf("failed to load node model files: %v", err)
+	}
+	if updated.GPUName != input.GPUName || updated.MajorVersion != 2 || len(rows) != 1 {
+		t.Fatalf("unexpected updated node: %#v, model files: %d", updated, len(rows))
+	}
+}
+
+func TestSyncNodeCapabilitiesAPIRejectsInvalidModelFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	initNodeCapabilitiesAPITest(t)
+	cases := map[string][]models.ModelFileEntry{
+		"missing":        nil,
+		"empty revision": {testModelFileEntry("")},
+	}
+	for name, files := range cases {
+		input := signedNodeCapabilitiesInputWithFiles(t, files)
+		c := newNodeCapabilitiesTestContext(input.Address)
+		if _, err := SyncNodeCapabilities(c, input); err == nil {
+			t.Fatalf("%s: expected validation error", name)
+		}
 	}
 }
 

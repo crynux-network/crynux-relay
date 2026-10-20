@@ -23,7 +23,7 @@ func TestInferenceTaskSyncStatusRefreshesAbortReason(t *testing.T) {
 		Status:           TaskEndAborted,
 		AbortReason:      TaskAbortCreatorValidationTimeout,
 	}
-	if err := db.Create(&storedTask).Error; err != nil {
+	if err := db.Create(withModelFileFields(&storedTask)).Error; err != nil {
 		t.Fatalf("failed to create task: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestInferenceTaskPreservesStructuredTaskArgs(t *testing.T) {
 		TaskIDCommitment: "structured-args",
 		TaskArgs:         taskArgs,
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := db.Create(withModelFileFields(&task)).Error; err != nil {
 		t.Fatalf("failed to create task: %v", err)
 	}
 	var stored InferenceTask
@@ -86,6 +86,15 @@ func mustBigInt(t *testing.T, value string) BigInt {
 	return BigInt{Int: *z}
 }
 
+// withModelFileFields fills the model-file columns that are NOT NULL.
+func withModelFileFields(task *InferenceTask) *InferenceTask {
+	task.RequiredModelFileHashes = []byte{}
+	task.RequiredModelFileSourceHashes = []byte{}
+	task.RequestedModelCacheHash = make([]byte, modelHashSize)
+	task.QuantizationConfigHash = make([]byte, modelHashSize)
+	return task
+}
+
 func createQueuedTask(t *testing.T, db *gorm.DB, taskType TaskType, priority string, commitment string) {
 	t.Helper()
 	task := InferenceTask{
@@ -94,7 +103,7 @@ func createQueuedTask(t *testing.T, db *gorm.DB, taskType TaskType, priority str
 		TaskType:         taskType,
 		Priority:         mustBigInt(t, priority),
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := db.Create(withModelFileFields(&task)).Error; err != nil {
 		t.Fatalf("failed to create task: %v", err)
 	}
 }
@@ -135,7 +144,7 @@ func TestGetQueuedTaskPriorityRangeIncludesSDAndLLMExcludesNonQueued(t *testing.
 		TaskType:         TaskTypeLLM,
 		Priority:         mustBigInt(t, "999999999999"),
 	}
-	if err := db.Create(&started).Error; err != nil {
+	if err := db.Create(withModelFileFields(&started)).Error; err != nil {
 		t.Fatalf("failed to create started task: %v", err)
 	}
 

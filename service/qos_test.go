@@ -183,6 +183,7 @@ func TestApplyHealthPenaltySetsExclusionBelowEnterThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.Node{}); err != nil {
 		t.Fatalf("migrate node: %v", err)
 	}
@@ -218,6 +219,7 @@ func TestApplyHealthPenaltyDoesNotExcludeAtEnterThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(&models.Node{}); err != nil {
 		t.Fatalf("migrate node: %v", err)
 	}

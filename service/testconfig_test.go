@@ -48,6 +48,7 @@ func initServiceTestConfig(t *testing.T) {
 	if err := config.InitDB(config.GetConfig()); err != nil {
 		t.Fatalf("failed to init db: %v", err)
 	}
+	registerTaskModelColumnDefaults(config.GetDB())
 }
 
 // taskPricingMatchingTestConfigYAML holds the required task_pricing,

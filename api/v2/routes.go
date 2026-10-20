@@ -93,6 +93,12 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, tonic.Handler(nodes.SyncNodeCapabilities, 200))
+	nodeGroup.POST("/:address/in_memory_model", []fizz.OperationOption{
+		fizz.ID("node_in_memory_model_v2"),
+		fizz.Summary("Update the model a joined node holds in memory"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, tonic.Handler(nodes.UpdateNodeInMemoryModel, 200))
 
 	delegatedStakingGroup := v2g.Group("delegated_staking", "delegated_staking", "Delegated staking APIs")
 	delegatedStakingGroup.GET("/nodes", []fizz.OperationOption{

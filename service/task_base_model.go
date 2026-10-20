@@ -16,6 +16,7 @@ import (
 var (
 	ErrInvalidBaseModel          = errors.New("invalid base model")
 	ErrBaseModelCheckUnavailable = errors.New("base model check temporarily unavailable")
+	ErrInvalidTaskModelArgs      = errors.New("invalid task model args")
 )
 
 var (
@@ -45,47 +46,96 @@ func SetHuggingFaceClientForTest(client *huggingface.Client) {
 	hfClient = client
 }
 
-// ValidateTaskBaseModel checks that each huggingface base model is either already
-// present on a node (exact dispatch ID in node_models) or exists on the Hub.
-// URL-based base models skip Hub validation.
-func ValidateTaskBaseModel(ctx context.Context, db *gorm.DB, taskType models.TaskType, modelIDs []string) error {
-	baseIDs := models.BaseModelIDs(modelIDs)
-	if len(baseIDs) == 0 {
-		return nil
+// PrepareTaskModelRequirements derives the model file requirements of a task
+// from its TaskArgs and registers the exact model files in the catalog.
+//
+// A file that no node holds is checked on the Hub. An entry with a revision
+// is resolved to its commit SHA, so the exact hash always names a commit. An
+// entry without a revision keeps its revision-less source identity.
+func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType models.TaskType, taskArgs string) (*models.TaskModelRequirements, error) {
+	requirements, err := models.DeriveTaskModelRequirements(taskArgs, taskType)
+	if err != nil {
+		return nil, errors.Join(ErrInvalidTaskModelArgs, err)
 	}
-	kind := huggingface.ModelKindSD
-	if taskType == models.TaskTypeLLM {
-		kind = huggingface.ModelKindLLM
-	}
+
 	client := getHuggingFaceClient()
-	for _, baseID := range baseIDs {
-		hfModelID, ok := models.BaseModelHuggingFaceID(baseID)
-		if !ok {
+	revisions := make(map[int]string)
+	for index, entry := range requirements.Entries {
+		if entry.Revision != "" {
+			hash, err := entry.ModelFileHash()
+			if err != nil {
+				return nil, err
+			}
+			held, err := models.NodeModelExists(ctx, db, hash)
+			if err != nil {
+				return nil, err
+			}
+			if held {
+				continue
+			}
+			sha, err := client.ResolveRevision(ctx, entry.Repository, entry.Revision)
+			if err != nil {
+				return nil, hubValidationError(err)
+			}
+			revisions[index] = sha
 			continue
 		}
-		exists, err := models.NodeModelExists(ctx, db, baseID)
+
+		sourceHash, err := entry.ModelFileSourceHash()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if exists {
+		held, err := models.NodeModelSourceExists(ctx, db, sourceHash)
+		if err != nil {
+			return nil, err
+		}
+		if held {
 			continue
 		}
-		variant, _ := models.BaseModelVariant(baseID)
-		if err := client.ValidateBaseModel(ctx, kind, hfModelID, variant); err != nil {
-			if errors.Is(err, huggingface.ErrServiceUnavailable) {
-				return ErrBaseModelCheckUnavailable
-			}
-			if errors.Is(err, huggingface.ErrVariantUnavailable) {
-				return errors.Join(ErrInvalidBaseModel, err)
-			}
-			if errors.Is(err, huggingface.ErrModelNotFound) {
-				return errors.Join(ErrInvalidBaseModel, err)
-			}
-			if strings.TrimSpace(err.Error()) == "" {
-				return ErrInvalidBaseModel
-			}
-			return errors.Join(ErrInvalidBaseModel, err)
+		// SD entries[0] is always the base pipeline from DeriveTaskModelRequirements.
+		requirePipeline := taskType == models.TaskTypeSD && index == 0
+		if err := validateEntryOnHub(ctx, client, entry, requirePipeline); err != nil {
+			return nil, hubValidationError(err)
 		}
 	}
-	return nil
+
+	if len(revisions) > 0 {
+		if err := requirements.ResolveRevisions(revisions); err != nil {
+			return nil, err
+		}
+	}
+	files, err := requirements.ModelFiles()
+	if err != nil {
+		return nil, err
+	}
+	if err := models.UpsertModelFiles(ctx, db, files); err != nil {
+		return nil, err
+	}
+	requireLinuxCuda, err := ResolveRequireLinuxCuda(ctx, db, taskType, taskArgs, requirements)
+	if err != nil {
+		return nil, err
+	}
+	requirements.RequireLinuxCuda = requireLinuxCuda
+	return requirements, nil
+}
+
+// validateEntryOnHub checks that the repository of a model entry exists.
+// requirePipeline is true only for the SD base_model entry; other entries,
+// including Diffusers-format components, are validated as public repositories.
+func validateEntryOnHub(ctx context.Context, client *huggingface.Client, entry models.ModelFileEntry, requirePipeline bool) error {
+	if !requirePipeline {
+		return client.ValidateBaseModel(ctx, huggingface.ModelKindRepository, entry.Repository, "")
+	}
+	variant, _ := entry.FormatKwargs["variant"].(string)
+	return client.ValidateBaseModel(ctx, huggingface.ModelKindSD, entry.Repository, variant)
+}
+
+func hubValidationError(err error) error {
+	if errors.Is(err, huggingface.ErrServiceUnavailable) {
+		return ErrBaseModelCheckUnavailable
+	}
+	if strings.TrimSpace(err.Error()) == "" {
+		return ErrInvalidBaseModel
+	}
+	return errors.Join(ErrInvalidBaseModel, err)
 }

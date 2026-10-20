@@ -146,21 +146,22 @@ func TestGetLLMExecutionTimeCoefficientsGPUMatchesPricing(t *testing.T) {
 	initTaskPricingTestStore(t)
 	model := "qwen/qwen3.6-7b"
 	gpuName := "NVIDIA GeForce RTX 4090"
+	quantizationHash := models.Hash32{4}
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeLLM, GPUName: gpuName, GPUVram: 24,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType, QuantizeBits: 4,
+		ModelName: model, ExecutionDType: models.AutoExecutionDType, QuantizationConfigHash: quantizationHash.Bytes(),
 		LLMConstantSeconds: 12, LLMSecondsPerInputByte: 0.0003, LLMSecondsPerOutputToken: 0.2,
 		LLMModelSwitchSeconds: 50, LLMSecondsPerImage: 8, LLMSecondsPerMegapixel: 6,
 		LLMSuccessSamples: 1,
 	})
 
 	query := TaskExecutionTimeQuery{
-		ModelName: model, GPUName: gpuName, GPUVRAM: 24, RequestedDType: "auto", QuantizeBits: 4,
+		ModelName: model, GPUName: gpuName, GPUVRAM: 24, RequestedDType: "auto", QuantizationConfigHash: quantizationHash,
 	}
 	got := GetLLMExecutionTimeCoefficients(query)
 	want := getTaskPricingParameters(&models.InferenceTask{
 		TaskType: models.TaskTypeLLM, ModelName: model, RequestedDType: models.AutoExecutionDType,
-		QuantizeBits: 4, RequiredGPU: gpuName, RequiredGPUVRAM: 24,
+		QuantizationConfigHash: quantizationHash.Bytes(), RequiredGPU: gpuName, RequiredGPUVRAM: 24,
 	})
 	if got.SecondsPerInputToken != want.llm.secondsPerInputByte*llmInputBytesPerPublicToken {
 		t.Fatalf("expected token coefficient %g, got %g", want.llm.secondsPerInputByte*llmInputBytesPerPublicToken, got.SecondsPerInputToken)

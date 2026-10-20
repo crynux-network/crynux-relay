@@ -26,7 +26,7 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 | `task_type` | `sd`, `llm`, or `sd_ft_lora` from the task type enum. |
 | `creator` | The task creator address. Creators are whitelist-controlled, so cardinality is bounded. |
 | `vram_tier` | The task `MinVRAM` mapped to the configured `metrics.vram_tiers` boundaries, producing labels `0-8`, `8-16`, ..., `48+`. Raw VRAM values MUST NOT be used as labels. For model download metrics, the mapped value is the demand group VRAM requirement stored on the download selection record. |
-| `hf_model_id` | The huggingface base model ID of a `node_models` row. Cardinality is bounded because the `relay_model_nodes` gauge exports only the top 50 models by on-disk node count. |
+| `hf_model_id` | The Hugging Face repository of a model file held by a node. Cardinality is bounded because the `relay_model_nodes` gauge exports only the top 50 repositories by on-disk node count. |
 | `state` | Model holding state on a node: `on_disk` or `in_memory`. |
 | `gpu` | The exact `RequiredGPU` name for GPU-pinned tasks, `any` otherwise. |
 | `reason` | Task abort reason: `none`, `timeout`, `model_download_failed`, `incorrect_result`, `task_fee_too_low`, `group_timeout`, `error_reported`, `creator_cancelled`, `creator_validation_timeout`, or `result_upload_timeout`. |
@@ -66,17 +66,19 @@ Relay MUST expose these in-memory execution parameter metrics:
 
 | Metric | Labels | Base-unit value |
 |---|---|---|
-| `relay_task_pricing_sd_overhead_seconds` | `model_name`, `model_variant`, `requested_dtype`, `quantize_bits`, `vram_demand` | Aggregate SD overhead seconds for an initialized unpinned pricing key |
-| `relay_task_pricing_seconds_per_sd_pixel_step` | `model_name`, `model_variant`, `requested_dtype`, `quantize_bits`, `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
-| `relay_task_pricing_llm_coefficient` | `coefficient`, `model_name`, `model_variant`, `requested_dtype`, `quantize_bits`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
-| `relay_gpu_execution_sd_overhead_seconds` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | SD overhead seconds for one calibration key |
-| `relay_gpu_execution_seconds_per_sd_pixel_step` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | SD seconds per pixel-step for one calibration key |
-| `relay_gpu_execution_llm_coefficient` | `coefficient`, `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | LLM coefficient for one calibration key |
-| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantize_bits`, `min_vram_requirement`, `max_vram_requirement` | Cumulative successful samples for one calibration key |
+| `relay_task_pricing_sd_overhead_seconds` | `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD overhead seconds for an initialized unpinned pricing key |
+| `relay_task_pricing_seconds_per_sd_pixel_step` | `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
+| `relay_task_pricing_llm_coefficient` | `coefficient`, `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
+| `relay_gpu_execution_sd_overhead_seconds` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD overhead seconds for one calibration key |
+| `relay_gpu_execution_seconds_per_sd_pixel_step` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD seconds per pixel-step for one calibration key |
+| `relay_gpu_execution_llm_coefficient` | `coefficient`, `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | LLM coefficient for one calibration key |
+| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | Cumulative successful samples for one calibration key |
 
 The LLM `constant` coefficient MUST use seconds, `text_input` MUST use seconds per input byte, `output` MUST use seconds per output token, `model_switch` MUST use seconds per switch, `image_count` MUST use seconds per image, and `image_megapixel` MUST use seconds per megapixel. Sample count MUST NOT be used as a cross-GPU aggregation weight.
 
 Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM text input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST display model switch, image count, and image megapixel coefficients without unit conversion. Grafana MUST display the SD overhead coefficient in seconds without unit conversion. Grafana MUST multiply the SD pixel-step coefficient by `512 * 512` and label it seconds per 512×512 image-step.
+
+The `quantization_config_hash` label MUST be the lowercase hexadecimal encoding of the 32-byte `QuantizationConfigHash`.
 
 GPU parameter grouping MUST use the complete model execution calibration key. The VRAM interval labels MUST identify the fallback range represented by each series. Model architecture, scheduler, and auxiliary models MUST NOT be metric dimensions.
 
@@ -92,7 +94,7 @@ When metrics are enabled, Relay MUST run a gauge collector goroutine on a 30-sec
 | `relay_nodes` | `status` | Count of nodes per node status. Every status label MUST be set on every tick, including zero values. |
 | `relay_nodes_failing_30m` | none | Count of distinct `selected_node` values on tasks with `TaskEndAborted`, a node-attributed `TaskAbortTimeout` or `TaskAbortResultUploadTimeout`, and an update time within the last 30 minutes. `TaskAbortCreatorValidationTimeout` MUST NOT contribute. |
 | `relay_nodes_alive` | none | Count of nodes with `last_seen_time` within the last 2 minutes. |
-| `relay_model_nodes` | `hf_model_id`, `state` | Distinct node counts per huggingface base model from `node_models`: `on_disk` counts nodes with any row of the model, `in_memory` counts nodes with an `in_use` row of the model. On every tick, all series of this gauge MUST be replaced with the top 50 models ranked by on-disk node count descending, breaking ties by in-memory node count descending and then by model ID ascending; models outside the top 50 MUST be removed. |
+| `relay_model_nodes` | `hf_model_id`, `state` | Distinct node counts per Hugging Face repository: `on_disk` counts nodes with any model file of the repository in `node_models`, `in_memory` counts nodes whose in-memory model contains any model file of the repository. On every tick, all series of this gauge MUST be replaced with the top 50 repositories ranked by on-disk node count descending, breaking ties by in-memory node count descending and then by repository ascending; repositories outside the top 50 MUST be removed. |
 
 A query failure for one gauge MUST be logged and MUST NOT prevent the other gauges from refreshing.
 

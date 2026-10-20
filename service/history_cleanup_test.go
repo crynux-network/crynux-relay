@@ -21,6 +21,7 @@ func setupHistoryCleanupDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite db: %v", err)
 	}
+	registerTaskModelColumnDefaults(db)
 	if err := db.AutoMigrate(
 		&models.InferenceTask{},
 		&models.NodeTaskError{},

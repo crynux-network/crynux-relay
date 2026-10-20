@@ -11,8 +11,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -26,14 +24,20 @@ type TaskInput struct {
 	TaskArgs         string          `form:"task_args" json:"task_args" description:"Task arguments" validate:"required"`
 	TaskType         models.TaskType `form:"task_type" json:"task_type" description:"Task type"`
 	Nonce            string          `form:"nonce" json:"nonce" description:"nonce" validate:"required"`
-	TaskModelIDs     []string        `form:"task_model_ids" json:"task_model_ids" description:"task model ids" validate:"required"`
 	MinVram          *uint64         `form:"min_vram" json:"min_vram" description:"min vram"`
 	RequiredGPU      *string         `form:"required_gpu" json:"required_gpu" description:"required gpu name"`
 	RequiredGPUVram  *uint64         `form:"required_gpu_vram" json:"required_gpu_vram" description:"required gpu vram"`
-	TaskVersion      string          `form:"task_version" json:"task_version" description:"task version" validate:"required"`
-	TaskSize         *uint64         `form:"task_size" json:"task_size" description:"task size"`
 	TaskFee          models.BigInt   `form:"task_fee" json:"task_fee" description:"task fee, in unit wei" validate:"required"`
 	Timeout          uint64          `form:"timeout" json:"timeout,omitempty" description:"timeout, in seconds"`
+}
+
+// modelRequirementsErrorResponse maps a model requirement error to its response.
+func modelRequirementsErrorResponse(err error) error {
+	switch {
+	case errors.Is(err, service.ErrInvalidTaskModelArgs), errors.Is(err, service.ErrInvalidBaseModel):
+		return response.NewValidationErrorResponse("task_args", err.Error())
+	}
+	return response.NewExceptionResponse(err)
 }
 
 type TaskInputWithSignature struct {
@@ -55,7 +59,6 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		return nil, validationErr
 	}
 
-	in.TaskModelIDs = models.NormalizeModelIDs(in.TaskModelIDs)
 	if in.RequiredGPU != nil {
 		normalizedRequiredGPU := models.NormalizeGPUName(*in.RequiredGPU)
 		in.RequiredGPU = &normalizedRequiredGPU
@@ -87,9 +90,6 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	if in.MinVram == nil {
 		return nil, response.NewValidationErrorResponse("min_vram", "min_vram is required")
 	}
-	if in.TaskSize == nil {
-		return nil, response.NewValidationErrorResponse("task_size", "task_size is required")
-	}
 
 	normalizedTaskArgs, err := models.NormalizeTaskArgsModelNames(in.TaskArgs, in.TaskType)
 	if err != nil {
@@ -97,14 +97,17 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 	in.TaskArgs = normalizedTaskArgs
 
-	taskVersions := strings.Split(in.TaskVersion, ".")
-	if len(taskVersions) != 3 {
-		return nil, response.NewValidationErrorResponse("task_version", "Invalid task version")
+	taskVersion, err := models.ParseTaskArgsVersion(in.TaskArgs)
+	if err != nil {
+		return nil, response.NewValidationErrorResponse("task_args", err.Error())
 	}
-	for i := 0; i < 3; i++ {
-		if _, err := strconv.ParseUint(taskVersions[i], 10, 64); err != nil {
-			return nil, response.NewValidationErrorResponse("task_version", "Invalid task version")
-		}
+	taskSize, err := models.DeriveTaskSize(in.TaskArgs, in.TaskType)
+	if err != nil {
+		return nil, response.NewValidationErrorResponse("task_args", err.Error())
+	}
+	modelIDs, err := models.DeriveTaskModelIDs(in.TaskArgs, in.TaskType)
+	if err != nil {
+		return nil, response.NewValidationErrorResponse("task_args", err.Error())
 	}
 
 	_, err = models.GetTaskByIDCommitment(c.Request.Context(), config.GetDB(), in.TaskIDCommitment)
@@ -115,14 +118,9 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		return nil, response.NewExceptionResponse(err)
 	}
 
-	if err := service.ValidateTaskBaseModel(c.Request.Context(), config.GetDB(), in.TaskType, in.TaskModelIDs); err != nil {
-		if errors.Is(err, service.ErrInvalidBaseModel) {
-			return nil, response.NewValidationErrorResponse("task_model_ids", err.Error())
-		}
-		if errors.Is(err, service.ErrBaseModelCheckUnavailable) {
-			return nil, response.NewExceptionResponse(err)
-		}
-		return nil, response.NewExceptionResponse(err)
+	requirements, err := service.PrepareTaskModelRequirements(c.Request.Context(), config.GetDB(), in.TaskType, in.TaskArgs)
+	if err != nil {
+		return nil, modelRequirementsErrorResponse(err)
 	}
 
 	if in.TaskType == models.TaskTypeSDFTLora && c.ContentType() == "multipart/form-data" {
@@ -171,18 +169,19 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		Nonce:            in.Nonce,
 		Status:           models.TaskQueued,
 		TaskType:         in.TaskType,
-		TaskVersion:      in.TaskVersion,
+		TaskVersion:      taskVersion,
 		MinVRAM:          *in.MinVram,
 		RequiredGPU:      requiredGPU,
 		RequiredGPUVRAM:  requiredGPUVRAM,
 		TaskFee:          in.TaskFee,
-		TaskSize:         *in.TaskSize,
-		ModelIDs:         in.TaskModelIDs,
+		TaskSize:         taskSize,
+		ModelIDs:         modelIDs,
 		CreateTime: sql.NullTime{
 			Time:  time.Now(),
 			Valid: true,
 		},
 	}
+	task.SetModelRequirements(requirements)
 	if task.TaskType == models.TaskTypeSDFTLora {
 		task.Timeout = in.Timeout
 	}

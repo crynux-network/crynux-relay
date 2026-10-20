@@ -183,18 +183,20 @@ func TestGetSDExecutionTimeReturnsFittedOverhead(t *testing.T) {
 	initExecutionTimeAPITest(t)
 	model := "stabilityai/stable-diffusion-xl-base-1.0"
 	record := dbmodels.GPUExecutionCalibration{
-		TaskType:              dbmodels.TaskTypeSD,
-		GPUName:               "A100",
-		GPUVram:               40,
-		ModelName:             model,
-		ExecutionDType:        "auto",
-		MinVRAMRequirement:    8,
-		MaxVRAMRequirement:    40,
-		SDOverheadSeconds:     42,
-		SDFormulaVersion:      1,
-		SecondsPerSDPixelStep: 0.0001,
-		SDSuccessSamples:      10,
-		LLMFormulaVersion:     2,
+		TaskType:               dbmodels.TaskTypeSD,
+		GPUName:                "A100",
+		GPUVram:                40,
+		ModelName:              model,
+		ExecutionDType:         "auto",
+		RequiredModelFilesHash: make([]byte, 32),
+		QuantizationConfigHash: make([]byte, 32),
+		MinVRAMRequirement:     8,
+		MaxVRAMRequirement:     40,
+		SDOverheadSeconds:      42,
+		SDFormulaVersion:       1,
+		SecondsPerSDPixelStep:  0.0001,
+		SDSuccessSamples:       10,
+		LLMFormulaVersion:      2,
 	}
 	if err := config.GetDB().Create(&record).Error; err != nil {
 		t.Fatalf("seed fitted calibration: %v", err)

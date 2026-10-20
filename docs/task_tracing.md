@@ -23,7 +23,7 @@ Target trace data:
 - Task creation:
   - Timestamp: task create time.
   - Details: task input parameters, including `task_args`, task type, task version, VRAM/GPU requirements, task fee, task size, model IDs, creator, nonce, sampling seed when available, and task pricing fields specified in [task-pricing.md](./task-pricing.md).
-  - Details: frozen `model_name`, `model_variant`, `requested_dtype`, `quantize_bits`, and the reported `execution_dtype` when available.
+  - Details: frozen `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash` as lowercase hexadecimal, and the reported `execution_dtype` when available.
   - Details: normal SD and LLM tasks MUST identify execution Timeout as Relay-owned and not yet assigned. SDFT LoRA MUST expose its creator-supplied Timeout.
   - Details: SD MUST expose stored `SDUnits`; LLM MUST expose stored `LLMTextInputBytes`, `LLMImageCount`, `LLMImagePixels`, and `LLMMaxNewTokens`. The trace MAY also expose the stored legacy compatibility field `LLMInputBytes` when it is non-null.
   - Duration: none for the first trace step.
@@ -33,8 +33,8 @@ Target trace data:
 - Node selected:
   - Timestamp: time when Relay selects a node for the task before task start.
   - Details: selected node address.
-  - Details: final base-ready candidate pool used by weighted random selection, including each recorded candidate's address, card name, staking score, runtime QoS score, and final probability weight after the `0.3` in-memory base-model locality component is applied.
-  - Details: every recorded candidate MUST have passed hardware, version, task-specific, and node-name policy filters and MUST have the task's base model ID on disk. Auxiliary model IDs MUST NOT affect the candidate pool.
+  - Details: final model-ready candidate pool used by weighted random selection, including each recorded candidate's address, card name, staking score, runtime QoS score, and final probability weight after the `0.3` in-memory model locality component is applied.
+  - Details: every recorded candidate MUST have passed hardware, version, task-specific, and node-name policy filters and MUST hold the task's required model files on disk. Task model IDs MUST NOT affect the candidate pool.
   - Details: the candidate pool MUST include `candidate_pool_total_count` and `candidate_pool_truncated`. Relay MUST cap the stored candidate list and MUST set `candidate_pool_truncated` to true when the final candidate pool contains more nodes than the stored list.
   - Duration: queue waiting time, calculated as node selected time minus queue entry time.
 - Queue abort:
@@ -44,9 +44,9 @@ Target trace data:
 - Task execution start:
   - Timestamp: task start time.
   - Details: selected node information, including address, card/GPU name, VRAM, version, operator staking, delegated staking summary, QoS score, health score inputs when available, status, delegator share/count, and all other persisted node base information useful for diagnosis.
-  - Details: selected node model cache snapshot, including authoritative node-reported models present on disk and base models currently in memory or in use. Task start MUST NOT create missing model rows or emit model downloads.
+  - Details: selected node model cache snapshot, including the hash of every authoritative node-reported model file present on disk, each flagged with whether it belongs to the node's in-memory model. Task start MUST NOT create missing model rows or emit model downloads.
   - Details: exact execution `GPUName` and `GPUVram`, persisted `model_switched`, execution parameter cold-start state, predicted execution seconds, the SD overhead contribution, the constant, text-input, output-token, model-switch, image-count, and image-megapixel contributions, multiplier and clamp inputs, stored execution `Timeout`, waiting party `node`, current phase `execution`, and current execution deadline.
-  - Details: calibration selection MUST expose model name, variant, requested dtype, quantization, selected execution dtype, selected minimum and maximum VRAM requirements, and whether unknown-model fallback was used.
+  - Details: calibration selection MUST expose model name, variant, requested dtype, `calibration_quantization_config_hash` as lowercase hexadecimal, selected execution dtype, selected minimum and maximum VRAM requirements, and whether unknown-model fallback was used.
   - Duration: queue waiting time MUST also be present on this step for easy reading.
 - Score submission:
   - Timestamp: score submission time.

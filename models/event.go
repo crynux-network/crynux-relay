@@ -47,10 +47,13 @@ func (e *TaskStartedEvent) ToEvent() (*Event, error) {
 	}, nil
 }
 
+// DownloadModelEvent asks a node to download the complete required model file
+// set. Entries with a revision are exact files; entries with an empty revision
+// are sources of which the node downloads one revision.
 type DownloadModelEvent struct {
-	NodeAddress string   `json:"node_address"`
-	ModelID     string   `json:"model_id"`
-	TaskType    TaskType `json:"task_type"`
+	NodeAddress string           `json:"node_address"`
+	ModelFiles  []ModelFileEntry `json:"model_files"`
+	TaskType    TaskType         `json:"task_type"`
 }
 
 func (e *DownloadModelEvent) ToEvent() (*Event, error) {

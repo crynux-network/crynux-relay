@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -14,9 +15,10 @@ import (
 )
 
 var (
-	ErrModelNotFound       = errors.New("huggingface model not found")
-	ErrVariantUnavailable  = errors.New("huggingface model variant unavailable")
-	ErrServiceUnavailable  = errors.New("huggingface service unavailable")
+	ErrModelNotFound      = errors.New("huggingface model not found")
+	ErrRevisionNotFound   = errors.New("huggingface revision not found")
+	ErrVariantUnavailable = errors.New("huggingface model variant unavailable")
+	ErrServiceUnavailable = errors.New("huggingface service unavailable")
 )
 
 type ModelKind string
@@ -24,6 +26,8 @@ type ModelKind string
 const (
 	ModelKindLLM ModelKind = "llm"
 	ModelKindSD  ModelKind = "sd"
+	// ModelKindRepository only checks that the repository exists.
+	ModelKindRepository ModelKind = "repository"
 )
 
 type modelInfoResponse struct {
@@ -32,8 +36,13 @@ type modelInfoResponse struct {
 	} `json:"siblings"`
 }
 
+type revisionInfoResponse struct {
+	SHA string `json:"sha"`
+}
+
 type cacheEntry struct {
 	err       error
+	sha       string
 	expiresAt time.Time
 }
 
@@ -64,8 +73,8 @@ func (c *Client) ValidateBaseModel(ctx context.Context, kind ModelKind, modelID,
 		return ErrModelNotFound
 	}
 	cacheKey := string(kind) + "|" + strings.ToLower(modelID) + "|" + variant
-	if err, ok := c.getCached(cacheKey); ok {
-		return err
+	if entry, ok := c.getCached(cacheKey); ok {
+		return entry.err
 	}
 
 	info, err := c.fetchModelInfo(ctx, modelID)
@@ -86,17 +95,21 @@ func (c *Client) ValidateBaseModel(ctx context.Context, kind ModelKind, modelID,
 	return nil
 }
 
-func (c *Client) getCached(key string) (error, bool) {
+func (c *Client) getCached(key string) (cacheEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.cache[key]
 	if !ok || time.Now().After(entry.expiresAt) {
-		return nil, false
+		return cacheEntry{}, false
 	}
-	return entry.err, true
+	return entry, true
 }
 
 func (c *Client) putCached(key string, err error) {
+	c.putCachedResult(key, "", err)
+}
+
+func (c *Client) putCachedResult(key, sha string, err error) {
 	if errors.Is(err, ErrServiceUnavailable) {
 		return
 	}
@@ -104,44 +117,103 @@ func (c *Client) putCached(key string, err error) {
 	defer c.mu.Unlock()
 	c.cache[key] = cacheEntry{
 		err:       err,
+		sha:       sha,
 		expiresAt: time.Now().Add(c.cacheTTL),
 	}
 }
 
+// ResolveRevision resolves a branch, tag or commit of a repository to its
+// commit SHA.
+func (c *Client) ResolveRevision(ctx context.Context, repository, revision string) (string, error) {
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return "", ErrModelNotFound
+	}
+	if revision == "" {
+		return "", ErrRevisionNotFound
+	}
+	cacheKey := "revision|" + repository + "|" + revision
+	if entry, ok := c.getCached(cacheKey); ok {
+		return entry.sha, entry.err
+	}
+
+	var info revisionInfoResponse
+	endpoint := c.baseURL + "/api/models/" + repository + "/revision/" + url.PathEscape(revision)
+	if err := c.fetchJSON(ctx, endpoint, &info); err != nil {
+		c.putCachedResult(cacheKey, "", err)
+		return "", err
+	}
+	if info.SHA == "" {
+		return "", ErrServiceUnavailable
+	}
+	c.putCachedResult(cacheKey, info.SHA, nil)
+	return info.SHA, nil
+}
+
 func (c *Client) fetchModelInfo(ctx context.Context, modelID string) (*modelInfoResponse, error) {
-	endpoint := c.baseURL + "/api/models/" + modelID
+	var info modelInfoResponse
+	if err := c.fetchJSON(ctx, c.baseURL+"/api/models/"+modelID, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// FetchRepoFileJSON downloads one repository file as JSON through the Hub
+// resolve URL. revision MUST be a branch, tag, or commit; empty revision uses main.
+func (c *Client) FetchRepoFileJSON(ctx context.Context, repository, revision, filePath string, target any) error {
+	repository = strings.TrimSpace(repository)
+	filePath = strings.Trim(strings.TrimSpace(filePath), "/")
+	if repository == "" || filePath == "" {
+		return ErrModelNotFound
+	}
+	if strings.TrimSpace(revision) == "" {
+		revision = "main"
+	}
+	endpoint := c.baseURL + "/" + repository + "/resolve/" + url.PathEscape(revision) + "/" + pathEscapeSegments(filePath)
+	return c.fetchJSON(ctx, endpoint, target)
+}
+
+func pathEscapeSegments(filePath string) string {
+	parts := strings.Split(filePath, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+func (c *Client) fetchJSON(ctx context.Context, endpoint string, target any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, ErrServiceUnavailable
+		return ErrServiceUnavailable
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, ErrServiceUnavailable
+		return ErrServiceUnavailable
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, ErrServiceUnavailable
+		return ErrServiceUnavailable
 	}
 
 	switch {
 	case resp.StatusCode == http.StatusOK:
-		var info modelInfoResponse
-		if err := json.Unmarshal(body, &info); err != nil {
-			return nil, ErrServiceUnavailable
+		if err := json.Unmarshal(body, target); err != nil {
+			return ErrServiceUnavailable
 		}
-		return &info, nil
+		return nil
+	case resp.StatusCode == http.StatusNotFound && resp.Header.Get("X-Error-Code") == "RevisionNotFound":
+		return ErrRevisionNotFound
 	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return nil, ErrModelNotFound
+		return ErrModelNotFound
 	case resp.StatusCode >= 500:
-		return nil, ErrServiceUnavailable
+		return ErrServiceUnavailable
 	default:
-		return nil, fmt.Errorf("%w: unexpected status %d", ErrModelNotFound, resp.StatusCode)
+		return fmt.Errorf("%w: unexpected status %d", ErrModelNotFound, resp.StatusCode)
 	}
 }
-
 func validateSDSiblings(siblings []struct {
 	RFilename string `json:"rfilename"`
 }, variant string) error {

@@ -2,7 +2,7 @@
 environment: "debug"
 db:
   driver: "mysql"
-  connection: "user:mypass@(127.0.0.1:3306)/mydb?parseTime=true"
+  connection: "crynux_relay:crynuxrelaypass@(mysql_relay:3306)/crynux_relay?parseTime=true"
   log:
     level: "info"
     output: "data/logs/db.log"
@@ -16,10 +16,10 @@ log:
   max_days: 30
   max_file_num: 5
   features:
-    node_health_enabled: false
-    node_status_enabled: false
-    task_assignment_enabled: false
-    task_validation_group_enabled: false
+    node_health_enabled: true
+    node_status_enabled: true
+    task_assignment_enabled: true
+    task_validation_group_enabled: true
 http:
   host: "0.0.0.0"
   port: "8080"
@@ -33,20 +33,20 @@ data_dir:
   inference_tasks: "data/inference_tasks"
   slashed_tasks: "data/slashed_tasks"
 blockchains:
-  dymension:
+  crynux-on-base-sepolia:
     rps: 20
-    rpc_endpoint: "https://json-rpc.testnet-dym.crynux.io"
+    rpc_endpoint: "https://json-rpc.base-sepolia.crynux.io"
     start_block_num: 0
     gas_limit: 4294967
     gas_price: 0
-    chain_id: 1313161573
+    chain_id: 188962142
     account:
       address: ""
       private_key_file: "config/secrets/blockchain_system_private_key.txt"
     contracts:
-      benefit_address: "0xa4AC846337794C93d68D387Be77663e32AD415bb"
-      node_staking: "0xf76C3f19c8976d0Bc49d48718669b99747b1837e"
-      delegated_staking: ""
+      benefit_address: "0x195FeF730936C4B68BFF9F98429037ba68e82414"
+      node_staking: "0x3EB72d01bd77a36ABB867eafFD6BaECE8252Ce32"
+      delegated_staking: "0xC3C9CC3ce811Bd825118f2E36524716F86923f81"
     max_retries: 3
     retry_interval: 3
     send_wait_time: 30
@@ -60,38 +60,12 @@ blockchains:
       - min_amount: 0
         fee_ratio: 0
     max_withdrawals_per_day: 10
-  near:
-    rps: 20
-    rpc_endpoint: "https://json-rpc.testnet-near.crynux.io"
-    start_block_num: 0
-    gas_limit: 4294967
-    gas_price: 0
-    chain_id: 1313161574
-    account:
-      address: ""
-      private_key_file: "config/secrets/blockchain_system_private_key.txt"
-    contracts:
-      benefit_address: "0xf57a8f8F7ab52EBD7971A65e9B44C767d3119c4f"
-      node_staking: "0xd20403b243b0109809BEAa93Ac38f0e3b30039C0"
-      delegated_staking: ""
-    max_retries: 3
-    retry_interval: 3
-    send_wait_time: 30
-    receipt_wait_time: 30
-    sent_transaction_count_limit: 200
-    delegated_staking_slash_batch_size: 20
-    delegated_staking_read_page_size: 100
-    withdrawal_fee: 1
-    withdrawal_min: 4
-    withdrawal_fee_tiers:
-      - min_amount: 0
-        fee_ratio: 0
-    max_withdrawals_per_day: 10
+deposit_withdraw_networks: {}
 task:
   stake_amount: 0
   distance_threshold: 0
   task_whitelist_enabled: false
-  minimum_node_name_number: 10
+  minimum_node_name_number: 1
   node_name_whitelist_enabled: false
   passive_slash_mode: true
   task_tracing_duration_days: 0
@@ -141,11 +115,13 @@ huggingface:
   timeout_seconds: 5
   cache_ttl_seconds: 300
 task_schema:
-  stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-inference-task.json"
-  gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/refs/tags/v3.6.0/schema/gpt-inference-task.json"
+  stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/image-task.json"
+  gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/main/schema/gpt-inference-task.json"
   stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-finetune-lora-task.json"
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
+network_flops:
+  gpu_flops_file: "config/gpu_flops.json"
 withdraw:
   relay_wallet_address: ""
   min_withdrawal_amount: 5

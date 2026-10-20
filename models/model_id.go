@@ -2,7 +2,6 @@ package models
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -12,7 +11,6 @@ type ModelExecutionConfig struct {
 	ModelName      string
 	ModelVariant   string
 	RequestedDType string
-	QuantizeBits   uint64
 }
 
 func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecutionConfig, error) {
@@ -28,13 +26,6 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 	config := ModelExecutionConfig{RequestedDType: AutoExecutionDType}
 	if dtype, ok := args["dtype"].(string); ok && dtype != "" {
 		config.RequestedDType = strings.ToLower(dtype)
-	}
-	if bits, ok := args["quantize_bits"].(json.Number); ok {
-		value, err := bits.Int64()
-		if err != nil || value < 0 {
-			return ModelExecutionConfig{}, fmt.Errorf("invalid quantize_bits")
-		}
-		config.QuantizeBits = uint64(value)
 	}
 	switch taskType {
 	case TaskTypeSD:

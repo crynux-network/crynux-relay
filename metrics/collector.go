@@ -70,7 +70,7 @@ func collectGauges(ctx context.Context, db *gorm.DB) {
 		NodesAlive.Set(float64(aliveNodes))
 	}
 
-	if modelCounts, err := models.CountNodesByHFModelID(ctx, db); err != nil {
+	if modelCounts, err := models.CountNodesByModelRepository(ctx, db); err != nil {
 		log.Errorf("Metrics: failed to get node counts by model: %v", err)
 	} else {
 		SetModelNodes(topModelNodeCounts(modelCounts, modelNodesTopN))
@@ -80,7 +80,7 @@ func collectGauges(ctx context.Context, db *gorm.DB) {
 // topModelNodeCounts ranks the per-model node counts by on-disk node count
 // descending, breaking ties by in-memory node count descending and then by
 // model ID ascending, and returns the top limit entries.
-func topModelNodeCounts(counts map[string]models.HFModelNodeCount, limit int) []ModelNodeCount {
+func topModelNodeCounts(counts map[string]models.ModelRepositoryNodeCount, limit int) []ModelNodeCount {
 	entries := make([]ModelNodeCount, 0, len(counts))
 	for hfModelID, count := range counts {
 		entries = append(entries, ModelNodeCount{

@@ -113,12 +113,22 @@ type InferenceTask struct {
 	ModelVariant     string     `json:"model_variant" gorm:"size:191;not null;default:''"`
 	RequestedDType   string     `json:"requested_dtype" gorm:"column:requested_dtype;size:64;not null;default:'auto'"`
 	ExecutionDType   string     `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;default:''"`
-	QuantizeBits     uint64     `json:"quantize_bits" gorm:"not null;default:0"`
-	Timeout          uint64     `json:"timeout"`
-	MinVRAM          uint64     `json:"min_vram"`
-	RequiredGPU      string     `json:"required_gpu"`
-	RequiredGPUVRAM  uint64     `json:"required_gpu_vram"`
-	TaskFee          BigInt     `json:"task_fee"`
+	// RequiredModelFileHashes and RequiredModelFileSourceHashes are sorted
+	// concatenations of 32-byte hashes of the exact and revision-less model files.
+	RequiredModelFileHashes       []byte `json:"-" gorm:"type:longblob;not null"`
+	RequiredModelFileSourceHashes []byte `json:"-" gorm:"type:longblob;not null"`
+	// ExecutionModelFileHashes is set once the selected node resolves the exact model files.
+	ExecutionModelFileHashes []byte `json:"-" gorm:"type:longblob;null"`
+	RequestedModelCacheHash  []byte `json:"-" gorm:"type:binary(32);not null"`
+	QuantizationConfigHash   []byte `json:"-" gorm:"type:binary(32);not null"`
+	// RequireLinuxCuda is set at creation when the task can run only on
+	// docker or Linux GPU-name platforms.
+	RequireLinuxCuda bool `json:"require_linux_cuda" gorm:"column:require_linux_cuda;not null;default:false"`
+	Timeout          uint64 `json:"timeout"`
+	MinVRAM                  uint64 `json:"min_vram"`
+	RequiredGPU              string `json:"required_gpu"`
+	RequiredGPUVRAM          uint64 `json:"required_gpu_vram"`
+	TaskFee                  BigInt `json:"task_fee"`
 	// Priority orders queued tasks for dispatch: task_fee divided by the
 	// VRAM-weighted estimated node seconds, floored to an integer.
 	Priority                BigInt          `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`

@@ -49,6 +49,7 @@ func initDeliveryTestConfig(t *testing.T) {
 	if err := config.InitDB(config.GetConfig()); err != nil {
 		t.Fatalf("failed to init db: %v", err)
 	}
+	registerTaskModelColumnDefaults(config.GetDB())
 }
 
 func TestMarkTaskDeliveredSetsDeliveredTimeOnce(t *testing.T) {

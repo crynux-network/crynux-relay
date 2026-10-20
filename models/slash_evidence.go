@@ -59,8 +59,8 @@ type SlashEvidenceNodeSnapshot struct {
 }
 
 type SlashEvidenceNodeModel struct {
-	ModelID string `json:"model_id"`
-	InUse   bool   `json:"in_use"`
+	ModelFileHash string `json:"model_file_hash"`
+	InMemory      bool   `json:"in_memory"`
 }
 
 type SlashEvidenceValidationContext struct {
