@@ -59,6 +59,7 @@ const (
 	TaskAbortCreatorValidationTimeout
 	TaskAbortResultUploadTimeout
 	TaskAbortNodeSlashed
+	TaskAbortModelNotAllowed
 )
 
 type TaskError uint8

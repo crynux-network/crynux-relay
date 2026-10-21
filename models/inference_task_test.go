@@ -75,6 +75,9 @@ func TestTaskAbortReasonValuesAreAppended(t *testing.T) {
 	if TaskAbortNodeSlashed != 10 {
 		t.Fatalf("node-slashed abort reason was not appended: got %d", TaskAbortNodeSlashed)
 	}
+	if TaskAbortModelNotAllowed != 11 {
+		t.Fatalf("model-not-allowed abort reason was not appended: got %d", TaskAbortModelNotAllowed)
+	}
 }
 
 func mustBigInt(t *testing.T, value string) BigInt {

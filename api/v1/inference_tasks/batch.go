@@ -290,7 +290,8 @@ func createBatchItem(ctx context.Context, in TaskInput, address string) BatchCre
 			}
 			return result
 		}
-		if errors.Is(err, service.ErrInsufficientRelayAccount) {
+		if errors.Is(err, service.ErrInsufficientRelayAccount) ||
+			errors.Is(err, service.ErrModelNotWhitelisted) {
 			result.Outcome, result.Error = "permanent_error", err.Error()
 		} else {
 			result.Outcome, result.Error = "temporary_error", err.Error()

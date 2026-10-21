@@ -351,6 +351,26 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
 		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
 	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DeleteNodeNameWhitelist, 200))
+	adminGroup.GET("/model_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_model_whitelist_list_v2"),
+		fizz.Summary("List model name whitelist"),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.ListModelWhitelist, 200))
+	adminGroup.POST("/model_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_model_whitelist_add_v2"),
+		fizz.Summary("Add a model name to model whitelist"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.AddModelWhitelist, 200))
+	adminGroup.DELETE("/model_whitelist", []fizz.OperationOption{
+		fizz.ID("admin_model_whitelist_delete_v2"),
+		fizz.Summary("Delete a model name from model whitelist"),
+		fizz.Response("400", "validation errors", response.ErrorResponse{}, nil, nil),
+		fizz.Response("401", "unauthorized", response.ErrorResponse{}, nil, nil),
+		fizz.Response("500", "exception", response.ExceptionResponse{}, nil, nil),
+	}, middleware.AdminAuthMiddleware(), tonic.Handler(admin.DeleteModelWhitelist, 200))
 	adminGroup.GET("/node_names_csv", []fizz.OperationOption{
 		fizz.ID("admin_node_names_csv_v2"),
 		fizz.Summary("Export node names in CSV"),

@@ -152,6 +152,8 @@ func taskStatusLabel(status models.TaskStatus, abortReason models.TaskAbortReaso
 			return "Result Upload Timeout"
 		case models.TaskAbortNodeSlashed:
 			return "Node Slashed"
+		case models.TaskAbortModelNotAllowed:
+			return "Model Not Allowed"
 		default:
 			return "Aborted"
 		}
