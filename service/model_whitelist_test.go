@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"math/big"
+	"sort"
 	"testing"
 	"time"
 
@@ -113,6 +114,52 @@ func TestInitModelWhitelistCacheLoadsFromDB(t *testing.T) {
 	}
 	if !ok {
 		t.Fatal("seeded model should be allowed after init")
+	}
+}
+
+func TestTaskModelNamesForWhitelistIncludesSDComponents(t *testing.T) {
+	task := &models.InferenceTask{
+		TaskType: models.TaskTypeSD,
+		TaskArgs: `{"version":"3.7.0","base_model":{"name":"Qwen/Qwen-Image-2.1"},"components":{"vae":{"repo":"Evil/Bad-VAE","format":"diffusers"},"text":{"repo":"Org/TE","format":"diffusers"}},"dtype":"float16","prompt":"a cat"}`,
+	}
+	names, err := taskModelNamesForWhitelist(task)
+	if err != nil {
+		t.Fatalf("taskModelNamesForWhitelist: %v", err)
+	}
+	want := []string{"evil/bad-vae", "org/te", "qwen/qwen-image-2.1"}
+	if len(names) != len(want) {
+		t.Fatalf("unexpected names: %#v", names)
+	}
+	got := append([]string(nil), names...)
+	sort.Strings(got)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("unexpected names: %#v", names)
+		}
+	}
+}
+
+func TestCheckTaskModelsWhitelistedRejectsNonWhitelistedComponent(t *testing.T) {
+	resetModelWhitelistCacheForTest()
+	ctx := context.Background()
+	db := newModelWhitelistTestDB(t)
+	if err := AddModelWhitelistName(ctx, db, "qwen/qwen-image-2.1"); err != nil {
+		t.Fatalf("add base: %v", err)
+	}
+
+	task := &models.InferenceTask{
+		TaskType: models.TaskTypeSD,
+		TaskArgs: `{"version":"3.7.0","base_model":{"name":"qwen/qwen-image-2.1"},"components":{"vae":{"repo":"evil/bad-vae","format":"diffusers"}},"dtype":"float16","prompt":"a cat"}`,
+	}
+	if err := CheckTaskModelsWhitelisted(task); !errors.Is(err, ErrModelNotWhitelisted) {
+		t.Fatalf("expected ErrModelNotWhitelisted, got %v", err)
+	}
+
+	if err := AddModelWhitelistName(ctx, db, "evil/bad-vae"); err != nil {
+		t.Fatalf("add component: %v", err)
+	}
+	if err := CheckTaskModelsWhitelisted(task); err != nil {
+		t.Fatalf("expected allow when base and component are whitelisted: %v", err)
 	}
 }
 
@@ -237,6 +284,71 @@ func TestCreateTaskSkipsWhitelistWhenDisabled(t *testing.T) {
 	setTaskModelRequirements(t, task)
 	if err := CreateTask(ctx, db, task); err != nil {
 		t.Fatalf("create should succeed when whitelist disabled: %v", err)
+	}
+}
+
+func TestRunMatchingRoundAbortsNonWhitelistedComponent(t *testing.T) {
+	initMatchingTestConfig(t)
+	resetModelWhitelistCacheForTest()
+	ctx := context.Background()
+	db := config.GetDB()
+	if err := db.AutoMigrate(
+		&models.ModelWhitelist{},
+		&models.InferenceTask{},
+		&models.RelayAccountEvent{},
+		&models.Event{},
+	); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+	if err := AddModelWhitelistName(ctx, db, "qwen/qwen-image-2.1"); err != nil {
+		t.Fatalf("add base whitelist: %v", err)
+	}
+	config.GetConfig().Task.ModelWhitelistEnabled = true
+	t.Cleanup(func() { config.GetConfig().Task.ModelWhitelistEnabled = false })
+
+	creator := "0xcreator"
+	fee := big.NewInt(100)
+	relayAccountCache.mu.Lock()
+	relayAccountCache.accounts = map[string]*big.Int{creator: big.NewInt(0)}
+	relayAccountCache.mu.Unlock()
+	t.Cleanup(func() {
+		relayAccountCache.mu.Lock()
+		relayAccountCache.accounts = make(map[string]*big.Int)
+		relayAccountCache.mu.Unlock()
+	})
+
+	task := &models.InferenceTask{
+		TaskIDCommitment: "0xmodel-whitelist-component-abort",
+		Creator:          creator,
+		Status:           models.TaskQueued,
+		TaskType:         models.TaskTypeSD,
+		ModelName:        "qwen/qwen-image-2.1",
+		TaskArgs:         `{"version":"3.7.0","base_model":{"name":"qwen/qwen-image-2.1"},"components":{"vae":{"repo":"evil/bad-vae","format":"diffusers"}},"dtype":"float16","prompt":"a cat"}`,
+		TaskFee:          models.BigInt{Int: *fee},
+		Priority:         models.BigInt{Int: *big.NewInt(1)},
+		CreateTime:       sql.NullTime{Time: time.Now(), Valid: true},
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create queued task: %v", err)
+	}
+
+	matched, err := runMatchingRound(ctx)
+	if err != nil {
+		t.Fatalf("matching round failed: %v", err)
+	}
+	if matched != 0 {
+		t.Fatalf("expected no matches, got %d", matched)
+	}
+
+	var stored models.InferenceTask
+	if err := db.First(&stored, task.ID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if stored.Status != models.TaskEndAborted {
+		t.Fatalf("expected TaskEndAborted, got %d", stored.Status)
+	}
+	if stored.AbortReason != models.TaskAbortModelNotAllowed {
+		t.Fatalf("expected TaskAbortModelNotAllowed, got %d", stored.AbortReason)
 	}
 }
 

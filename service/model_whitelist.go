@@ -120,6 +120,62 @@ func IsModelWhitelisted(modelName string) (bool, error) {
 	return ok, nil
 }
 
+// taskModelNamesForWhitelist returns the normalized HuggingFace repository
+// names that MUST all be present in the model whitelist for the task.
+// For SD tasks this includes base_model and every components.*.repo that is a
+// required model file. For LLM and SDFT it is the task ModelName.
+func taskModelNamesForWhitelist(task *models.InferenceTask) ([]string, error) {
+	if task.TaskType == models.TaskTypeSD {
+		requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
+		if err != nil {
+			return nil, err
+		}
+		seen := make(map[string]struct{}, len(requirements.Entries))
+		names := make([]string, 0, len(requirements.Entries))
+		for _, entry := range requirements.Entries {
+			normalized, err := NormalizeModelWhitelistName(entry.Repository)
+			if err != nil {
+				return nil, err
+			}
+			if _, ok := seen[normalized]; ok {
+				continue
+			}
+			seen[normalized] = struct{}{}
+			names = append(names, normalized)
+		}
+		if len(names) == 0 {
+			return nil, ErrInvalidModelWhitelistName
+		}
+		return names, nil
+	}
+
+	normalized, err := NormalizeModelWhitelistName(task.ModelName)
+	if err != nil {
+		return nil, err
+	}
+	return []string{normalized}, nil
+}
+
+// CheckTaskModelsWhitelisted reports whether every repository required by the
+// task is in the in-memory allowlist. It returns ErrModelNotWhitelisted when
+// any required repository is missing.
+func CheckTaskModelsWhitelisted(task *models.InferenceTask) error {
+	names, err := taskModelNamesForWhitelist(task)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		ok, err := IsModelWhitelisted(name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrModelNotWhitelisted
+		}
+	}
+	return nil
+}
+
 func loadModelWhitelistCacheLocked(ctx context.Context, db *gorm.DB) error {
 	names, err := ListModelWhitelistNames(ctx, db)
 	if err != nil {

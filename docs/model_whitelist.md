@@ -16,13 +16,15 @@ Changing `task.model_whitelist_enabled` requires a configuration change and Rela
 
 ## Matching Key
 
-The whitelist key is the task `ModelName` after `models.NormalizeModelName`:
+Whitelist keys are normalized HuggingFace repository names after `models.NormalizeModelName`. Matching MUST be exact equality on the normalized name. Relay MUST NOT use SQL `LIKE`, prefix matching, or wildcards.
 
-- LLM: `model`
-- SD: `base_model` string or `base_model.name`
-- SDFT: `model.name`
+When `task.model_whitelist_enabled` is `true`, Relay MUST require every repository below to be present in the whitelist:
 
-Matching MUST be exact equality on the normalized name. Relay MUST NOT use SQL `LIKE`, prefix matching, or wildcards.
+- LLM: `model` (`InferenceTask.ModelName`)
+- SDFT: `model.name` (`InferenceTask.ModelName`)
+- SD: `base_model.name` and every `components.*.repo` that is a required model file
+
+An SD task with a whitelisted base model and a non-whitelisted component repository MUST be rejected. LoRA weight references (`lora.model`) are not required model files and MUST NOT be checked by this whitelist.
 
 Admin add and delete inputs MUST be normalized with the same rules before persistence. Empty names after normalization MUST be rejected.
 
@@ -40,12 +42,12 @@ Admin add and delete MUST write the database first, then refresh the full in-mem
 
 After `ApplyTaskPricing` sets `ModelName`, and when `task.model_whitelist_enabled` is `true`:
 
-- If `ModelName` is not in the cache, `CreateTask` MUST return an error that single-task creation maps to a `task_args` validation error with message `Model not allowed`.
+- If any required repository is not in the cache, `CreateTask` MUST return an error that single-task creation maps to a `task_args` validation error with message `Model not allowed`.
 - Batch creation MUST treat the same error as `permanent_error` with message `Model not allowed`.
 
 ## Matching
 
-In each matching round, after the queue-timeout skip and before candidate-set construction, when `task.model_whitelist_enabled` is `true` and the queued task `ModelName` is not in the cache:
+In each matching round, after the queue-timeout skip and before candidate-set construction, when `task.model_whitelist_enabled` is `true` and any required repository of the queued task is not in the cache:
 
 - Relay MUST set `AbortReason` to `TaskAbortModelNotAllowed`.
 - Relay MUST end the task with `TaskEndAborted` and refund the task fee through the existing abort path.
