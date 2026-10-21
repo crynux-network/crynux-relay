@@ -190,6 +190,9 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		if errors.Is(err, service.ErrInsufficientRelayAccount) {
 			return nil, response.NewValidationErrorResponse("task_fee", "Insufficient relay account balance")
 		}
+		if errors.Is(err, service.ErrModelNotWhitelisted) {
+			return nil, response.NewValidationErrorResponse("task_args", "Model not allowed")
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 

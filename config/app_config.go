@@ -161,6 +161,7 @@ type AppConfig struct {
 		StakeAmount                uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
 		DistanceThreshold          uint64 `mapstructure:"distance_threshold"`
 		TaskWhitelistEnabled       bool   `mapstructure:"task_whitelist_enabled"`
+		ModelWhitelistEnabled      bool   `mapstructure:"model_whitelist_enabled"`
 		MinimumNodeNameNumber      uint64 `mapstructure:"minimum_node_name_number"`
 		NodeNameWhitelistEnabled   bool   `mapstructure:"node_name_whitelist_enabled"`
 		PassiveSlashMode           *bool  `mapstructure:"passive_slash_mode"`

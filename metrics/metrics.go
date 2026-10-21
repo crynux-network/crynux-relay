@@ -395,6 +395,8 @@ func AbortReasonLabel(reason models.TaskAbortReason) string {
 		return "result_upload_timeout"
 	case models.TaskAbortNodeSlashed:
 		return "node_slashed"
+	case models.TaskAbortModelNotAllowed:
+		return "model_not_allowed"
 	default:
 		return "unknown"
 	}

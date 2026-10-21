@@ -345,6 +345,21 @@ func runMatchingRound(ctx context.Context) (int, error) {
 			if isQueuedTaskTimedOut(task, now) {
 				continue
 			}
+			if config.GetConfig().Task.ModelWhitelistEnabled {
+				ok, err := IsModelWhitelisted(task.ModelName)
+				if err != nil {
+					return len(pairs), err
+				}
+				if !ok {
+					task.AbortReason = models.TaskAbortModelNotAllowed
+					if err := SetTaskStatusEndAborted(ctx, config.GetDB(), task, "relay"); err != nil {
+						log.Errorf("TaskMatching: abort non-whitelisted model task %s error: %v", task.TaskIDCommitment, err)
+						return len(pairs), err
+					}
+					log.Warnf("TaskMatching: aborted task %s model %s not allowed", task.TaskIDCommitment, task.ModelName)
+					continue
+				}
+			}
 			signature := requirementSignature(task)
 			set, ok := candidateSets[signature]
 			if !ok {

@@ -55,6 +55,9 @@ func main() {
 	if err := config.DeleteBlockchainPrivateKeyFilesAfterRead(); err != nil {
 		log.Fatalln(err)
 	}
+	if err := service.InitModelWhitelistCache(context.Background(), config.GetDB()); err != nil {
+		log.Fatalln(err)
+	}
 	if err := service.InitRelayAccountCache(context.Background(), config.GetDB()); err != nil {
 		log.Fatalln(err)
 	}
