@@ -25,12 +25,8 @@ func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) er
 		return err
 	}
 	if config.GetConfig().Task.ModelWhitelistEnabled {
-		ok, err := IsModelWhitelisted(task.ModelName)
-		if err != nil {
+		if err := CheckTaskModelsWhitelisted(task); err != nil {
 			return err
-		}
-		if !ok {
-			return ErrModelNotWhitelisted
 		}
 	}
 	if deadline, ok := GetQueueDeadline(task); ok {

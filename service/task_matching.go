@@ -346,17 +346,16 @@ func runMatchingRound(ctx context.Context) (int, error) {
 				continue
 			}
 			if config.GetConfig().Task.ModelWhitelistEnabled {
-				ok, err := IsModelWhitelisted(task.ModelName)
-				if err != nil {
-					return len(pairs), err
-				}
-				if !ok {
-					task.AbortReason = models.TaskAbortModelNotAllowed
-					if err := SetTaskStatusEndAborted(ctx, config.GetDB(), task, "relay"); err != nil {
-						log.Errorf("TaskMatching: abort non-whitelisted model task %s error: %v", task.TaskIDCommitment, err)
+				if err := CheckTaskModelsWhitelisted(task); err != nil {
+					if !errors.Is(err, ErrModelNotWhitelisted) {
 						return len(pairs), err
 					}
-					log.Warnf("TaskMatching: aborted task %s model %s not allowed", task.TaskIDCommitment, task.ModelName)
+					task.AbortReason = models.TaskAbortModelNotAllowed
+					if abortErr := SetTaskStatusEndAborted(ctx, config.GetDB(), task, "relay"); abortErr != nil {
+						log.Errorf("TaskMatching: abort non-whitelisted model task %s error: %v", task.TaskIDCommitment, abortErr)
+						return len(pairs), abortErr
+					}
+					log.Warnf("TaskMatching: aborted task %s model not allowed model_name=%s", task.TaskIDCommitment, task.ModelName)
 					continue
 				}
 			}
