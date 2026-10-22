@@ -1064,10 +1064,10 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 	initTaskPricingTestStore(t)
 	start := time.Now()
 	units := uint64(512 * 512)
-	calibrate := func(id, model, variant, dtype string, quantizationID byte, minVRAM uint64) {
+	calibrate := func(id, model, dtype string, quantizationID byte, minVRAM uint64) {
 		task := &models.InferenceTask{
 			TaskIDCommitment: id, TaskType: models.TaskTypeSD, Status: models.TaskValidated,
-			ModelName: model, ModelVariant: variant, RequestedDType: "auto", ExecutionDType: dtype,
+			ModelName: model, RequestedDType: "auto", ExecutionDType: dtype,
 			MinVRAM: minVRAM, SDUnits: &units,
 			QuantizationConfigHash: models.Hash32{quantizationID}.Bytes(),
 			StartTime:              sql.NullTime{Time: start, Valid: true},
@@ -1078,20 +1078,19 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 			t.Fatalf("calibrate %s: %v", id, err)
 		}
 	}
-	calibrate("a-8", "model-a", "fp16", "float16", 0, 8)
-	calibrate("a-16", "model-a", "fp16", "float16", 0, 16)
-	calibrate("b-12", "model-b", "fp16", "bfloat16", 0, 12)
-	calibrate("variant", "model-a", "bf16", "float16", 0, 12)
-	calibrate("quantized", "model-a", "fp16", "float16", 4, 12)
+	calibrate("a-8", "model-a", "float16", 0, 8)
+	calibrate("a-16", "model-a", "float16", 0, 16)
+	calibrate("b-12", "model-b", "bfloat16", 0, 12)
+	calibrate("quantized", "model-a", "float16", 4, 12)
 
 	globalTaskPricing.mu.RLock()
 	defer globalTaskPricing.mu.RUnlock()
-	if len(globalTaskPricing.records) != 4 {
-		t.Fatalf("records = %d, want 4", len(globalTaskPricing.records))
+	if len(globalTaskPricing.records) != 3 {
+		t.Fatalf("records = %d, want 3", len(globalTaskPricing.records))
 	}
 	key := gpuCalibrationKey{
 		taskType: models.TaskTypeSD, name: "A100", vram: 40, modelName: "model-a",
-		modelVariant: "fp16", executionDType: "float16", requiredModelFilesHash: models.RequiredModelFilesHash(nil),
+		executionDType: "float16", requiredModelFilesHash: models.RequiredModelFilesHash(nil),
 	}
 	record := globalTaskPricing.records[key].record
 	if record.MinVRAMRequirement != 8 || record.MaxVRAMRequirement != 16 || record.SDSuccessSamples != 2 {

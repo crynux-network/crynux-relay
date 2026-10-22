@@ -111,7 +111,6 @@ type InferenceTask struct {
 	TaskType         TaskType   `json:"task_type" gorm:"index"`
 	TaskVersion      string     `json:"task_version"`
 	ModelName        string     `json:"model_name" gorm:"size:512;not null;default:''"`
-	ModelVariant     string     `json:"model_variant" gorm:"size:191;not null;default:''"`
 	RequestedDType   string     `json:"requested_dtype" gorm:"column:requested_dtype;size:64;not null;default:'auto'"`
 	ExecutionDType   string     `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;default:''"`
 	// RequiredModelFileHashes and RequiredModelFileSourceHashes are sorted
@@ -124,12 +123,12 @@ type InferenceTask struct {
 	QuantizationConfigHash   []byte `json:"-" gorm:"type:binary(32);not null"`
 	// RequireLinuxCuda is set at creation when the task can run only on
 	// docker or Linux GPU-name platforms.
-	RequireLinuxCuda bool `json:"require_linux_cuda" gorm:"column:require_linux_cuda;not null;default:false"`
+	RequireLinuxCuda bool   `json:"require_linux_cuda" gorm:"column:require_linux_cuda;not null;default:false"`
 	Timeout          uint64 `json:"timeout"`
-	MinVRAM                  uint64 `json:"min_vram"`
-	RequiredGPU              string `json:"required_gpu"`
-	RequiredGPUVRAM          uint64 `json:"required_gpu_vram"`
-	TaskFee                  BigInt `json:"task_fee"`
+	MinVRAM          uint64 `json:"min_vram"`
+	RequiredGPU      string `json:"required_gpu"`
+	RequiredGPUVRAM  uint64 `json:"required_gpu_vram"`
+	TaskFee          BigInt `json:"task_fee"`
 	// Priority orders queued tasks for dispatch: task_fee divided by the
 	// VRAM-weighted estimated node seconds, floored to an integer.
 	Priority                BigInt          `json:"priority" gorm:"type:decimal(65,0);not null;default:0"`

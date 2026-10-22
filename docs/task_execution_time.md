@@ -30,8 +30,6 @@ Both endpoints MUST accept:
 | `gpu_name` | exclusive with `gpu_vram` | Non-empty GPU name. |
 | `gpu_vram` | exclusive with `gpu_name` | Positive integer GB. |
 
-The SD endpoint MUST also accept optional `variant`. When present and non-empty, Relay MUST store the lowercased value as `ModelVariant`. When absent or empty, `ModelVariant` MUST be empty. The LLM endpoint MUST NOT accept `variant`. LLM `ModelVariant` MUST be empty.
-
 A request MUST use exactly one selection mode:
 
 1. `min_vram` without `gpu_name` and without `gpu_vram`.

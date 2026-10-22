@@ -124,10 +124,9 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 // including Diffusers-format components, are validated as public repositories.
 func validateEntryOnHub(ctx context.Context, client *huggingface.Client, entry models.ModelFileEntry, requirePipeline bool) error {
 	if !requirePipeline {
-		return client.ValidateBaseModel(ctx, huggingface.ModelKindRepository, entry.Repository, "")
+		return client.ValidateBaseModel(ctx, huggingface.ModelKindRepository, entry.Repository)
 	}
-	variant, _ := entry.FormatKwargs["variant"].(string)
-	return client.ValidateBaseModel(ctx, huggingface.ModelKindSD, entry.Repository, variant)
+	return client.ValidateBaseModel(ctx, huggingface.ModelKindSD, entry.Repository)
 }
 
 func hubValidationError(err error) error {

@@ -31,7 +31,6 @@ const (
 type TaskExecutionTimeQuery struct {
 	TaskType       models.TaskType
 	ModelName      string
-	ModelVariant   string
 	RequestedDType string
 	// QuantizationConfigHash is the hash of the complete quantization_config.
 	QuantizationConfigHash models.Hash32
@@ -272,7 +271,6 @@ func FreezeTaskModelExecutionConfig(task *models.InferenceTask) error {
 		return fmt.Errorf("extract model execution config: %w", err)
 	}
 	task.ModelName = config.ModelName
-	task.ModelVariant = config.ModelVariant
 	task.RequestedDType = config.RequestedDType
 	return nil
 }
@@ -354,7 +352,6 @@ func executionTimeLookupTask(query TaskExecutionTimeQuery) *models.InferenceTask
 	task := &models.InferenceTask{
 		TaskType:               query.TaskType,
 		ModelName:              models.NormalizeModelName(query.ModelName),
-		ModelVariant:           strings.ToLower(query.ModelVariant),
 		RequestedDType:         requestedDType,
 		QuantizationConfigHash: query.QuantizationConfigHash.Bytes(),
 	}

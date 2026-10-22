@@ -260,7 +260,6 @@ func (b *taskTraceBuilder) addTaskCreated() {
 		"task_type":                b.task.TaskType,
 		"task_version":             b.task.TaskVersion,
 		"model_name":               b.task.ModelName,
-		"model_variant":            b.task.ModelVariant,
 		"requested_dtype":          b.task.RequestedDType,
 		"execution_dtype":          b.task.ExecutionDType,
 		"quantization_config_hash": hex.EncodeToString(b.task.QuantizationConfigHash),
@@ -438,7 +437,6 @@ func (b *taskTraceBuilder) addTaskStarted() {
 			} else {
 				details["cold_start"] = description.ColdStart
 				details["calibration_model_name"] = description.ModelName
-				details["calibration_model_variant"] = description.ModelVariant
 				details["calibration_requested_dtype"] = description.RequestedDType
 				details["calibration_quantization_config_hash"] = description.QuantizationConfigHash
 				details["calibration_selected_execution_dtype"] = description.SelectedExecutionDType
