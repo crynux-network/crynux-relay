@@ -66,13 +66,13 @@ Relay MUST expose these in-memory execution parameter metrics:
 
 | Metric | Labels | Base-unit value |
 |---|---|---|
-| `relay_task_pricing_sd_overhead_seconds` | `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD overhead seconds for an initialized unpinned pricing key |
-| `relay_task_pricing_seconds_per_sd_pixel_step` | `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
-| `relay_task_pricing_llm_coefficient` | `coefficient`, `model_name`, `model_variant`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
-| `relay_gpu_execution_sd_overhead_seconds` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD overhead seconds for one calibration key |
-| `relay_gpu_execution_seconds_per_sd_pixel_step` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD seconds per pixel-step for one calibration key |
-| `relay_gpu_execution_llm_coefficient` | `coefficient`, `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | LLM coefficient for one calibration key |
-| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `model_variant`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | Cumulative successful samples for one calibration key |
+| `relay_task_pricing_sd_overhead_seconds` | `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD overhead seconds for an initialized unpinned pricing key |
+| `relay_task_pricing_seconds_per_sd_pixel_step` | `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
+| `relay_task_pricing_llm_coefficient` | `coefficient`, `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
+| `relay_gpu_execution_sd_overhead_seconds` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD overhead seconds for one calibration key |
+| `relay_gpu_execution_seconds_per_sd_pixel_step` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD seconds per pixel-step for one calibration key |
+| `relay_gpu_execution_llm_coefficient` | `coefficient`, `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | LLM coefficient for one calibration key |
+| `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | Cumulative successful samples for one calibration key |
 
 The LLM `constant` coefficient MUST use seconds, `text_input` MUST use seconds per input byte, `output` MUST use seconds per output token, `model_switch` MUST use seconds per switch, `image_count` MUST use seconds per image, and `image_megapixel` MUST use seconds per megapixel. Sample count MUST NOT be used as a cross-GPU aggregation weight.
 

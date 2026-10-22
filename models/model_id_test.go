@@ -69,26 +69,6 @@ func TestBaseModelHuggingFaceID(t *testing.T) {
 	}
 }
 
-func TestBaseModelVariantAndDispatchID(t *testing.T) {
-	variant, ok := BaseModelVariant("base:crynux-network/sdxl-turbo+fp16")
-	if !ok || variant != "fp16" {
-		t.Fatalf("unexpected variant: %q %v", variant, ok)
-	}
-	variant, ok = BaseModelVariant("base:qwen/qwen3-8b")
-	if !ok || variant != "" {
-		t.Fatalf("unexpected empty variant: %q %v", variant, ok)
-	}
-	if _, ok := BaseModelVariant("lora:x"); ok {
-		t.Fatal("expected non-base model to fail")
-	}
-	if got := BaseDispatchID("Crynux-Network/SDXL-Turbo", "FP16"); got != "base:crynux-network/sdxl-turbo+fp16" {
-		t.Fatalf("unexpected dispatch id: %q", got)
-	}
-	if got := BaseDispatchID("qwen/qwen3-8b", ""); got != "base:qwen/qwen3-8b" {
-		t.Fatalf("unexpected dispatch id without variant: %q", got)
-	}
-}
-
 func TestNormalizeModelName(t *testing.T) {
 	if got := NormalizeModelName("Qwen/Qwen3.5-9B"); got != "qwen/qwen3.5-9b" {
 		t.Fatalf("unexpected normalized model name: %q", got)
@@ -124,8 +104,8 @@ func TestNormalizeTaskArgsModelNamesLLM(t *testing.T) {
 }
 
 func TestNormalizeTaskArgsModelNamesSD(t *testing.T) {
-	taskArgs := `{"base_model":{"name":"Crynux-Network/SDXL-Turbo","variant":"fp16"},"prompt":"a cat","lora":{"model":"Crynux-Network/MyLora"},"controlnet":{"model":"Lllyasviel/Sd-Controlnet-Canny"},"refiner":{"model":"StabilityAI/Stable-Diffusion-XL-Refiner-1.0"},"unet":"Crynux-Network/MyUNet","vae":"MadeByOllin/SDXL-VAE-FP16-Fix","textual_inversion":"SD-Concepts-Library/Cat-Toy","components":{"transformer":{"format":"gguf","repo":"Unsloth/Qwen-Image-2.1-GGUF","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
-	wantArgs := `{"base_model":{"name":"crynux-network/sdxl-turbo","variant":"fp16"},"prompt":"a cat","lora":{"model":"crynux-network/mylora"},"controlnet":{"model":"lllyasviel/sd-controlnet-canny"},"refiner":{"model":"stabilityai/stable-diffusion-xl-refiner-1.0"},"unet":"crynux-network/myunet","vae":"madebyollin/sdxl-vae-fp16-fix","textual_inversion":"sd-concepts-library/cat-toy","components":{"transformer":{"format":"gguf","repo":"unsloth/qwen-image-2.1-gguf","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
+	taskArgs := `{"base_model":{"name":"Crynux-Network/SDXL-Turbo"},"prompt":"a cat","lora":{"model":"Crynux-Network/MyLora"},"controlnet":{"model":"Lllyasviel/Sd-Controlnet-Canny"},"refiner":{"model":"StabilityAI/Stable-Diffusion-XL-Refiner-1.0"},"unet":"Crynux-Network/MyUNet","vae":"MadeByOllin/SDXL-VAE-FP16-Fix","textual_inversion":"SD-Concepts-Library/Cat-Toy","components":{"transformer":{"format":"gguf","repo":"Unsloth/Qwen-Image-2.1-GGUF","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
+	wantArgs := `{"base_model":{"name":"crynux-network/sdxl-turbo"},"prompt":"a cat","lora":{"model":"crynux-network/mylora"},"controlnet":{"model":"lllyasviel/sd-controlnet-canny"},"refiner":{"model":"stabilityai/stable-diffusion-xl-refiner-1.0"},"unet":"crynux-network/myunet","vae":"madebyollin/sdxl-vae-fp16-fix","textual_inversion":"sd-concepts-library/cat-toy","components":{"transformer":{"format":"gguf","repo":"unsloth/qwen-image-2.1-gguf","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeSD, wantArgs)
 }
 
@@ -155,9 +135,9 @@ func TestExtractModelExecutionConfig(t *testing.T) {
 		want     ModelExecutionConfig
 	}{
 		{
-			name: "sd variant and default dtype", taskType: TaskTypeSD,
-			args: `{"base_model":{"name":"Crynux/SDXL","variant":"FP16"}}`,
-			want: ModelExecutionConfig{ModelName: "crynux/sdxl", ModelVariant: "fp16", RequestedDType: AutoExecutionDType},
+			name: "sd default dtype", taskType: TaskTypeSD,
+			args: `{"base_model":{"name":"Crynux/SDXL"}}`,
+			want: ModelExecutionConfig{ModelName: "crynux/sdxl", RequestedDType: AutoExecutionDType},
 		},
 		{
 			name: "llm dtype", taskType: TaskTypeLLM,

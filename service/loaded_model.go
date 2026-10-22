@@ -1,8 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crynux_relay/models"
+	"crypto/sha256"
+	"encoding/json"
+	"sort"
 	"sync"
 	"time"
 
@@ -69,6 +73,96 @@ func invalidateLoadedModelViewCache() {
 	loadedModelViewCache.expiresAt = time.Time{}
 }
 
+// loadedModelGroupKey is the identity of a public loaded model view.
+type loadedModelGroupKey struct {
+	ModelCacheHash models.Hash32
+	ExecutionDType string
+}
+
+// loadedModelGroup collects the exact-file rows that share one cache identity.
+type loadedModelGroup struct {
+	view    LoadedModelView
+	members [][]models.Hash32
+}
+
+// loadedModelCacheConfigComplete reports whether the row carries the canonical
+// cache config that its model cache hash is computed from.
+func loadedModelCacheConfigComplete(loadedModel *models.LoadedModel, cacheHash models.Hash32) bool {
+	config := []byte(loadedModel.ModelCacheConfig)
+	return len(config) > 0 && json.Valid(config) && sha256.Sum256(config) == [32]byte(cacheHash)
+}
+
+// groupLoadedModels aggregates the exact-file rows by model cache hash and
+// execution dtype. Rows without a complete cache config are skipped.
+func groupLoadedModels(loadedModels []models.LoadedModel) ([]*loadedModelGroup, error) {
+	groups := make(map[loadedModelGroupKey]*loadedModelGroup)
+	for _, loadedModel := range loadedModels {
+		if modelWhitelistEnforced() {
+			ok, err := IsModelWhitelisted(loadedModel.ModelID)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+		}
+		cacheHash, err := models.Hash32FromBytes(loadedModel.ModelCacheHash)
+		if err != nil {
+			return nil, err
+		}
+		if !loadedModelCacheConfigComplete(&loadedModel, cacheHash) {
+			log.Warnf("LoadedModelViews: skip loaded model %d of %s: model cache config is incomplete", loadedModel.ID, loadedModel.ModelID)
+			continue
+		}
+		members, err := loadedModel.MemberHashes()
+		if err != nil {
+			return nil, err
+		}
+
+		key := loadedModelGroupKey{ModelCacheHash: cacheHash, ExecutionDType: loadedModel.ExecutionDType}
+		group, ok := groups[key]
+		if !ok {
+			groups[key] = &loadedModelGroup{view: LoadedModelView{Model: loadedModel}, members: [][]models.Hash32{members}}
+			continue
+		}
+		representative := &group.view.Model
+		if representative.ModelID != loadedModel.ModelID || representative.ModelType != loadedModel.ModelType ||
+			!bytes.Equal(representative.QuantizationConfig, loadedModel.QuantizationConfig) {
+			log.Errorf("LoadedModelViews: skip loaded model %d of %s: conflicts with model %s of the same model cache hash %s",
+				loadedModel.ID, loadedModel.ModelID, representative.ModelID, cacheHash.Hex())
+			continue
+		}
+		representative.MinVRAM = min(representative.MinVRAM, loadedModel.MinVRAM)
+		group.members = append(group.members, members)
+	}
+
+	sorted := make([]*loadedModelGroup, 0, len(groups))
+	for _, group := range groups {
+		sorted = append(sorted, group)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i].view.Model, sorted[j].view.Model
+		if a.ModelID != b.ModelID {
+			return a.ModelID < b.ModelID
+		}
+		if a.ExecutionDType != b.ExecutionDType {
+			return a.ExecutionDType < b.ExecutionDType
+		}
+		return bytes.Compare(a.ModelCacheHash, b.ModelCacheHash) < 0
+	})
+	return sorted, nil
+}
+
+// coversAnyMember reports whether the held files contain every file of at least one member.
+func coversAnyMember(held map[models.Hash32]struct{}, members [][]models.Hash32) bool {
+	for _, member := range members {
+		if modelFilesCovered(held, nil, member, nil) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView, error) {
 	loadedModels, err := models.ListLoadedModels(ctx, db)
 	if err != nil {
@@ -90,48 +184,42 @@ func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView,
 		}
 		onDisk[address] = hashes
 	}
+	inMemory := make(map[string]map[models.Hash32]struct{}, len(state.inMemory))
+	memoryCacheHashes := make(map[string]models.Hash32, len(state.inMemory))
+	for address, memory := range state.inMemory {
+		cacheHash, err := models.Hash32FromBytes(memory.CurrentModelCacheHash)
+		if err != nil {
+			return nil, err
+		}
+		files, err := memory.FileHashes()
+		if err != nil {
+			return nil, err
+		}
+		inMemory[address] = hashSet(files)
+		memoryCacheHashes[address] = cacheHash
+	}
 
-	views := make([]LoadedModelView, 0, len(loadedModels))
-	for _, loadedModel := range loadedModels {
-		if modelWhitelistEnforced() {
-			ok, err := IsModelWhitelisted(loadedModel.ModelID)
-			if err != nil {
-				return nil, err
-			}
-			if !ok {
-				continue
-			}
-		}
-		members, err := loadedModel.MemberHashes()
+	groups, err := groupLoadedModels(loadedModels)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]LoadedModelView, 0, len(groups))
+	for _, group := range groups {
+		view := group.view
+		cacheHash, err := models.Hash32FromBytes(view.Model.ModelCacheHash)
 		if err != nil {
 			return nil, err
 		}
-		cacheHash, err := models.Hash32FromBytes(loadedModel.ModelCacheHash)
-		if err != nil {
-			return nil, err
-		}
-		view := LoadedModelView{Model: loadedModel}
 		for _, hashes := range onDisk {
-			if modelFilesCovered(hashes, nil, members, nil) {
+			if coversAnyMember(hashes, group.members) {
 				view.OnDiskNodeCount++
 			}
 		}
-		for _, memory := range state.inMemory {
-			if memory.ExecutionDType != loadedModel.ExecutionDType {
+		for address, files := range inMemory {
+			if state.inMemory[address].ExecutionDType != view.Model.ExecutionDType || memoryCacheHashes[address] != cacheHash {
 				continue
 			}
-			memoryCacheHash, err := models.Hash32FromBytes(memory.CurrentModelCacheHash)
-			if err != nil {
-				return nil, err
-			}
-			if memoryCacheHash != cacheHash {
-				continue
-			}
-			memoryFiles, err := memory.FileHashes()
-			if err != nil {
-				return nil, err
-			}
-			if modelFilesCovered(hashSet(memoryFiles), nil, members, nil) {
+			if coversAnyMember(files, group.members) {
 				view.InMemoryNodeCount++
 			}
 		}
@@ -142,10 +230,10 @@ func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView,
 
 type pendingLoadedModel struct {
 	ModelID                 string
-	Variant                 string
 	ModelType               models.LoadedModelType
 	RequiredModelFileHashes []models.Hash32
 	QuantizationConfig      []byte
+	ModelCacheConfig        []byte
 	MinVRAM                 uint64
 }
 
@@ -185,6 +273,15 @@ func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
 		log.Errorf("UpdateLoadedModels: decode model cache hash of task %s error: %v", task.TaskIDCommitment, err)
 		return
 	}
+	cacheConfig, err := task.RequestedModelCacheConfig()
+	if err != nil {
+		log.Errorf("UpdateLoadedModels: derive model cache config of task %s error: %v", task.TaskIDCommitment, err)
+		return
+	}
+	if sha256.Sum256(cacheConfig) != [32]byte(cacheHash) {
+		log.Errorf("UpdateLoadedModels: model cache config of task %s does not match its model cache hash", task.TaskIDCommitment)
+		return
+	}
 	quantizationConfig, err := models.TaskQuantizationConfigJSON(task.TaskArgs)
 	if err != nil {
 		log.Errorf("UpdateLoadedModels: decode quantization config of task %s error: %v", task.TaskIDCommitment, err)
@@ -197,10 +294,10 @@ func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
 	}
 	loadedModelCache.record(key, pendingLoadedModel{
 		ModelID:                 task.ModelName,
-		Variant:                 task.ModelVariant,
 		ModelType:               models.LoadedModelTypeFromTaskType(task.TaskType),
 		RequiredModelFileHashes: executionHashes,
 		QuantizationConfig:      quantizationConfig,
+		ModelCacheConfig:        cacheConfig,
 		MinVRAM:                 node.GPUVram,
 	})
 }
@@ -234,7 +331,7 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 			RequiredModelFileHashes: models.EncodeHashList(pendingModel.RequiredModelFileHashes),
 			QuantizationConfig:      pendingModel.QuantizationConfig,
 			ModelID:                 pendingModel.ModelID,
-			Variant:                 pendingModel.Variant,
+			ModelCacheConfig:        pendingModel.ModelCacheConfig,
 			ModelType:               pendingModel.ModelType,
 			MinVRAM:                 pendingModel.MinVRAM,
 		})

@@ -15,7 +15,6 @@ type GetSDExecutionTimeInput struct {
 	Model              string  `query:"model" description:"HuggingFace model name"`
 	Dtype              *string `query:"dtype" description:"Requested dtype"`
 	QuantizationConfig *string `query:"quantization_config" description:"Complete quantization_config as a JSON value"`
-	Variant            *string `query:"variant" description:"SD base-model variant"`
 	MinVRAM            *uint64 `query:"min_vram" description:"Minimum GPU VRAM in GB"`
 	GPUName            *string `query:"gpu_name" description:"Exact GPU name"`
 	GPUVRAM            *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
@@ -58,7 +57,6 @@ type executionTimeRequest struct {
 	Model              string
 	Dtype              *string
 	QuantizationConfig *string
-	Variant            *string
 	MinVRAM            *uint64
 	GPUName            *string
 	GPUVRAM            *uint64
@@ -66,7 +64,7 @@ type executionTimeRequest struct {
 
 func GetSDExecutionTime(c *gin.Context, in *GetSDExecutionTimeInput) (*GetSDExecutionTimeResponse, error) {
 	query, err := parseExecutionTimeQuery(executionTimeRequest{
-		Model: in.Model, Dtype: in.Dtype, QuantizationConfig: in.QuantizationConfig, Variant: in.Variant,
+		Model: in.Model, Dtype: in.Dtype, QuantizationConfig: in.QuantizationConfig,
 		MinVRAM: in.MinVRAM, GPUName: in.GPUName, GPUVRAM: in.GPUVRAM,
 	})
 	if err != nil {
@@ -158,9 +156,6 @@ func parseExecutionTimeQuery(in executionTimeRequest) (service.TaskExecutionTime
 	query := service.TaskExecutionTimeQuery{ModelName: in.Model, QuantizationConfigHash: quantizationConfigHash}
 	if in.Dtype != nil && strings.TrimSpace(*in.Dtype) != "" {
 		query.RequestedDType = *in.Dtype
-	}
-	if in.Variant != nil {
-		query.ModelVariant = *in.Variant
 	}
 	if hasMinVRAM {
 		query.MinVRAM = *in.MinVRAM

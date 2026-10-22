@@ -9,7 +9,6 @@ const AutoExecutionDType = "auto"
 
 type ModelExecutionConfig struct {
 	ModelName      string
-	ModelVariant   string
 	RequestedDType string
 }
 
@@ -36,9 +35,6 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 			if name, ok := baseModel["name"].(string); ok {
 				config.ModelName = NormalizeModelName(name)
 			}
-			if variant, ok := baseModel["variant"].(string); ok {
-				config.ModelVariant = strings.ToLower(variant)
-			}
 		}
 	case TaskTypeLLM:
 		if model, ok := args["model"].(string); ok {
@@ -48,9 +44,6 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 		if model, ok := args["model"].(map[string]interface{}); ok {
 			if name, ok := model["name"].(string); ok {
 				config.ModelName = NormalizeModelName(name)
-			}
-			if variant, ok := model["variant"].(string); ok {
-				config.ModelVariant = strings.ToLower(variant)
 			}
 		}
 	}
@@ -109,30 +102,6 @@ func BaseModelHuggingFaceID(modelID string) (string, bool) {
 		return "", false
 	}
 	return name, true
-}
-
-// BaseModelVariant extracts the variant suffix from a base model dispatch ID
-// formatted as "base:<name>+<variant>". It returns an empty variant for
-// "base:<name>" without a suffix. Non-base model IDs return ("", false).
-func BaseModelVariant(modelID string) (string, bool) {
-	name, ok := strings.CutPrefix(NormalizeModelID(modelID), "base:")
-	if !ok {
-		return "", false
-	}
-	if variantSep := strings.IndexByte(name, '+'); variantSep >= 0 {
-		return name[variantSep+1:], true
-	}
-	return "", true
-}
-
-// BaseDispatchID builds the lowercase base model dispatch ID from a huggingface
-// model name and optional variant.
-func BaseDispatchID(hfModelID, variant string) string {
-	id := "base:" + NormalizeModelName(hfModelID)
-	if variant != "" {
-		id += "+" + strings.ToLower(variant)
-	}
-	return id
 }
 
 // NormalizeModelName lowercases a huggingface model name so that names

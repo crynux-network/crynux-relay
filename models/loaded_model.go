@@ -35,12 +35,13 @@ type LoadedModel struct {
 	ModelCacheHash []byte `json:"-" gorm:"column:model_cache_hash;type:binary(32);not null;uniqueIndex:idx_loaded_models_identity,priority:2"`
 	ExecutionDType string `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;uniqueIndex:idx_loaded_models_identity,priority:3"`
 	// RequiredModelFileHashes is the sorted concatenation of the exact member hashes.
-	RequiredModelFileHashes []byte          `json:"-" gorm:"type:longblob;not null"`
-	QuantizationConfig      JSONText        `json:"quantization_config" gorm:"type:json;not null"`
-	ModelID                 string          `json:"model_id" gorm:"not null;size:191"`
-	Variant                 string          `json:"variant" gorm:"not null;size:64;default:''"`
-	ModelType               LoadedModelType `json:"model_type" gorm:"not null;size:16"`
-	MinVRAM                 uint64          `json:"min_vram" gorm:"column:min_vram;not null;index"`
+	RequiredModelFileHashes []byte   `json:"-" gorm:"type:longblob;not null"`
+	QuantizationConfig      JSONText `json:"quantization_config" gorm:"type:json;not null"`
+	ModelID                 string   `json:"model_id" gorm:"not null;size:191"`
+	// ModelCacheConfig is the canonical JSON that ModelCacheHash is computed from.
+	ModelCacheConfig JSONText        `json:"model_cache_config" gorm:"column:model_cache_config;type:json;not null"`
+	ModelType        LoadedModelType `json:"model_type" gorm:"not null;size:16"`
+	MinVRAM          uint64          `json:"min_vram" gorm:"column:min_vram;not null;index"`
 }
 
 // MemberHashes decodes the exact member hashes of the loaded model.
@@ -52,7 +53,7 @@ func ListLoadedModels(ctx context.Context, db *gorm.DB) ([]LoadedModel, error) {
 	defer cancel()
 
 	var loadedModels []LoadedModel
-	if err := db.WithContext(dbCtx).Model(&LoadedModel{}).Order("model_id ASC, variant ASC, execution_dtype ASC, id ASC").Find(&loadedModels).Error; err != nil {
+	if err := db.WithContext(dbCtx).Model(&LoadedModel{}).Order("model_id ASC, execution_dtype ASC, id ASC").Find(&loadedModels).Error; err != nil {
 		return nil, err
 	}
 	return loadedModels, nil

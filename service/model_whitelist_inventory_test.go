@@ -162,8 +162,8 @@ func TestUpdateLoadedModelsSkipsNonWhitelisted(t *testing.T) {
 	}
 	loadedModelCache = newLoadedModelMinVRAMCache()
 
-	updateLoadedModels(newLoadedModelTask(t, "evil/pearl", "rev-1", "float16"), &models.Node{GPUVram: 16})
-	updateLoadedModels(newLoadedModelTask(t, "qwen/foo", "rev-1", "float16"), &models.Node{GPUVram: 16})
+	updateLoadedModels(newLoadedModelTask(t, llmLoadedModelArgs("evil/pearl", `null`), models.TaskTypeLLM, "evil/pearl", "float16", testModelFileHash(t, "evil/pearl", "rev-1")), &models.Node{GPUVram: 16})
+	updateLoadedModels(newLoadedModelTask(t, llmLoadedModelArgs("qwen/foo", `null`), models.TaskTypeLLM, "qwen/foo", "float16", testModelFileHash(t, "qwen/foo", "rev-1")), &models.Node{GPUVram: 16})
 	flushLoadedModelCache(ctx, db)
 
 	var rows []models.LoadedModel
@@ -182,31 +182,12 @@ func TestGetLoadedModelViewsOmitsNonWhitelisted(t *testing.T) {
 		t.Fatalf("add whitelist: %v", err)
 	}
 
-	hashPearl := testModelFileHash(t, "evil/pearl", "rev-1")
-	hashFoo := testModelFileHash(t, "qwen/foo", "rev-1")
-	if err := db.Create(&models.LoadedModel{
-		RequiredModelFilesHash:  models.RequiredModelFilesHash([]models.Hash32{hashPearl}).Bytes(),
-		ModelCacheHash:          models.Hash32{1}.Bytes(),
-		ExecutionDType:          "float16",
-		RequiredModelFileHashes: models.EncodeHashList([]models.Hash32{hashPearl}),
-		QuantizationConfig:      models.JSONText(`null`),
-		ModelID:                 "evil/pearl",
-		ModelType:               models.LoadedModelTypeLLM,
-		MinVRAM:                 16,
-	}).Error; err != nil {
-		t.Fatalf("create pearl loaded model: %v", err)
-	}
-	if err := db.Create(&models.LoadedModel{
-		RequiredModelFilesHash:  models.RequiredModelFilesHash([]models.Hash32{hashFoo}).Bytes(),
-		ModelCacheHash:          models.Hash32{2}.Bytes(),
-		ExecutionDType:          "float16",
-		RequiredModelFileHashes: models.EncodeHashList([]models.Hash32{hashFoo}),
-		QuantizationConfig:      models.JSONText(`null`),
-		ModelID:                 "qwen/foo",
-		ModelType:               models.LoadedModelTypeLLM,
-		MinVRAM:                 16,
-	}).Error; err != nil {
-		t.Fatalf("create foo loaded model: %v", err)
+	for _, repository := range []string{"evil/pearl", "qwen/foo"} {
+		task := newLoadedModelTask(t, llmLoadedModelArgs(repository, `null`), models.TaskTypeLLM, repository, "float16", testModelFileHash(t, repository, "rev-1"))
+		row := newLoadedModelRow(t, task, 16)
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatalf("create %s loaded model: %v", repository, err)
+		}
 	}
 
 	invalidateLoadedModelViewCache()
@@ -238,6 +219,7 @@ func TestPruneNonWhitelistedInventoryOnRefresh(t *testing.T) {
 		ExecutionDType:          "float16",
 		RequiredModelFileHashes: models.EncodeHashList([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}),
 		QuantizationConfig:      models.JSONText(`null`),
+		ModelCacheConfig:        models.JSONText(`{}`),
 		ModelID:                 "evil/pearl",
 		ModelType:               models.LoadedModelTypeLLM,
 		MinVRAM:                 16,
