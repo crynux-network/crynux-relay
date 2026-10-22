@@ -160,15 +160,31 @@ model_distribution:
   min_nodes: 1
   max_nodes: 10
   download_timeout_seconds: 1800
+  # Example (disabled by default): force-download a Diffusers base plus a GGUF
+  # transformer onto nodes with GPU VRAM >= min_vram after join / capability sync.
+  # - min_vram: 16
+  #   task_type: 0
+  #   model_files:
+  #     - source_type: huggingface
+  #       repository: qwen/qwen-image-2.1
+  #       revision: ""
+  #       format: diffusers
+  #       format_kwargs: {}
+  #     - source_type: huggingface
+  #       repository: unsloth/qwen-image-2.1-gguf
+  #       revision: ""
+  #       format: gguf
+  #       format_kwargs:
+  #         filename: qwen-image-2.1-Q4_K_M.gguf
   required_models_by_vram: []
 huggingface:
   api_base_url: "https://huggingface.co"
   timeout_seconds: 5
   cache_ttl_seconds: 300
 task_schema:
-  stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-inference-task.json"
-  gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/refs/tags/v3.6.0/schema/gpt-inference-task.json"
-  stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/main/schema/stable-diffusion-finetune-lora-task.json"
+  stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.7.1/schema/image-task.json"
+  gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/refs/tags/v3.7.0/schema/gpt-inference-task.json"
+  stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.7.1/schema/stable-diffusion-finetune-lora-task.json"
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
 network_flops:

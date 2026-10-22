@@ -40,6 +40,36 @@ func TestModelFileHashIgnoresObjectKeyOrder(t *testing.T) {
 	}
 }
 
+func TestModelFileHashIgnoresRepositoryCase(t *testing.T) {
+	must := mustHash(t)
+	mixed := ModelFileEntry{
+		SourceType:   ModelSourceTypeHuggingFace,
+		Repository:   "Unsloth/Qwen-Image-2.1-GGUF",
+		Revision:     "abc",
+		Format:       "gguf",
+		FormatKwargs: map[string]any{"filename": "qwen-image-2.1-Q4_K_M.gguf"},
+	}
+	lower := mixed
+	lower.Repository = "unsloth/qwen-image-2.1-gguf"
+	if must(mixed.ModelFileHash()) != must(lower.ModelFileHash()) {
+		t.Fatal("model_file_hash must ignore repository letter case")
+	}
+	if must(mixed.ModelFileSourceHash()) != must(lower.ModelFileSourceHash()) {
+		t.Fatal("model_file_source_hash must ignore repository letter case")
+	}
+	file, err := NewModelFile(mixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := file.Entry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Repository != "unsloth/qwen-image-2.1-gguf" {
+		t.Fatalf("catalog repository = %q, want lowercase", entry.Repository)
+	}
+}
+
 func TestModelFileCanonicalJSONIsCompactAndSorted(t *testing.T) {
 	entry := ModelFileEntry{
 		SourceType:   ModelSourceTypeHuggingFace,

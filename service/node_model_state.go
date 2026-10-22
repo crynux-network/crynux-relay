@@ -75,6 +75,7 @@ func BuildHeldModelFiles(entries []models.ModelFileEntry) ([]models.ModelFile, e
 	files := make([]models.ModelFile, 0, len(entries))
 	seen := make(map[models.Hash32]struct{}, len(entries))
 	for _, entry := range entries {
+		entry = entry.Normalized()
 		if entry.SourceType != models.ModelSourceTypeHuggingFace {
 			return nil, fmt.Errorf("%w: unsupported source type %q", ErrInvalidModelFile, entry.SourceType)
 		}

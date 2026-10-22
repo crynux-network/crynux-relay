@@ -54,19 +54,27 @@ type ModelFileEntry struct {
 	FormatKwargs map[string]any `json:"format_kwargs"`
 }
 
-func (e ModelFileEntry) canonicalObject(withRevision bool) map[string]any {
-	formatKwargs := e.FormatKwargs
-	if formatKwargs == nil {
-		formatKwargs = map[string]any{}
+// Normalized returns a copy whose Repository is passed through NormalizeModelName
+// so HuggingFace repository names that differ only by letter case hash identically.
+func (e ModelFileEntry) Normalized() ModelFileEntry {
+	out := e
+	out.Repository = NormalizeModelName(out.Repository)
+	if out.FormatKwargs == nil {
+		out.FormatKwargs = map[string]any{}
 	}
+	return out
+}
+
+func (e ModelFileEntry) canonicalObject(withRevision bool) map[string]any {
+	normalized := e.Normalized()
 	obj := map[string]any{
-		"source_type":   e.SourceType,
-		"repository":    e.Repository,
-		"format":        e.Format,
-		"format_kwargs": formatKwargs,
+		"source_type":   normalized.SourceType,
+		"repository":    normalized.Repository,
+		"format":        normalized.Format,
+		"format_kwargs": normalized.FormatKwargs,
 	}
 	if withRevision {
-		obj["revision"] = e.Revision
+		obj["revision"] = normalized.Revision
 	}
 	return obj
 }
@@ -245,6 +253,7 @@ type ModelFile struct {
 
 // NewModelFile builds the catalog row of an exact entry.
 func NewModelFile(entry ModelFileEntry) (*ModelFile, error) {
+	entry = entry.Normalized()
 	hash, err := entry.ModelFileHash()
 	if err != nil {
 		return nil, err

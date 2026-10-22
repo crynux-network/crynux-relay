@@ -123,7 +123,7 @@ A demand period of a model file set starts at the first controller run that find
 
 ## Required Models by VRAM
 
-Relay MAY configure a list of required model file sets under `model_distribution.required_models_by_vram`. Each entry binds a `min_vram`, a `task_type`, and a `model_files` list that forms one required model file set. An empty list disables the feature.
+Relay MAY configure a list of required model file sets under `model_distribution.required_models_by_vram`. Each entry binds a `min_vram`, a `task_type`, and a `model_files` list that forms one required model file set. An empty list disables the feature. Every HuggingFace `repository` value in `model_files`, in TaskArgs-derived model file entries, and in node-reported model file entries MUST be normalized with `NormalizeModelName` before hashing, catalog upsert, download selection, and `DownloadModel` emission, so repository names that differ only by letter case identify the same model file.
 
 After a successful node join commit, and after a successful joined-node capability synchronization commit, Relay MUST evaluate every configured entry whose `min_vram` is less than or equal to the node's `GPUVram`. For each matching set that the node's authoritative on-disk inventory does not cover, and for which the node has no non-expired selection record, Relay MUST insert a selection record and emit one `DownloadModel` event in the same transaction, using the entry's `task_type` and `model_distribution.download_timeout_seconds`. A node whose VRAM is below an entry's `min_vram` MUST NOT receive that entry's set. When several entries match the same node, Relay MUST emit downloads for every unmatched set.
 
