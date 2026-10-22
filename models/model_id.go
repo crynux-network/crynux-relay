@@ -170,6 +170,7 @@ func NormalizeTaskArgsModelNames(taskArgs string, taskType TaskType) (string, er
 		normalizeStringModelName(argsMap, "unet")
 		normalizeStringModelName(argsMap, "vae")
 		normalizeStringModelName(argsMap, "textual_inversion")
+		normalizeComponentsRepos(argsMap)
 	case TaskTypeLLM:
 		if model, ok := argsMap["model"].(string); ok {
 			argsMap["model"] = NormalizeModelName(model)
@@ -198,5 +199,21 @@ func normalizeObjectModelName(argsMap map[string]interface{}, objectKey, nameKey
 	}
 	if name, ok := object[nameKey].(string); ok {
 		object[nameKey] = NormalizeModelName(name)
+	}
+}
+
+func normalizeComponentsRepos(argsMap map[string]interface{}) {
+	components, ok := argsMap["components"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for _, raw := range components {
+		object, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if repo, ok := object["repo"].(string); ok {
+			object["repo"] = NormalizeModelName(repo)
+		}
 	}
 }

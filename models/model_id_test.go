@@ -124,8 +124,8 @@ func TestNormalizeTaskArgsModelNamesLLM(t *testing.T) {
 }
 
 func TestNormalizeTaskArgsModelNamesSD(t *testing.T) {
-	taskArgs := `{"base_model":{"name":"Crynux-Network/SDXL-Turbo","variant":"fp16"},"prompt":"a cat","lora":{"model":"Crynux-Network/MyLora"},"controlnet":{"model":"Lllyasviel/Sd-Controlnet-Canny"},"refiner":{"model":"StabilityAI/Stable-Diffusion-XL-Refiner-1.0"},"unet":"Crynux-Network/MyUNet","vae":"MadeByOllin/SDXL-VAE-FP16-Fix","textual_inversion":"SD-Concepts-Library/Cat-Toy","task_config":{"num_images":1}}`
-	wantArgs := `{"base_model":{"name":"crynux-network/sdxl-turbo","variant":"fp16"},"prompt":"a cat","lora":{"model":"crynux-network/mylora"},"controlnet":{"model":"lllyasviel/sd-controlnet-canny"},"refiner":{"model":"stabilityai/stable-diffusion-xl-refiner-1.0"},"unet":"crynux-network/myunet","vae":"madebyollin/sdxl-vae-fp16-fix","textual_inversion":"sd-concepts-library/cat-toy","task_config":{"num_images":1}}`
+	taskArgs := `{"base_model":{"name":"Crynux-Network/SDXL-Turbo","variant":"fp16"},"prompt":"a cat","lora":{"model":"Crynux-Network/MyLora"},"controlnet":{"model":"Lllyasviel/Sd-Controlnet-Canny"},"refiner":{"model":"StabilityAI/Stable-Diffusion-XL-Refiner-1.0"},"unet":"Crynux-Network/MyUNet","vae":"MadeByOllin/SDXL-VAE-FP16-Fix","textual_inversion":"SD-Concepts-Library/Cat-Toy","components":{"transformer":{"format":"gguf","repo":"Unsloth/Qwen-Image-2.1-GGUF","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
+	wantArgs := `{"base_model":{"name":"crynux-network/sdxl-turbo","variant":"fp16"},"prompt":"a cat","lora":{"model":"crynux-network/mylora"},"controlnet":{"model":"lllyasviel/sd-controlnet-canny"},"refiner":{"model":"stabilityai/stable-diffusion-xl-refiner-1.0"},"unet":"crynux-network/myunet","vae":"madebyollin/sdxl-vae-fp16-fix","textual_inversion":"sd-concepts-library/cat-toy","components":{"transformer":{"format":"gguf","repo":"unsloth/qwen-image-2.1-gguf","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeSD, wantArgs)
 }
 

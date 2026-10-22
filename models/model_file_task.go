@@ -87,7 +87,7 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 		}
 		entry := ModelFileEntry{
 			SourceType:   ModelSourceTypeHuggingFace,
-			Repository:   args.Model,
+			Repository:   NormalizeModelName(args.Model),
 			Revision:     optionalString(args.Revision),
 			FormatKwargs: map[string]any{},
 		}
@@ -100,7 +100,7 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 		}
 		base := ModelFileEntry{
 			SourceType:   ModelSourceTypeHuggingFace,
-			Repository:   args.BaseModel.Name,
+			Repository:   NormalizeModelName(args.BaseModel.Name),
 			Revision:     optionalString(args.BaseModel.Revision),
 			Format:       ImageBaseModelFormat,
 			FormatKwargs: map[string]any{},
@@ -114,7 +114,7 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 			}
 			entry := ModelFileEntry{
 				SourceType:   ModelSourceTypeHuggingFace,
-				Repository:   component.Repo,
+				Repository:   NormalizeModelName(component.Repo),
 				Revision:     optionalString(component.Revision),
 				Format:       component.Format,
 				FormatKwargs: component.FormatKwargs,
