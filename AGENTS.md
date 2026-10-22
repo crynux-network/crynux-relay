@@ -18,6 +18,10 @@ Processing of logs and withdrawals may be delayed, but any data that has been pr
 
 Do not use SQL `LIKE` in queries. Query by exact column values instead. If pattern-based filtering is needed, fetch rows by indexed exact conditions and filter in application code, or store a dedicated column that supports exact matching.
 
+### Model Names
+
+Every code path that reads, stores, hashes, compares, or emits a HuggingFace model or repository name MUST call `models.NormalizeModelName` (or an equivalent that applies the same rules) before that use. This includes TaskArgs fields, model file entries, whitelist keys, required-models config, node-reported inventory, download events, and catalog upserts. Do not leave mixed-case repository strings in hashes, indexes, or persistence.
+
 ### Proper Error Handling
 
 All function errors must be propagated up the call stack until handled. Any unhandled error reaching the `main` function must be logged and trigger an alert to operators.

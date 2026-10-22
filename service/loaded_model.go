@@ -61,6 +61,14 @@ func (cache *loadedModelViewCacheStore) get(ctx context.Context, db *gorm.DB, no
 	return views, nil
 }
 
+func invalidateLoadedModelViewCache() {
+	loadedModelViewCache.mu.Lock()
+	defer loadedModelViewCache.mu.Unlock()
+	loadedModelViewCache.views = nil
+	loadedModelViewCache.loaded = false
+	loadedModelViewCache.expiresAt = time.Time{}
+}
+
 func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView, error) {
 	loadedModels, err := models.ListLoadedModels(ctx, db)
 	if err != nil {
@@ -85,6 +93,15 @@ func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView,
 
 	views := make([]LoadedModelView, 0, len(loadedModels))
 	for _, loadedModel := range loadedModels {
+		if modelWhitelistEnforced() {
+			ok, err := IsModelWhitelisted(loadedModel.ModelID)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+		}
 		members, err := loadedModel.MemberHashes()
 		if err != nil {
 			return nil, err
@@ -145,6 +162,16 @@ func newLoadedModelMinVRAMCache() *loadedModelMinVRAMCache {
 
 // updateLoadedModels records the successful execution of a task as a loaded model.
 func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
+	if modelWhitelistEnforced() {
+		ok, err := IsModelWhitelisted(task.ModelName)
+		if err != nil {
+			log.Errorf("UpdateLoadedModels: whitelist check of task %s error: %v", task.TaskIDCommitment, err)
+			return
+		}
+		if !ok {
+			return
+		}
+	}
 	executionHashes, err := task.ExecutionModelFileHashList()
 	if err != nil {
 		log.Errorf("UpdateLoadedModels: decode execution model files of task %s error: %v", task.TaskIDCommitment, err)
