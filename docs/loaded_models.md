@@ -4,7 +4,7 @@ This document specifies the Relay-wide loaded model projection and the public AP
 
 ## Table Responsibilities
 
-`loaded_models` is the successful-execution projection for models that have completed at least one qualifying terminal task on Relay. It is the data source for `GET /v2/loaded-models`. Rows and `min_vram` values are retained as historical evidence and MUST NOT be deleted when nodes quit or stop holding the model.
+`loaded_models` is the successful-execution projection for models that have completed at least one qualifying terminal task on Relay. It is the data source for `GET /v2/loaded-models`. Rows and `min_vram` values are retained as historical evidence and MUST NOT be deleted when nodes quit or stop holding the model. When `task.model_whitelist_enabled` is `true`, Relay MUST delete `loaded_models` rows whose `model_id` is not whitelisted during whitelist cache load and refresh pruning, as specified in [model_whitelist.md](./model_whitelist.md).
 
 `loaded_models` MUST NOT participate in task matching, model distribution, or create-time HuggingFace validation skip decisions. Those paths use `node_models` as specified in [model_distribution.md](./model_distribution.md) and [node_selection.md](./node_selection.md).
 
@@ -44,7 +44,7 @@ Relay SHALL keep an in-memory pending update cache for successful task execution
 
 ## Update Rules
 
-When a task status transition to `TaskEndSuccess`, `TaskEndGroupSuccess`, or `TaskEndGroupRefund` has committed successfully, Relay MUST record the task's row identity, model name, variant, model type, quantization configuration, execution model file hashes, and the selected node VRAM in the in-memory pending update cache. Relay MUST NOT perform `loaded_models` database writes inside the task status transaction.
+When a task status transition to `TaskEndSuccess`, `TaskEndGroupSuccess`, or `TaskEndGroupRefund` has committed successfully, Relay MUST record the task's row identity, model name, variant, model type, quantization configuration, execution model file hashes, and the selected node VRAM in the in-memory pending update cache. When `task.model_whitelist_enabled` is `true` and the task `model_id` is not whitelisted, Relay MUST NOT record the pending update. Relay MUST NOT perform `loaded_models` database writes inside the task status transaction.
 
 The pending update cache MUST keep the minimum observed VRAM per row identity:
 
@@ -66,11 +66,11 @@ If a flush fails, Relay MUST merge the failed pending values back into the in-me
 
 ## Node Count Aggregation
 
-The signed AddModelID node API MUST be the authoritative incremental source for on-disk `node_models` rows. The signed joined-node capability synchronization MUST be the authoritative full on-disk inventory source after node startup. The signed node in-memory model report MUST be the authoritative source of `node_in_memory_models`. Download selection completion is derived from the resulting on-disk inventory as specified in [model_distribution.md](./model_distribution.md).
+The signed AddModelID node API MUST be the authoritative incremental source for on-disk `node_models` rows, subject to model whitelist filtering in [model_whitelist.md](./model_whitelist.md). The signed joined-node capability synchronization MUST be the authoritative full on-disk inventory source after node startup, subject to the same whitelist filtering. The signed node in-memory model report MUST be the authoritative source of `node_in_memory_models`, and MUST be rejected when enforcement is enabled and any reported repository is not whitelisted. Download selection completion is derived from the resulting on-disk inventory as specified in [model_distribution.md](./model_distribution.md).
 
 Task start MUST NOT create or modify `node_models` rows and MUST NOT modify `node_in_memory_models` rows.
 
-For each `loaded_models` row, Relay SHALL derive two node counts:
+For each `loaded_models` row that remains visible under the model whitelist rules, Relay SHALL derive two node counts:
 
 - On-disk node count: the number of distinct node addresses whose on-disk model files contain every exact member hash of the row's `required_model_file_hashes`.
 - In-memory node count: the number of distinct node addresses whose in-memory model has the row's `execution_dtype` and `model_cache_hash`, and whose in-memory model files contain every exact member hash of the row's `required_model_file_hashes`.
@@ -119,6 +119,6 @@ The response body MUST use the standard Relay v2 response envelope:
 }
 ```
 
-The endpoint MUST read only persisted `loaded_models` rows. Pending cache entries MUST become visible through the endpoint after the background flusher writes them to the database. The response `data` array MUST be ordered by `model_id` ascending, then `variant` ascending, then `execution_dtype` ascending, then row id ascending.
+The endpoint MUST read only persisted `loaded_models` rows. When `task.model_whitelist_enabled` is `true`, the endpoint MUST omit rows whose `model_id` is not whitelisted. Pending cache entries MUST become visible through the endpoint after the background flusher writes them to the database. The response `data` array MUST be ordered by `model_id` ascending, then `variant` ascending, then `execution_dtype` ascending, then row id ascending.
 
 `quantization_config` MUST be the stored canonical JSON value. `in_memory_node_count` and `on_disk_node_count` MUST be filled from the cached node count aggregation of the same row.

@@ -117,6 +117,10 @@ func modelFileHashes(files []models.ModelFile) ([]models.Hash32, error) {
 // replaceNodeModelFiles makes the node disk inventory equal to files and drops
 // the download selections whose required set is no longer covered.
 func replaceNodeModelFiles(ctx context.Context, tx *gorm.DB, address string, files []models.ModelFile) error {
+	files, err := filterWhitelistedModelFiles(files)
+	if err != nil {
+		return err
+	}
 	if err := models.UpsertModelFiles(ctx, tx, files); err != nil {
 		return err
 	}
@@ -202,6 +206,13 @@ func pruneUncoveredSelections(ctx context.Context, tx *gorm.DB, address string, 
 
 // AddNodeModelFile records one downloaded model file in the node disk inventory.
 func AddNodeModelFile(ctx context.Context, db *gorm.DB, address string, file models.ModelFile) error {
+	rejected, err := modelFileRejectedByWhitelist(file)
+	if err != nil {
+		return err
+	}
+	if rejected {
+		return nil
+	}
 	hash, err := models.Hash32FromBytes(file.ModelFileHash)
 	if err != nil {
 		return err
@@ -239,6 +250,11 @@ type NodeInMemoryModelReport struct {
 // SetNodeInMemoryModel replaces the in-memory model of a node. A nil report
 // marks the node memory as empty.
 func SetNodeInMemoryModel(ctx context.Context, db *gorm.DB, address string, report *NodeInMemoryModelReport) error {
+	if report != nil {
+		if err := assertWhitelistedModelFiles(report.Files); err != nil {
+			return err
+		}
+	}
 	return ExecuteNodeStateUpdate(ctx, db, []string{address}, func() error {
 		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			node, err := models.GetNodeByAddress(ctx, tx, address)
