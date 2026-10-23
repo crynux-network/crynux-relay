@@ -153,7 +153,7 @@ A queued task MUST start as soon as task matching finds a qualified node that ho
 
 Task start MUST NOT create `NodeModel` rows, MUST NOT modify the node in-memory model record, and MUST NOT emit `DownloadModel` events. The model file gate guarantees that the assigned node has already reported every required model file. Task start MUST only store the resolved `ExecutionModelFileHashes` on the task as specified in [task_matching.md](./task_matching.md).
 
-The in-memory model of a node changes only through the signed node in-memory model report, `POST /v2/nodes/:address/in_memory_model`. The report carries the hex `model_cache_hash`, the `model_cache_config` the hash is computed from, the exact `model_files` with revisions, and the `execution_dtype`, or a null model when the node memory is empty. Relay MUST reject a report whose hash is not the SHA-256 of the canonical JSON of the reported config, and MUST refresh the node scheduling index after the report commits.
+The in-memory model of a node changes only through the signed node in-memory model report, `POST /v2/nodes/:address/in_memory_model`. The report carries the hex `model_cache_hash`, the `model_cache_config` the hash is computed from, the exact `model_files` with revisions, and the `execution_dtype`, or a null model when the node memory is empty. Relay MUST reject a report whose hash is not the SHA-256 of the canonical JSON of the reported config, MUST store that canonical JSON text in `node_in_memory_models.current_model_cache_config` as a non-null `longtext` value with sorted object keys and no insignificant whitespace, and MUST refresh the node scheduling index after the report commits.
 
 ## Event Contract
 

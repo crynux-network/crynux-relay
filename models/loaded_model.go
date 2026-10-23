@@ -39,7 +39,7 @@ type LoadedModel struct {
 	QuantizationConfig      JSONText `json:"quantization_config" gorm:"type:json;not null"`
 	ModelID                 string   `json:"model_id" gorm:"not null;size:191"`
 	// ModelCacheConfig is the canonical JSON that ModelCacheHash is computed from.
-	ModelCacheConfig JSONText        `json:"model_cache_config" gorm:"column:model_cache_config;type:json;not null"`
+	ModelCacheConfig JSONText        `json:"model_cache_config" gorm:"column:model_cache_config;type:longtext;not null"`
 	ModelType        LoadedModelType `json:"model_type" gorm:"not null;size:16"`
 	MinVRAM          uint64          `json:"min_vram" gorm:"column:min_vram;not null;index"`
 }

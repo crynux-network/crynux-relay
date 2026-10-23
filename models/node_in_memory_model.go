@@ -15,7 +15,7 @@ type NodeInMemoryModel struct {
 	NodeAddress             string    `json:"node_address" gorm:"size:191;primaryKey"`
 	CurrentModelCacheHash   []byte    `json:"current_model_cache_hash" gorm:"type:binary(32);not null"`
 	CurrentModelFileHashes  []byte    `json:"current_model_file_hashes" gorm:"type:longblob;not null"`
-	CurrentModelCacheConfig JSONText  `json:"current_model_cache_config" gorm:"type:json;not null"`
+	CurrentModelCacheConfig JSONText  `json:"current_model_cache_config" gorm:"type:longtext;not null"`
 	ExecutionDType          string    `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`

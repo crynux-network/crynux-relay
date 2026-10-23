@@ -30,7 +30,7 @@ Each `loaded_models` row MUST contain:
 
 - `required_model_files_hash`: the SHA-256 of the sorted concatenation of the task's `ExecutionModelFileHashes`, which identifies the exact model file set that was executed.
 - `model_cache_hash`: the task's `RequestedModelCacheHash`.
-- `model_cache_config`: the canonical JSON of the task's requested model cache config, which is the JSON that `model_cache_hash` is computed from. Relay MUST take it from `DeriveTaskModelRequirements(...).RequestedModelCacheConfig`, exposed as `InferenceTask.RequestedModelCacheConfig()`, and MUST NOT assemble it from individual components.
+- `model_cache_config`: the canonical JSON text of the task's requested model cache config, which is the exact byte sequence that `model_cache_hash` is computed from. Relay MUST store it in a non-null `longtext` column and MUST take it from `DeriveTaskModelRequirements(...).RequestedModelCacheConfig`, exposed as `InferenceTask.RequestedModelCacheConfig()`, and MUST NOT assemble it from individual components. The stored text MUST keep the canonical encoding with sorted object keys and no insignificant whitespace.
 - `execution_dtype`: the dtype the execution reported, which is the task's `ExecutionDType`.
 - `required_model_file_hashes`: the sorted concatenation of the exact member hashes.
 - `quantization_config`: the canonical JSON of the complete `quantization_config` of the task's TaskArgs; a task without a quantization configuration stores the canonical JSON `null`.
@@ -38,7 +38,7 @@ Each `loaded_models` row MUST contain:
 - `model_type`: the model category, `sd` or `llm`.
 - `min_vram`: the smallest `nodes.gpu_vram` value among nodes that have successfully executed a task with that row identity.
 
-`(required_model_files_hash, model_cache_hash, execution_dtype)` MUST be unique. `model_cache_config` MUST be a non-null JSON column. `model_type` MUST be derived from the task type: `llm` for `TaskTypeLLM` tasks, and `sd` for `TaskTypeSD` and `TaskTypeSDFTLora` tasks. `min_vram` MUST be stored in GB, matching the `nodes.gpu_vram` unit recorded at node join.
+`(required_model_files_hash, model_cache_hash, execution_dtype)` MUST be unique. `model_type` MUST be derived from the task type: `llm` for `TaskTypeLLM` tasks, and `sd` for `TaskTypeSD` and `TaskTypeSDFTLora` tasks. `min_vram` MUST be stored in GB, matching the `nodes.gpu_vram` unit recorded at node join.
 
 A row identity is defined only by the exact model files, the model cache hash, and the execution dtype.
 

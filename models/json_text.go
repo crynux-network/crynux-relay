@@ -5,8 +5,9 @@ import (
 	"fmt"
 )
 
-// JSONText is a JSON document stored in a MySQL JSON column. It is written to
-// the database as text so the server does not treat it as a binary string.
+// JSONText is a JSON document stored as text. It is written to the database as
+// a string so the server does not treat it as a binary string. Columns that
+// must preserve canonical JSON bytes use a longtext column type.
 type JSONText []byte
 
 func (JSONText) GormDataType() string {

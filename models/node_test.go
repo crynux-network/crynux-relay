@@ -82,6 +82,9 @@ func TestNodeInMemoryModelSaveReplaceAndClear(t *testing.T) {
 	if !bytes.Equal(stored.CurrentModelCacheHash, (Hash32{8}).Bytes()) || stored.ExecutionDType != "float16" {
 		t.Fatalf("unexpected stored in-memory model: %+v", stored)
 	}
+	if string(stored.CurrentModelCacheConfig) != `{"dtype":"float16"}` {
+		t.Fatalf("unexpected stored cache config: %s", stored.CurrentModelCacheConfig)
+	}
 	storedFiles, err := stored.FileHashes()
 	if err != nil || len(storedFiles) != 1 || storedFiles[0] != (Hash32{9}) {
 		t.Fatalf("unexpected stored file hashes: %v, %v", storedFiles, err)
