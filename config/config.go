@@ -297,8 +297,14 @@ func checkTaskPricingConfig() error {
 	if pricing.BaseVRAM == 0 {
 		return errors.New("task_pricing.base_vram is not set")
 	}
-	if pricing.QueueTimeoutSeconds == 0 {
-		return errors.New("task_pricing.queue_timeout_seconds is not set")
+	if pricing.DefaultQueueTimeoutSeconds == 0 {
+		return errors.New("task_pricing.default_queue_timeout_seconds is not set")
+	}
+	if pricing.MaxQueueTimeoutSeconds == 0 {
+		return errors.New("task_pricing.max_queue_timeout_seconds is not set")
+	}
+	if pricing.MaxQueueTimeoutSeconds < pricing.DefaultQueueTimeoutSeconds {
+		return errors.New("task_pricing.max_queue_timeout_seconds must be at least default_queue_timeout_seconds")
 	}
 	if pricing.AppValidationTimeoutSeconds == 0 {
 		return errors.New("task_pricing.app_validation_timeout_seconds is not set")

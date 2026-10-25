@@ -1,6 +1,6 @@
 # Task Timeout Flow
 
-This document specifies task-stage deadlines and all deadline-expiration effects. Queue priority is specified in [task-pricing.md](./task-pricing.md). Execution parameter calibration is specified in [task_execution_parameters.md](./task_execution_parameters.md).
+This document specifies task-stage deadlines and all deadline-expiration effects. Creator-supplied queue wait budgets for normal SD and LLM tasks are specified in [queue_timeout.md](./queue_timeout.md). Queue priority is specified in [task-pricing.md](./task-pricing.md). Execution parameter calibration is specified in [task_execution_parameters.md](./task_execution_parameters.md).
 
 ## Current-Stage Deadline
 
@@ -8,14 +8,14 @@ Relay MUST assign exactly one active deadline to each non-terminal task accordin
 
 | Current status | Waiting for | Deadline | Expiration state and reason | Fee handling | Node health | Node Busy and finish |
 |---|---|---|---|---|---|---|
-| `TaskQueued` | Relay node assignment | Normal SD/LLM: `CreateTime + queue_timeout_seconds`; SDFT LoRA: `CreateTime + 3 minutes + Timeout` | `TaskEndAborted`, `TaskAbortTimeout` | Full `TaskRefund`; task income MUST NOT be created | No selected node; no penalty | No selected node; `nodeFinishTask` MUST NOT run |
+| `TaskQueued` | Relay node assignment | Normal SD/LLM: `CreateTime +` resolved queue wait from [queue_timeout.md](./queue_timeout.md); SDFT LoRA: `CreateTime + 3 minutes + Timeout` | `TaskEndAborted`, `TaskAbortTimeout` | Full `TaskRefund`; task income MUST NOT be created | No selected node; no penalty | No selected node; `nodeFinishTask` MUST NOT run |
 | `TaskStarted`, `TaskParametersUploaded` | Node download, execution, score submission, or error report | `StartTime + Timeout` | `TaskEndAborted`, `TaskAbortTimeout` | Full `TaskRefund`; task income MUST NOT be created | Execution-timeout health penalty MUST apply | Node MUST remain `Busy` until expiration processing calls `nodeFinishTask` |
 | `TaskScoreReady`, `TaskErrorReported` | Creator application validation | `ScoreReadyTime + app_validation_timeout_seconds` | `TaskEndAborted`, `TaskAbortCreatorValidationTimeout` | `TaskRefund` MUST NOT be created; the task's full fee MUST be split by successful-task DAO, node operator, and eligible delegator rules | No penalty; no success health boost | Node MUST remain `Busy` until expiration processing calls `nodeFinishTask` |
 | `TaskValidated`, `TaskGroupValidated` | Node result upload | `ValidatedTime + result_upload_timeout_seconds` | `TaskEndAborted`, `TaskAbortResultUploadTimeout` | Full `TaskRefund`; task income MUST NOT be created | Result-upload-timeout health penalty MUST apply | Node MUST remain `Busy` until expiration processing calls `nodeFinishTask` |
 
-`queue_timeout_seconds`, `app_validation_timeout_seconds`, and `result_upload_timeout_seconds` MUST be positive required Relay configuration values. Code MUST NOT supply fallback defaults.
+`default_queue_timeout_seconds`, `max_queue_timeout_seconds`, `app_validation_timeout_seconds`, and `result_upload_timeout_seconds` MUST be positive required Relay configuration values. Code MUST NOT supply fallback defaults. Creator `queue_timeout` resolution and bounds are specified in [queue_timeout.md](./queue_timeout.md).
 
-Queue priority affects dispatch order only. It MUST NOT alter `CreateTime + queue_timeout_seconds`.
+Queue priority affects dispatch order only. It MUST NOT alter the resolved queue deadline.
 
 ## Execution Timeout
 

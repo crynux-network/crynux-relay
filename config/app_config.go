@@ -192,7 +192,8 @@ type AppConfig struct {
 		CalibrationFlushIntervalSeconds           uint64  `mapstructure:"calibration_flush_interval_seconds"`
 		DefaultLLMMaxNewTokens                    uint64  `mapstructure:"default_llm_max_new_tokens"`
 		BaseVRAM                                  uint64  `mapstructure:"base_vram"`
-		QueueTimeoutSeconds                       uint64  `mapstructure:"queue_timeout_seconds"`
+		DefaultQueueTimeoutSeconds                uint64  `mapstructure:"default_queue_timeout_seconds"`
+		MaxQueueTimeoutSeconds                    uint64  `mapstructure:"max_queue_timeout_seconds"`
 		AppValidationTimeoutSeconds               uint64  `mapstructure:"app_validation_timeout_seconds"`
 		ResultUploadTimeoutSeconds                uint64  `mapstructure:"result_upload_timeout_seconds"`
 		TimeoutMultiplier                         float64 `mapstructure:"timeout_multiplier"`

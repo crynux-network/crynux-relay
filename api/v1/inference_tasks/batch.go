@@ -175,6 +175,10 @@ func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, erro
 	if in.MinVram == nil {
 		return nil, errors.New("min_vram is required")
 	}
+	queueTimeout, err := service.ResolveQueueTimeout(in.TaskType, in.QueueTimeout)
+	if err != nil {
+		return nil, err
+	}
 	if in.TaskIDCommitment == "" || in.TaskArgs == "" || in.Nonce == "" {
 		return nil, errors.New("required task input is missing")
 	}
@@ -226,6 +230,7 @@ func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, erro
 		TaskFee:          in.TaskFee,
 		TaskSize:         taskSize,
 		ModelIDs:         modelIDs,
+		QueueTimeout:     queueTimeout,
 		CreateTime:       sql.NullTime{Time: time.Now(), Valid: true},
 	}, nil
 }
@@ -241,6 +246,7 @@ func immutableTaskInputEqual(existing, candidate *models.InferenceTask) bool {
 		existing.RequiredGPUVRAM == candidate.RequiredGPUVRAM &&
 		existing.TaskFee.Cmp(&candidate.TaskFee.Int) == 0 &&
 		existing.TaskSize == candidate.TaskSize &&
+		existing.QueueTimeout == candidate.QueueTimeout &&
 		slices.Equal([]string(existing.ModelIDs), []string(candidate.ModelIDs))
 }
 

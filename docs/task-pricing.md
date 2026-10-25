@@ -88,7 +88,7 @@ Within a matching round, higher-priority tasks MUST select nodes first. A node r
 
 If the current fetched batch contains only expired or temporarily undispatchable tasks, Relay MUST continue scanning lower-priority queued tasks before sleeping. Relay MUST NOT leave an eligible node idle solely because a higher-priority task cannot start.
 
-Priority changes dispatch order only. It MUST NOT extend or shorten the queue deadline defined in [task_timeout.md](./task_timeout.md).
+Priority changes dispatch order only. It MUST NOT extend or shorten the queue deadline. The queue wait budget is the creator `queue_timeout` or `default_queue_timeout_seconds` as specified in [queue_timeout.md](./queue_timeout.md). Expiration effects are specified in [task_timeout.md](./task_timeout.md).
 
 ## Queued Task Priority Snapshot
 

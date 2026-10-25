@@ -104,7 +104,8 @@ task_pricing:
   calibration_flush_interval_seconds: 3600
   default_llm_max_new_tokens: 256
   base_vram: 8
-  queue_timeout_seconds: 21600
+  default_queue_timeout_seconds: 21600
+  max_queue_timeout_seconds: 259200
   app_validation_timeout_seconds: 600
   result_upload_timeout_seconds: 600
   timeout_multiplier: 2
@@ -327,7 +328,8 @@ task_pricing:
   calibration_flush_interval_seconds: 3600
   default_llm_max_new_tokens: 256
   base_vram: 8
-  queue_timeout_seconds: 21600
+  default_queue_timeout_seconds: 21600
+  max_queue_timeout_seconds: 259200
   app_validation_timeout_seconds: 600
   result_upload_timeout_seconds: 600
   timeout_multiplier: 2
@@ -527,7 +529,8 @@ task_pricing:
   calibration_flush_interval_seconds: 3600
   default_llm_max_new_tokens: 256
   base_vram: 8
-  queue_timeout_seconds: 21600
+  default_queue_timeout_seconds: 21600
+  max_queue_timeout_seconds: 259200
   app_validation_timeout_seconds: 600
   result_upload_timeout_seconds: 600
   timeout_multiplier: 2
@@ -621,7 +624,8 @@ task_pricing:
   calibration_flush_interval_seconds: 3600
   default_llm_max_new_tokens: 256
   base_vram: 8
-  queue_timeout_seconds: 21600
+  default_queue_timeout_seconds: 21600
+  max_queue_timeout_seconds: 259200
   app_validation_timeout_seconds: 600
   result_upload_timeout_seconds: 600
   timeout_multiplier: 2

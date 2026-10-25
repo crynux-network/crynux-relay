@@ -66,7 +66,8 @@ func initNodeCapabilitiesAPITest(t *testing.T) {
 		"  calibration_flush_interval_seconds: 3600\n" +
 		"  default_llm_max_new_tokens: 256\n" +
 		"  base_vram: 8\n" +
-		"  queue_timeout_seconds: 21600\n" +
+		"  default_queue_timeout_seconds: 21600\n" +
+		"  max_queue_timeout_seconds: 259200\n" +
 		"  app_validation_timeout_seconds: 600\n" +
 		"  result_upload_timeout_seconds: 600\n" +
 		"  timeout_multiplier: 2\n" +

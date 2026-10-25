@@ -29,6 +29,7 @@ type TaskInput struct {
 	RequiredGPUVram  *uint64         `form:"required_gpu_vram" json:"required_gpu_vram" description:"required gpu vram"`
 	TaskFee          models.BigInt   `form:"task_fee" json:"task_fee" description:"task fee, in unit wei" validate:"required"`
 	Timeout          uint64          `form:"timeout" json:"timeout,omitempty" description:"timeout, in seconds"`
+	QueueTimeout     *uint64         `form:"queue_timeout" json:"queue_timeout,omitempty" description:"queue wait timeout, in seconds"`
 }
 
 // modelRequirementsErrorResponse maps a model requirement error to its response.
@@ -86,6 +87,19 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 	if in.TaskType == models.TaskTypeSDFTLora && in.Timeout == 0 {
 		return nil, response.NewValidationErrorResponse("timeout", "Timeout is required for fine-tune tasks")
+	}
+	queueTimeout, err := service.ResolveQueueTimeout(in.TaskType, in.QueueTimeout)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrQueueTimeoutNotAllowed):
+			return nil, response.NewValidationErrorResponse("queue_timeout", "queue_timeout is only supported for ordinary SD and LLM tasks")
+		case errors.Is(err, service.ErrQueueTimeoutZero):
+			return nil, response.NewValidationErrorResponse("queue_timeout", "queue_timeout must be greater than 0")
+		case errors.Is(err, service.ErrQueueTimeoutTooLarge):
+			return nil, response.NewValidationErrorResponse("queue_timeout", "queue_timeout exceeds max_queue_timeout_seconds")
+		default:
+			return nil, response.NewExceptionResponse(err)
+		}
 	}
 	if in.MinVram == nil {
 		return nil, response.NewValidationErrorResponse("min_vram", "min_vram is required")
@@ -176,6 +190,7 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		TaskFee:          in.TaskFee,
 		TaskSize:         taskSize,
 		ModelIDs:         modelIDs,
+		QueueTimeout:     queueTimeout,
 		CreateTime: sql.NullTime{
 			Time:  time.Now(),
 			Valid: true,

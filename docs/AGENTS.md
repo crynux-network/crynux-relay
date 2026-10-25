@@ -13,6 +13,7 @@
 | [task_version.md](./task_version.md) | Version matching rules between task requirements and node capabilities |
 | [node_quit_and_unstake.md](./node_quit_and_unstake.md) | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
 | [task_timeout.md](./task_timeout.md) | Queue, execution, creator-validation, and result-upload deadlines with abort, fee, Node Busy, health, and API behavior |
+| [queue_timeout.md](./queue_timeout.md) | Creator-supplied queue wait budget for flexible pricing, default and max configuration, create contract, and resolved deadline |
 | [task_validation_and_slashing.md](./task_validation_and_slashing.md) | Validation task lifecycle, result comparison, and slashing conditions |
 | [deterministic_execution.md](./deterministic_execution.md) | Operational determinism, rare LLM result divergence, token-decision boundaries, and execution-mode validation requirements |
 | [task_tracing.md](./task_tracing.md) | Admin task trace target, lifecycle timestamps, model-ready candidate snapshots, validation, upload, and missing-data reporting |

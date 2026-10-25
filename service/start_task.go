@@ -33,6 +33,40 @@ func UsesRelayOwnedTimeouts(task *models.InferenceTask) bool {
 	return task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM
 }
 
+var (
+	ErrQueueTimeoutNotAllowed = errors.New("queue_timeout is only supported for ordinary SD and LLM tasks")
+	ErrQueueTimeoutZero       = errors.New("queue_timeout must be greater than 0")
+	ErrQueueTimeoutTooLarge   = errors.New("queue_timeout exceeds max_queue_timeout_seconds")
+)
+
+// ResolveQueueTimeout returns the resolved queue wait seconds for a create request.
+// SDFT tasks MUST omit queue_timeout and receive 0.
+func ResolveQueueTimeout(taskType models.TaskType, requested *uint64) (uint64, error) {
+	if taskType == models.TaskTypeSDFTLora {
+		if requested != nil {
+			return 0, ErrQueueTimeoutNotAllowed
+		}
+		return 0, nil
+	}
+	if !UsesRelayOwnedTimeouts(&models.InferenceTask{TaskType: taskType}) {
+		if requested != nil {
+			return 0, ErrQueueTimeoutNotAllowed
+		}
+		return 0, nil
+	}
+	pricing := config.GetConfig().TaskPricing
+	if requested == nil {
+		return pricing.DefaultQueueTimeoutSeconds, nil
+	}
+	if *requested == 0 {
+		return 0, ErrQueueTimeoutZero
+	}
+	if *requested > pricing.MaxQueueTimeoutSeconds {
+		return 0, ErrQueueTimeoutTooLarge
+	}
+	return *requested, nil
+}
+
 // GetQueueDeadline returns CreateTime plus the queue timeout for the task type.
 // The result does not depend on the task's current status.
 func GetQueueDeadline(task *models.InferenceTask) (time.Time, bool) {
@@ -45,7 +79,10 @@ func GetQueueDeadline(task *models.InferenceTask) (time.Time, bool) {
 	if !UsesRelayOwnedTimeouts(task) {
 		return time.Time{}, false
 	}
-	seconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
+	seconds := task.QueueTimeout
+	if seconds == 0 {
+		seconds = config.GetConfig().TaskPricing.DefaultQueueTimeoutSeconds
+	}
 	return task.CreateTime.Time.Add(time.Duration(seconds) * time.Second), true
 }
 
@@ -118,8 +155,9 @@ func isRunningTaskTimedOut(task *models.InferenceTask, now time.Time) bool {
 func getTimedOutQueuedTasks(ctx context.Context, db *gorm.DB, now time.Time) ([]*models.InferenceTask, error) {
 	const pageSize = 100
 	tasks := make([]*models.InferenceTask, 0)
-	queueTimeoutSeconds := config.GetConfig().TaskPricing.QueueTimeoutSeconds
-	relayOwnedCutoff := now.Add(-time.Duration(queueTimeoutSeconds) * time.Second)
+	// Shortest allowed creator queue_timeout is 1 second; use that as the
+	// earliest CreateTime cutoff and filter exact deadlines in memory.
+	relayOwnedCutoff := now.Add(-1 * time.Second)
 	// SDFT deadlines are CreateTime + 3 minutes + Timeout. Timeout is at least
 	// 0, so CreateTime older than 3 minutes is the earliest possible candidate.
 	sdftEarliestCutoff := now.Add(-3 * time.Minute)
