@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 func TestGetTimedOutRunningTasks(t *testing.T) {
+	initServiceTestConfig(t)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
@@ -127,7 +129,7 @@ func TestGetTimedOutQueuedTasks(t *testing.T) {
 	}
 
 	now := time.Now()
-	queueTimeout := time.Duration(config.GetConfig().TaskPricing.QueueTimeoutSeconds) * time.Second
+	queueTimeout := time.Duration(config.GetConfig().TaskPricing.DefaultQueueTimeoutSeconds) * time.Second
 	tasks := []models.InferenceTask{
 		{
 			TaskIDCommitment: "expired-sdft-queued",
@@ -199,7 +201,18 @@ func TestGetQueueDeadline(t *testing.T) {
 		want time.Time
 	}{
 		{
-			name: "relay owned sd",
+			name: "relay owned sd uses persisted queue timeout",
+			task: models.InferenceTask{
+				TaskType:     models.TaskTypeSD,
+				Status:       models.TaskStarted,
+				CreateTime:   sql.NullTime{Time: now, Valid: true},
+				Timeout:      60,
+				QueueTimeout: 43200,
+			},
+			want: now.Add(43200 * time.Second),
+		},
+		{
+			name: "relay owned sd falls back to default when unset",
 			task: models.InferenceTask{
 				TaskType:   models.TaskTypeSD,
 				Status:     models.TaskStarted,
@@ -229,6 +242,47 @@ func TestGetQueueDeadline(t *testing.T) {
 				t.Fatalf("queue deadline = %s, want %s", deadline, test.want)
 			}
 		})
+	}
+}
+
+func TestResolveQueueTimeout(t *testing.T) {
+	initServiceTestConfig(t)
+	defaultSeconds := config.GetConfig().TaskPricing.DefaultQueueTimeoutSeconds
+	maxSeconds := config.GetConfig().TaskPricing.MaxQueueTimeoutSeconds
+
+	got, err := ResolveQueueTimeout(models.TaskTypeLLM, nil)
+	if err != nil {
+		t.Fatalf("default resolve: %v", err)
+	}
+	if got != defaultSeconds {
+		t.Fatalf("default resolve = %d, want %d", got, defaultSeconds)
+	}
+
+	requested := uint64(120)
+	got, err = ResolveQueueTimeout(models.TaskTypeSD, &requested)
+	if err != nil {
+		t.Fatalf("explicit resolve: %v", err)
+	}
+	if got != 120 {
+		t.Fatalf("explicit resolve = %d, want 120", got)
+	}
+
+	zero := uint64(0)
+	if _, err := ResolveQueueTimeout(models.TaskTypeLLM, &zero); !errors.Is(err, ErrQueueTimeoutZero) {
+		t.Fatalf("zero resolve err = %v, want ErrQueueTimeoutZero", err)
+	}
+
+	tooLarge := maxSeconds + 1
+	if _, err := ResolveQueueTimeout(models.TaskTypeLLM, &tooLarge); !errors.Is(err, ErrQueueTimeoutTooLarge) {
+		t.Fatalf("too-large resolve err = %v, want ErrQueueTimeoutTooLarge", err)
+	}
+
+	if _, err := ResolveQueueTimeout(models.TaskTypeSDFTLora, &requested); !errors.Is(err, ErrQueueTimeoutNotAllowed) {
+		t.Fatalf("sdft resolve err = %v, want ErrQueueTimeoutNotAllowed", err)
+	}
+	got, err = ResolveQueueTimeout(models.TaskTypeSDFTLora, nil)
+	if err != nil || got != 0 {
+		t.Fatalf("sdft omit = (%d, %v), want (0, nil)", got, err)
 	}
 }
 

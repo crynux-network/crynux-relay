@@ -321,7 +321,9 @@ func (b *taskTraceBuilder) addTaskQueued() {
 		details["queue_deadline"] = deadline.Unix()
 		b.markStored("task_queued.queue_deadline")
 		if service.UsesRelayOwnedTimeouts(b.task) {
-			details["queue_timeout_seconds"] = config.GetConfig().TaskPricing.QueueTimeoutSeconds
+			details["queue_timeout_seconds"] = b.task.QueueTimeout
+			details["default_queue_timeout_seconds"] = config.GetConfig().TaskPricing.DefaultQueueTimeoutSeconds
+			details["max_queue_timeout_seconds"] = config.GetConfig().TaskPricing.MaxQueueTimeoutSeconds
 		} else {
 			details["timeout"] = b.task.Timeout
 			details["queue_buffer_seconds"] = int64((3 * time.Minute).Seconds())

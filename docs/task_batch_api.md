@@ -18,7 +18,7 @@ The batch APIs MUST NOT replace or change the behavior of the existing single-ta
 
 Single-task create (`POST /v1/inference_tasks/:task_id_commitment`) and batch create MUST both require client-supplied `min_vram`. Relay MUST reject a missing `min_vram` before charging. Relay MUST NOT fill `min_vram` from `loaded_models` or any other server-side table.
 
-Create input MUST contain protocol identity fields, `task_args`, `task_type`, `task_fee`, GPU constraints (`required_gpu`, `required_gpu_vram`, `min_vram`), and optional `timeout` for SDFT. Create input MUST NOT accept `task_version`, `task_model_ids`, `task_size`, or `required_model_files`.
+Create input MUST contain protocol identity fields, `task_args`, `task_type`, `task_fee`, GPU constraints (`required_gpu`, `required_gpu_vram`, `min_vram`), optional `timeout` for SDFT, and optional `queue_timeout` for normal SD and LLM tasks as specified in [queue_timeout.md](./queue_timeout.md). Create input MUST NOT accept `task_version`, `task_model_ids`, `task_size`, or `required_model_files`.
 
 After TaskArgs schema validation, Relay MUST parse `version` from TaskArgs, require the `major.minor.patch` numeric format, and store it as `InferenceTask.TaskVersion`. Relay MUST accept any version string that matches that format. Relay MUST NOT reject a create request because the version equals or differs from a fixed release number.
 

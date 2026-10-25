@@ -125,7 +125,7 @@ func deadlineAtForM20260828(task *inferenceTaskBatchFieldsForM20260828) (time.Ti
 			return time.Time{}, false
 		}
 		if relayOwned {
-			return task.CreateTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.QueueTimeoutSeconds) * time.Second), true
+			return task.CreateTime.Time.Add(time.Duration(config.GetConfig().TaskPricing.DefaultQueueTimeoutSeconds) * time.Second), true
 		}
 		return task.CreateTime.Time.Add(3*time.Minute + time.Duration(task.Timeout)*time.Second), true
 	case taskStatusStartedForM20260828, taskStatusParametersUploadedForM20260828:

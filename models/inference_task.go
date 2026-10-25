@@ -124,7 +124,9 @@ type InferenceTask struct {
 	// RequireLinuxCuda is set at creation when the task can run only on
 	// docker or Linux GPU-name platforms.
 	RequireLinuxCuda bool   `json:"require_linux_cuda" gorm:"column:require_linux_cuda;not null;default:false"`
-	Timeout          uint64 `json:"timeout"`
+	Timeout uint64 `json:"timeout"`
+	// QueueTimeout is the resolved queue wait in seconds for normal SD/LLM tasks.
+	QueueTimeout     uint64 `json:"queue_timeout"`
 	MinVRAM          uint64 `json:"min_vram"`
 	RequiredGPU      string `json:"required_gpu"`
 	RequiredGPUVRAM  uint64 `json:"required_gpu_vram"`
