@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,10 +13,11 @@ import (
 	"time"
 )
 
-func jsonRemarshal(bytes []byte) ([]byte, error) {
+func jsonRemarshal(data []byte) ([]byte, error) {
 	var ifce interface{}
-	err := json.Unmarshal(bytes, &ifce)
-	if err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&ifce); err != nil {
 		return nil, err
 	}
 	return json.Marshal(ifce)
