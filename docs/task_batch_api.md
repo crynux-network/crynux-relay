@@ -135,12 +135,12 @@ Before sending response headers, Relay MUST:
 
 For an LLM task, Relay MUST stream the single `0.json` file as the response with `Content-Type: application/json`.
 
-For an SD task, Relay MUST stream one ZIP archive containing all result images. Archive entries MUST use only `<index>.png`, in ascending index order from `0` through `TaskSize - 1`. Relay MUST construct entry names from validated numeric indexes and MUST NOT derive an entry path from client input or a filesystem path.
+For an SD task with `TaskSize = 1`, Relay MUST stream the single `0.png` file as the response with `Content-Type: image/png`. For an SD task with `TaskSize > 1`, Relay MUST stream one ZIP archive containing all result images. Archive entries MUST use only `<index>.png`, in ascending index order from `0` through `TaskSize - 1`. Relay MUST construct entry names from validated numeric indexes and MUST NOT derive an entry path from client input or a filesystem path.
 
 Relay MUST NOT combine results from different tasks and MUST NOT buffer the complete JSON file or image archive in memory.
 
 ## Limits and Metrics
 
-Relay MUST configure separate maximum item counts for create, status, validation, and cancellation batches, plus a maximum uncompressed byte size for one SD result archive. A client MUST submit request batches no greater than the corresponding Relay limits and MUST split larger work before submission.
+Relay MUST configure separate maximum item counts for create, status, validation, and cancellation batches, plus a maximum uncompressed byte size for one SD result download (the single PNG when `TaskSize = 1`, or the aggregate of all PNGs before ZIP when `TaskSize > 1`). A client MUST submit request batches no greater than the corresponding Relay limits and MUST split larger work before submission.
 
 Relay MUST record request count, item count, request duration, per-item outcome, response bytes, and result-download bytes separately for each batch endpoint. Metrics MUST distinguish whole-request failure from item failure.
