@@ -117,6 +117,14 @@ func GetResult(c *gin.Context, in *GetResultInputWithSignature) error {
 		return err
 	}
 
+	if task.TaskSize == 1 {
+		c.Header("Content-Disposition", "attachment; filename=0.png")
+		c.Header("Content-Type", "image/png")
+		written, err := io.Copy(c.Writer, files[0])
+		metrics.TaskResultDownloadBytes.WithLabelValues("sd").Add(float64(written))
+		return err
+	}
+
 	c.Header("Content-Disposition", "attachment; filename=results.zip")
 	c.Header("Content-Type", "application/zip")
 	counter := &countingWriter{Writer: c.Writer}

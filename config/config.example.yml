@@ -153,7 +153,7 @@ task_pricing:
   queued_task_priority_snapshot_interval_seconds: 300
 task_matching:
   batch_size: 100
-  tick_interval_seconds: 2
+  tick_interval_seconds: 1
 model_distribution:
   controller_interval_seconds: 60
   demand_window_seconds: 1800
