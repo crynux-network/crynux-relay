@@ -16,9 +16,25 @@ Changing `task.model_whitelist_enabled` requires a configuration change and Rela
 
 ## Matching Key
 
-Whitelist keys are normalized HuggingFace repository names after `models.NormalizeModelName`. Matching MUST be exact equality on the normalized name. Relay MUST NOT use SQL `LIKE`, prefix matching, or wildcards.
+Whitelist entries are normalized HuggingFace repository names or organization wildcards after `models.NormalizeModelName`.
 
-When `task.model_whitelist_enabled` is `true`, Relay MUST require every repository below to be present in the whitelist:
+A whitelist entry MUST be one of:
+
+- Exact repository: `owner/repository`
+- Organization wildcard: `owner/*`
+
+`owner` MUST be a non-empty HuggingFace namespace that does not contain `/` or `*`. Organization wildcards MUST use exactly one trailing `/*` after the owner. Relay MUST reject every other form that contains `*`, including `*`, `*/repository`, `owner/repo*`, and `owner/*/suffix`. URL-based model names MAY be stored only as exact entries and MUST NOT use wildcards.
+
+When checking a candidate repository name, Relay MUST:
+
+1. Normalize the candidate with `models.NormalizeModelName`.
+2. Allow it when the exact normalized name is present in the in-memory exact-name cache.
+3. Otherwise, when the normalized name is not a URL and contains exactly one `/`, extract the owner before the first `/` and allow it when that owner is present in the in-memory organization cache.
+4. Otherwise reject it.
+
+`qwen/*` MUST allow `qwen/qwen3` and MUST NOT allow `qwen2/model`. Relay MUST NOT use SQL `LIKE` or any database pattern matching on the hot path.
+
+When `task.model_whitelist_enabled` is `true`, Relay MUST require every repository below to be allowed by the whitelist:
 
 - LLM: `model` (`InferenceTask.ModelName`)
 - SDFT: `model.name` (`InferenceTask.ModelName`)
@@ -26,7 +42,7 @@ When `task.model_whitelist_enabled` is `true`, Relay MUST require every reposito
 
 An SD task with a whitelisted base model and a non-whitelisted component repository MUST be rejected. LoRA weight references (`lora.model`) are not required model files and MUST NOT be checked by this whitelist.
 
-Admin add and delete inputs MUST be normalized with the same rules before persistence. Empty names after normalization MUST be rejected.
+Admin add and delete inputs MUST be normalized and validated with the same rules before persistence. Empty names after normalization MUST be rejected. Delete MUST remove the exact stored entry string after normalization, so deleting `qwen/qwen3` MUST NOT remove `qwen/*`.
 
 ## Cache
 
@@ -34,7 +50,9 @@ Relay MUST load the full `model_whitelists` table into memory during process sta
 
 Startup load failure MUST fail process startup.
 
-Create, matching, inventory, and loaded-model checks MUST read only the in-memory cache. They MUST NOT lazy-load from the database on the hot path. Every whitelist membership check MUST use `IsModelWhitelisted` (or an equivalent that normalizes with `models.NormalizeModelName` before exact cache lookup). Relay MUST NOT compare raw repository strings with hand-written case folding or SQL `LIKE`.
+Create, matching, inventory, and loaded-model checks MUST read only the in-memory cache. They MUST NOT lazy-load from the database on the hot path. Every whitelist membership check MUST use `IsModelWhitelisted` (or an equivalent that normalizes with `models.NormalizeModelName` and applies the exact-then-organization matching rules above). Relay MUST NOT compare raw repository strings with hand-written case folding or SQL `LIKE`.
+
+The in-memory cache MUST store exact repository names and organization owners as two separate sets loaded from `model_whitelists`. Startup load and admin refresh MUST validate every stored entry with the whitelist entry rules above; an invalid stored entry MUST fail the load.
 
 Admin add and delete MUST write the database first, then refresh the full in-memory cache from the database.
 

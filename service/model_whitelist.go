@@ -5,6 +5,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -24,17 +25,64 @@ var (
 )
 
 var (
-	modelWhitelistCacheMu sync.RWMutex
-	modelWhitelistCache   map[string]struct{}
-	modelWhitelistLoaded  bool
+	modelWhitelistCacheMu    sync.RWMutex
+	modelWhitelistExactCache map[string]struct{}
+	modelWhitelistOrgCache   map[string]struct{}
+	modelWhitelistLoaded     bool
 )
 
-func NormalizeModelWhitelistName(name string) (string, error) {
+func normalizeModelWhitelistCandidate(name string) (string, error) {
 	normalized := models.NormalizeModelName(strings.TrimSpace(name))
 	if normalized == "" {
 		return "", ErrInvalidModelWhitelistName
 	}
 	return normalized, nil
+}
+
+// NormalizeModelWhitelistName normalizes and validates a whitelist entry.
+// Entries MUST be an exact repository name or an organization wildcard owner/*.
+func NormalizeModelWhitelistName(name string) (string, error) {
+	normalized, err := normalizeModelWhitelistCandidate(name)
+	if err != nil {
+		return "", err
+	}
+	if err := validateModelWhitelistEntry(normalized); err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+func validateModelWhitelistEntry(normalized string) error {
+	if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+		if strings.Contains(normalized, "*") {
+			return ErrInvalidModelWhitelistName
+		}
+		return nil
+	}
+	if !strings.Contains(normalized, "*") {
+		return nil
+	}
+	owner, suffix, ok := strings.Cut(normalized, "/")
+	if !ok || owner == "" || suffix != "*" || strings.Contains(owner, "*") {
+		return ErrInvalidModelWhitelistName
+	}
+	return nil
+}
+
+func isOrganizationWhitelistEntry(normalized string) bool {
+	if strings.HasPrefix(normalized, "http://") || strings.HasPrefix(normalized, "https://") {
+		return false
+	}
+	owner, suffix, ok := strings.Cut(normalized, "/")
+	return ok && owner != "" && suffix == "*" && !strings.Contains(owner, "*")
+}
+
+func organizationOwnerFromWildcard(normalized string) (string, bool) {
+	if !isOrganizationWhitelistEntry(normalized) {
+		return "", false
+	}
+	owner, _, _ := strings.Cut(normalized, "/")
+	return owner, true
 }
 
 func InitModelWhitelistCache(ctx context.Context, db *gorm.DB) error {
@@ -385,10 +433,11 @@ func ListModelWhitelistNames(ctx context.Context, db *gorm.DB) ([]string, error)
 	return names, nil
 }
 
-// IsModelWhitelisted reports whether modelName is in the in-memory allowlist.
+// IsModelWhitelisted reports whether modelName is allowed by the in-memory
+// allowlist through exact repository match or organization wildcard match.
 // It reads only memory and does not load from the database.
 func IsModelWhitelisted(modelName string) (bool, error) {
-	normalizedName, err := NormalizeModelWhitelistName(modelName)
+	normalizedName, err := normalizeModelWhitelistCandidate(modelName)
 	if err != nil {
 		return false, err
 	}
@@ -398,7 +447,17 @@ func IsModelWhitelisted(modelName string) (bool, error) {
 	if !modelWhitelistLoaded {
 		return false, ErrModelWhitelistNotInitialized
 	}
-	_, ok := modelWhitelistCache[normalizedName]
+	if _, ok := modelWhitelistExactCache[normalizedName]; ok {
+		return true, nil
+	}
+	if strings.HasPrefix(normalizedName, "http://") || strings.HasPrefix(normalizedName, "https://") {
+		return false, nil
+	}
+	owner, _, ok := strings.Cut(normalizedName, "/")
+	if !ok || owner == "" {
+		return false, nil
+	}
+	_, ok = modelWhitelistOrgCache[owner]
 	return ok, nil
 }
 
@@ -464,12 +523,22 @@ func loadModelWhitelistCacheLocked(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 
-	cache := make(map[string]struct{}, len(names))
+	exact := make(map[string]struct{}, len(names))
+	orgs := make(map[string]struct{})
 	for _, name := range names {
-		cache[name] = struct{}{}
+		normalized, err := NormalizeModelWhitelistName(name)
+		if err != nil {
+			return fmt.Errorf("invalid model whitelist entry %q: %w", name, err)
+		}
+		if owner, ok := organizationOwnerFromWildcard(normalized); ok {
+			orgs[owner] = struct{}{}
+			continue
+		}
+		exact[normalized] = struct{}{}
 	}
 
-	modelWhitelistCache = cache
+	modelWhitelistExactCache = exact
+	modelWhitelistOrgCache = orgs
 	modelWhitelistLoaded = true
 	return nil
 }
@@ -477,7 +546,8 @@ func loadModelWhitelistCacheLocked(ctx context.Context, db *gorm.DB) error {
 func resetModelWhitelistCacheForTest() {
 	modelWhitelistCacheMu.Lock()
 	defer modelWhitelistCacheMu.Unlock()
-	modelWhitelistCache = nil
+	modelWhitelistExactCache = nil
+	modelWhitelistOrgCache = nil
 	modelWhitelistLoaded = false
 }
 
@@ -485,9 +555,12 @@ func getModelWhitelistCacheSnapshotForTest() []string {
 	modelWhitelistCacheMu.RLock()
 	defer modelWhitelistCacheMu.RUnlock()
 
-	names := make([]string, 0, len(modelWhitelistCache))
-	for name := range modelWhitelistCache {
+	names := make([]string, 0, len(modelWhitelistExactCache)+len(modelWhitelistOrgCache))
+	for name := range modelWhitelistExactCache {
 		names = append(names, name)
+	}
+	for owner := range modelWhitelistOrgCache {
+		names = append(names, owner+"/*")
 	}
 	sort.Strings(names)
 	return names
