@@ -36,9 +36,143 @@ func TestNormalizeModelWhitelistName(t *testing.T) {
 		t.Fatalf("unexpected normalized name: %s", name)
 	}
 
+	wildcard, err := NormalizeModelWhitelistName("Qwen/*")
+	if err != nil {
+		t.Fatalf("wildcard normalize should succeed: %v", err)
+	}
+	if wildcard != "qwen/*" {
+		t.Fatalf("unexpected normalized wildcard: %s", wildcard)
+	}
+
 	_, err = NormalizeModelWhitelistName("   ")
 	if !errors.Is(err, ErrInvalidModelWhitelistName) {
 		t.Fatalf("expected ErrInvalidModelWhitelistName, got %v", err)
+	}
+
+	for _, invalid := range []string{"*", "*/repo", "qwen/repo*", "qwen/*/extra", "qw*en/*", "https://example.com/*"} {
+		if _, err := NormalizeModelWhitelistName(invalid); !errors.Is(err, ErrInvalidModelWhitelistName) {
+			t.Fatalf("expected ErrInvalidModelWhitelistName for %q, got %v", invalid, err)
+		}
+	}
+}
+
+func TestModelWhitelistOrganizationWildcard(t *testing.T) {
+	resetModelWhitelistCacheForTest()
+	ctx := context.Background()
+	db := newModelWhitelistTestDB(t)
+
+	if err := AddModelWhitelistName(ctx, db, "Qwen/*"); err != nil {
+		t.Fatalf("add wildcard: %v", err)
+	}
+	if err := AddModelWhitelistName(ctx, db, "deepseek-ai/DeepSeek-R1"); err != nil {
+		t.Fatalf("add exact: %v", err)
+	}
+
+	cacheNames := getModelWhitelistCacheSnapshotForTest()
+	wantCache := []string{"deepseek-ai/deepseek-r1", "qwen/*"}
+	if len(cacheNames) != len(wantCache) {
+		t.Fatalf("unexpected cache: %#v", cacheNames)
+	}
+	for i := range wantCache {
+		if cacheNames[i] != wantCache[i] {
+			t.Fatalf("unexpected cache: %#v", cacheNames)
+		}
+	}
+
+	mustAllowed := []string{"qwen/qwen3.5-9b", "Qwen/Qwen-Image-2.1", "deepseek-ai/DeepSeek-R1"}
+	for _, name := range mustAllowed {
+		ok, err := IsModelWhitelisted(name)
+		if err != nil {
+			t.Fatalf("whitelist check for %s: %v", name, err)
+		}
+		if !ok {
+			t.Fatalf("expected %s to be allowed", name)
+		}
+	}
+
+	mustRejected := []string{"qwen2/model", "meta-llama/Llama-3.1-8B", "https://example.com/model"}
+	for _, name := range mustRejected {
+		ok, err := IsModelWhitelisted(name)
+		if err != nil {
+			t.Fatalf("whitelist check for %s: %v", name, err)
+		}
+		if ok {
+			t.Fatalf("expected %s to be rejected", name)
+		}
+	}
+
+	if err := DeleteModelWhitelistName(ctx, db, "qwen/qwen3.5-9b"); !errors.Is(err, ErrModelWhitelistNameMissing) {
+		t.Fatalf("deleting exact repo must not remove organization wildcard: %v", err)
+	}
+	ok, err := IsModelWhitelisted("qwen/still-allowed")
+	if err != nil {
+		t.Fatalf("whitelist check after exact delete attempt: %v", err)
+	}
+	if !ok {
+		t.Fatal("organization wildcard should still allow qwen models")
+	}
+
+	if err := DeleteModelWhitelistName(ctx, db, "Qwen/*"); err != nil {
+		t.Fatalf("delete wildcard: %v", err)
+	}
+	ok, err = IsModelWhitelisted("qwen/qwen3.5-9b")
+	if err != nil {
+		t.Fatalf("whitelist check after wildcard delete: %v", err)
+	}
+	if ok {
+		t.Fatal("qwen models should be rejected after wildcard delete")
+	}
+	ok, err = IsModelWhitelisted("deepseek-ai/DeepSeek-R1")
+	if err != nil {
+		t.Fatalf("exact check after wildcard delete: %v", err)
+	}
+	if !ok {
+		t.Fatal("exact entry should remain after wildcard delete")
+	}
+}
+
+func TestCheckTaskModelsWhitelistedAllowsOrganizationWildcard(t *testing.T) {
+	resetModelWhitelistCacheForTest()
+	ctx := context.Background()
+	db := newModelWhitelistTestDB(t)
+	if err := AddModelWhitelistName(ctx, db, "qwen/*"); err != nil {
+		t.Fatalf("add wildcard: %v", err)
+	}
+
+	llmTask := &models.InferenceTask{
+		TaskType:  models.TaskTypeLLM,
+		ModelName: "Qwen/Qwen3.5-9B",
+	}
+	if err := CheckTaskModelsWhitelisted(llmTask); err != nil {
+		t.Fatalf("LLM task should be allowed: %v", err)
+	}
+
+	sdTask := &models.InferenceTask{
+		TaskType: models.TaskTypeSD,
+		TaskArgs: `{"version":"3.7.0","base_model":{"name":"qwen/qwen-image-2.1"},"components":{"vae":{"repo":"qwen/qwen-image-vae","format":"diffusers"}},"dtype":"float16","prompt":"a cat"}`,
+	}
+	if err := CheckTaskModelsWhitelisted(sdTask); err != nil {
+		t.Fatalf("SD task with organization components should be allowed: %v", err)
+	}
+
+	sdTaskMixed := &models.InferenceTask{
+		TaskType: models.TaskTypeSD,
+		TaskArgs: `{"version":"3.7.0","base_model":{"name":"qwen/qwen-image-2.1"},"components":{"vae":{"repo":"evil/bad-vae","format":"diffusers"}},"dtype":"float16","prompt":"a cat"}`,
+	}
+	if err := CheckTaskModelsWhitelisted(sdTaskMixed); !errors.Is(err, ErrModelNotWhitelisted) {
+		t.Fatalf("expected ErrModelNotWhitelisted for non-org component, got %v", err)
+	}
+}
+
+func TestInitModelWhitelistCacheRejectsInvalidEntry(t *testing.T) {
+	resetModelWhitelistCacheForTest()
+	ctx := context.Background()
+	db := newModelWhitelistTestDB(t)
+	if err := db.Create(&models.ModelWhitelist{ModelName: "qwen/repo*"}).Error; err != nil {
+		t.Fatalf("seed create failed: %v", err)
+	}
+	if err := InitModelWhitelistCache(ctx, db); err == nil {
+		t.Fatal("expected init to reject invalid stored entry")
 	}
 }
 

@@ -59,6 +59,82 @@ func TestFilterWhitelistedModelFilesNormalizesCase(t *testing.T) {
 	}
 }
 
+func TestFilterWhitelistedModelFilesAllowsOrganizationWildcard(t *testing.T) {
+	db, ctx := setupModelWhitelistInventoryTest(t)
+	enableModelWhitelist(t)
+	if err := AddModelWhitelistName(ctx, db, "qwen/*"); err != nil {
+		t.Fatalf("add whitelist: %v", err)
+	}
+
+	files := []models.ModelFile{
+		testModelFile(t, "Qwen/Foo", "rev-1"),
+		testModelFile(t, "qwen/bar", "rev-2"),
+		testModelFile(t, "evil/pearl", "rev-1"),
+	}
+	kept, err := filterWhitelistedModelFiles(files)
+	if err != nil {
+		t.Fatalf("filter: %v", err)
+	}
+	if len(kept) != 2 {
+		t.Fatalf("expected 2 kept files, got %d", len(kept))
+	}
+}
+
+func TestPruneNonWhitelistedInventoryKeepsOrganizationWildcard(t *testing.T) {
+	db, ctx := setupModelWhitelistInventoryTest(t)
+	node := models.Node{Address: "0xwl-org-prune", Status: models.NodeStatusAvailable}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	pearl := testModelFile(t, "evil/pearl", "rev-1")
+	foo := testModelFile(t, "qwen/foo", "rev-1")
+	seedNodeModelFiles(t, db, node.Address, pearl, foo)
+	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{9}, []models.Hash32{testModelFileHash(t, "qwen/foo", "rev-1")}, []byte(`{}`), "float16")
+	if err := db.Create(&memory).Error; err != nil {
+		t.Fatalf("create in-memory: %v", err)
+	}
+	if err := db.Create(&models.LoadedModel{
+		RequiredModelFilesHash:  models.RequiredModelFilesHash([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}).Bytes(),
+		ModelCacheHash:          models.Hash32{1}.Bytes(),
+		ExecutionDType:          "float16",
+		RequiredModelFileHashes: models.EncodeHashList([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}),
+		QuantizationConfig:      models.JSONText(`null`),
+		ModelCacheConfig:        models.JSONText(`{}`),
+		ModelID:                 "evil/pearl",
+		ModelType:               models.LoadedModelTypeLLM,
+		MinVRAM:                 16,
+	}).Error; err != nil {
+		t.Fatalf("create loaded model: %v", err)
+	}
+
+	enableModelWhitelist(t)
+	if err := AddModelWhitelistName(ctx, db, "qwen/*"); err != nil {
+		t.Fatalf("add whitelist: %v", err)
+	}
+
+	rows, err := models.ListNodeModelFileRows(ctx, db, node.Address)
+	if err != nil {
+		t.Fatalf("list inventory: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected pruned inventory size 1, got %d", len(rows))
+	}
+	storedMemory, err := models.GetNodeInMemoryModel(ctx, db, node.Address)
+	if err != nil {
+		t.Fatalf("get in-memory: %v", err)
+	}
+	if storedMemory == nil {
+		t.Fatal("expected in-memory model covered by organization wildcard to remain")
+	}
+	var loadedCount int64
+	if err := db.Model(&models.LoadedModel{}).Count(&loadedCount).Error; err != nil {
+		t.Fatalf("count loaded models: %v", err)
+	}
+	if loadedCount != 0 {
+		t.Fatalf("expected loaded models pruned, got %d", loadedCount)
+	}
+}
+
 func TestAddNodeModelFileSkipsNonWhitelisted(t *testing.T) {
 	db, ctx := setupModelWhitelistInventoryTest(t)
 	enableModelWhitelist(t)
@@ -151,6 +227,27 @@ func TestSetNodeInMemoryModelRejectsNonWhitelisted(t *testing.T) {
 	})
 	if !errors.Is(err, ErrModelNotWhitelisted) {
 		t.Fatalf("expected ErrModelNotWhitelisted, got %v", err)
+	}
+}
+
+func TestSetNodeInMemoryModelAllowsOrganizationWildcard(t *testing.T) {
+	db, ctx := setupModelWhitelistInventoryTest(t)
+	enableModelWhitelist(t)
+	if err := AddModelWhitelistName(ctx, db, "qwen/*"); err != nil {
+		t.Fatalf("add whitelist: %v", err)
+	}
+	node := models.Node{Address: "0xwl-memory-org", Status: models.NodeStatusAvailable}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	if err := SetNodeInMemoryModel(ctx, db, node.Address, &NodeInMemoryModelReport{
+		CacheHash:      models.Hash32{2},
+		Files:          []models.ModelFile{testModelFile(t, "Qwen/Bar", "rev-1")},
+		CacheConfig:    []byte(`{}`),
+		ExecutionDType: "float16",
+	}); err != nil {
+		t.Fatalf("organization wildcard should allow in-memory report: %v", err)
 	}
 }
 
