@@ -4,7 +4,7 @@ This document specifies how Relay distributes model files across nodes ahead of 
 
 ## Inventory Versus Loaded Projection
 
-`node_models` is the authoritative on-disk inventory for currently joined nodes. Each row is one `(node_address, model_file_hash)` pair that references the `model_files` catalog, whose primary key is the exact model file hash and whose canonical JSON includes the revision. Model distribution coverage, download completion, the task-matching model file gate, and create-time HuggingFace validation skip decisions MUST use exact model file hash matches or, for revision-less requirements, source hash matches through the catalog.
+`node_models` is the authoritative on-disk inventory for currently joined nodes. Each row is one `(node_address, model_file_hash)` pair that references the `model_files` catalog, whose primary key is the exact model file hash and whose canonical JSON includes the revision. Model distribution coverage, download completion, and the task-matching model file gate MUST use exact model file hash matches, and MUST also accept source hash matches for historical revision-less requirements. Create-time Hub skip decisions for new tasks MUST use exact held commit matches or reusable online-network commits as specified in [Required Model File Set](#required-model-file-set); new tasks MUST NOT remain revision-less after creation.
 
 `node_in_memory_models` is the authoritative in-memory model of each node and MUST NOT participate in model distribution.
 

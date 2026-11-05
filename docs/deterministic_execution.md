@@ -75,7 +75,7 @@ Matching a GPU model name, operating system class, container image, PyTorch vers
 - random-generator state immediately before every random draw;
 - deterministic implementations for every executed operator.
 
-Model IDs are not immutable artifact identities. Model download and loading use a repository ID without binding it to a repository revision or file manifest. Two nodes can therefore hold different repository snapshots under the same model ID.
+Model IDs alone are not immutable artifact identities. Relay freezes each required model file to a commit SHA at task creation and passes those exact files through `DownloadModel` events and `execution_model_files`, as specified in [model_distribution.md](./model_distribution.md) and [task_matching.md](./task_matching.md). Historical revision-less requirements MAY still download one revision of a source. Two nodes can still hold different repository snapshots under the same model ID when requirements are not commit-pinned or when inventory predates a freeze.
 
 The statement that two fully identical executions can randomly differ requires precision. If all input bytes, runtime state, operation order, and operator implementations are identical and deterministic, the result is identical. A repeated result can differ only when an execution input or path differs, a nondeterministic operation is allowed, or stochastic decoding consumes a different effective random state.
 
