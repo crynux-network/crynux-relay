@@ -88,7 +88,7 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 		entry := ModelFileEntry{
 			SourceType:   ModelSourceTypeHuggingFace,
 			Repository:   NormalizeModelName(args.Model),
-			Revision:     optionalString(args.Revision),
+			Revision:     NormalizeCommitRevision(optionalString(args.Revision)),
 			FormatKwargs: map[string]any{},
 		}
 		entries = append(entries, entry)
@@ -101,7 +101,7 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 		base := ModelFileEntry{
 			SourceType:   ModelSourceTypeHuggingFace,
 			Repository:   NormalizeModelName(args.BaseModel.Name),
-			Revision:     optionalString(args.BaseModel.Revision),
+			Revision:     NormalizeCommitRevision(optionalString(args.BaseModel.Revision)),
 			Format:       ImageBaseModelFormat,
 			FormatKwargs: map[string]any{},
 		}
@@ -115,7 +115,7 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 			entry := ModelFileEntry{
 				SourceType:   ModelSourceTypeHuggingFace,
 				Repository:   NormalizeModelName(component.Repo),
-				Revision:     optionalString(component.Revision),
+				Revision:     NormalizeCommitRevision(optionalString(component.Revision)),
 				Format:       component.Format,
 				FormatKwargs: component.FormatKwargs,
 			}
@@ -185,7 +185,7 @@ func (r *TaskModelRequirements) ResolveRevisions(revisions map[int]string) error
 		if index < 0 || index >= len(r.Entries) {
 			return fmt.Errorf("entry index %d out of range", index)
 		}
-		r.Entries[index].Revision = revision
+		r.Entries[index].Revision = NormalizeCommitRevision(revision)
 	}
 	return r.deriveRequiredHashes()
 }

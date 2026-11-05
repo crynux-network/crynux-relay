@@ -128,6 +128,27 @@ func TestBuildHeldModelFilesValidatesAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestBuildHeldModelFilesLowercasesCommitRevision(t *testing.T) {
+	const upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	const lower = "abcdef0123456789abcdef0123456789abcdef01"
+	files, err := BuildHeldModelFiles([]models.ModelFileEntry{
+		testModelFileEntry("org/model", upper),
+	})
+	if err != nil {
+		t.Fatalf("build held model files: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	entry, err := files[0].Entry()
+	if err != nil {
+		t.Fatalf("decode catalog entry: %v", err)
+	}
+	if entry.Revision != lower {
+		t.Fatalf("catalog revision = %q, want %q", entry.Revision, lower)
+	}
+}
+
 func newModelStateTestNode(t *testing.T) (*gorm.DB, models.Node) {
 	t.Helper()
 	initServiceTestConfig(t)

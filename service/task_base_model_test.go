@@ -136,6 +136,28 @@ func TestPrepareTaskModelRequirementsSkipsHubWhenNodeHasCommit(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskModelRequirementsNormalizesUppercaseCommit(t *testing.T) {
+	db := newTaskBaseModelTestDB(t)
+	seedOnlineNodeModel(t, db, "0x1", models.NodeStatusAvailable, testModelFile(t, "org/model", testCommitA))
+	seedRuntimeConstraint(t, db, "org/model", testCommitA, false)
+
+	calls := 0
+	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	upper := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	requirements, err := PrepareTaskModelRequirements(context.Background(), db, models.TaskTypeLLM, llmTaskArgs("org/model", upper))
+	if err != nil {
+		t.Fatalf("expected preparation to pass: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected hub not to be called when uppercase commit matches lowercase inventory, got %d", calls)
+	}
+	assertExactCommit(t, requirements, "org/model", testCommitA)
+}
+
 func TestPrepareTaskModelRequirementsResolvesRevisionToCommit(t *testing.T) {
 	db := newTaskBaseModelTestDB(t)
 	useHuggingFaceServer(t, func(w http.ResponseWriter, r *http.Request) {

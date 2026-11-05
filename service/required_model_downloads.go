@@ -119,7 +119,7 @@ func requiredModelFilesFromConfig(files []config.RequiredModelFileEntryConfig) (
 		entry := models.ModelFileEntry{
 			SourceType:   file.SourceType,
 			Repository:   models.NormalizeModelName(file.Repository),
-			Revision:     file.Revision,
+			Revision:     models.NormalizeCommitRevision(file.Revision),
 			Format:       file.Format,
 			FormatKwargs: formatKwargs,
 		}

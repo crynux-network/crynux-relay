@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -55,10 +56,12 @@ type ModelFileEntry struct {
 }
 
 // Normalized returns a copy whose Repository is passed through NormalizeModelName
-// so HuggingFace repository names that differ only by letter case hash identically.
+// and whose commit SHA revision is lowercased, so identities that differ only by
+// letter case hash identically.
 func (e ModelFileEntry) Normalized() ModelFileEntry {
 	out := e
 	out.Repository = NormalizeModelName(out.Repository)
+	out.Revision = NormalizeCommitRevision(out.Revision)
 	if out.FormatKwargs == nil {
 		out.FormatKwargs = map[string]any{}
 	}
@@ -126,6 +129,15 @@ func IsCommitSHA(revision string) bool {
 		}
 	}
 	return true
+}
+
+// NormalizeCommitRevision lowercases a 40-character hex commit SHA. Branch, tag,
+// main, and empty revisions are returned unchanged.
+func NormalizeCommitRevision(revision string) string {
+	if IsCommitSHA(revision) {
+		return strings.ToLower(revision)
+	}
+	return revision
 }
 
 // CanonicalJSON encodes v as JSON with sorted object keys, no insignificant

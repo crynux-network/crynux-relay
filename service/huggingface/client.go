@@ -145,8 +145,9 @@ func (c *Client) ResolveRevision(ctx context.Context, repository, revision strin
 	if info.SHA == "" {
 		return "", ErrServiceUnavailable
 	}
-	c.putCachedResult(cacheKey, info.SHA, nil)
-	return info.SHA, nil
+	sha := strings.ToLower(info.SHA)
+	c.putCachedResult(cacheKey, sha, nil)
+	return sha, nil
 }
 
 func (c *Client) fetchModelInfo(ctx context.Context, modelID string) (*modelInfoResponse, error) {

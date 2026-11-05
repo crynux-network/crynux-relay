@@ -113,5 +113,7 @@ func SelectNetworkModelFileRevision(
 		}
 		return bytes.Compare(a.hash[:], b.hash[:]) < 0
 	})
-	return candidates[0].entry, true, nil
+	selected := candidates[0].entry
+	selected.Revision = models.NormalizeCommitRevision(selected.Revision)
+	return selected, true, nil
 }

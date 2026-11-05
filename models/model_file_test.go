@@ -41,6 +41,52 @@ func TestIsCommitSHA(t *testing.T) {
 	}
 }
 
+func TestNormalizeCommitRevision(t *testing.T) {
+	const mixed = "ABCDEF0123456789abcdef0123456789ABCDEF01"
+	const lower = "abcdef0123456789abcdef0123456789abcdef01"
+	if got := NormalizeCommitRevision(mixed); got != lower {
+		t.Fatalf("NormalizeCommitRevision(%q) = %q, want %q", mixed, got, lower)
+	}
+	for _, revision := range []string{"", "main", "v1.0", "Main"} {
+		if got := NormalizeCommitRevision(revision); got != revision {
+			t.Fatalf("NormalizeCommitRevision(%q) = %q, want unchanged", revision, got)
+		}
+	}
+	entry := ModelFileEntry{
+		SourceType: ModelSourceTypeHuggingFace,
+		Repository: "org/repo",
+		Revision:   mixed,
+	}
+	if got := entry.Normalized().Revision; got != lower {
+		t.Fatalf("Normalized revision = %q, want %q", got, lower)
+	}
+}
+
+func TestModelFileHashIgnoresCommitCase(t *testing.T) {
+	must := mustHash(t)
+	upper := ModelFileEntry{
+		SourceType: ModelSourceTypeHuggingFace,
+		Repository: "org/repo",
+		Revision:   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	}
+	lower := upper
+	lower.Revision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if must(upper.ModelFileHash()) != must(lower.ModelFileHash()) {
+		t.Fatal("model_file_hash must ignore commit SHA letter case")
+	}
+	file, err := NewModelFile(upper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := file.Entry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Revision != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("catalog revision = %q, want lowercase", entry.Revision)
+	}
+}
+
 func TestModelFileHashIgnoresObjectKeyOrder(t *testing.T) {
 	must := mustHash(t)
 	a := entryFromJSON(t, `{"source_type":"huggingface","repository":"org/repo","revision":"abc","format":"gguf","format_kwargs":{"filename":"m.gguf","nested":{"x":1,"y":2}}}`)
