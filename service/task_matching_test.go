@@ -6,6 +6,7 @@ import (
 	"crynux_relay/metrics"
 	"crynux_relay/models"
 	"database/sql"
+	"errors"
 	"math"
 	"math/big"
 	"testing"
@@ -479,5 +480,55 @@ func TestFetchQueuedTaskPageOrdersByPriorityThenID(t *testing.T) {
 	}
 	if len(nextPage) != 1 || nextPage[0].TaskIDCommitment != "0xlow" {
 		t.Fatalf("expected pagination to continue after the last task, got %d tasks", len(nextPage))
+	}
+}
+
+func TestMatchingUsesPersistedExactHashNotTaskArgsRevision(t *testing.T) {
+	const commitA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const commitB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	task := &models.InferenceTask{
+		TaskType:    models.TaskTypeLLM,
+		TaskVersion: "3.0.0",
+		MinVRAM:     8,
+		TaskArgs:    llmTaskArgs("org/model", ""),
+	}
+	requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
+	if err != nil {
+		t.Fatalf("derive requirements: %v", err)
+	}
+	if err := requirements.ResolveRevisions(map[int]string{0: commitA}); err != nil {
+		t.Fatalf("resolve revisions: %v", err)
+	}
+	task.SetModelRequirements(requirements)
+
+	hashA := testModelFileHash(t, "org/model", commitA)
+	hashB := testModelFileHash(t, "org/model", commitB)
+	sourceHash := testModelFileSourceHash(t, "org/model")
+
+	nodeA := newMatchingTestEntry("0xcommit-a")
+	nodeA.OnDiskModelFileHashes[hashA] = struct{}{}
+	nodeA.OnDiskModelFileSourceHashes[sourceHash] = struct{}{}
+	nodeB := newMatchingTestEntry("0xcommit-b")
+	nodeB.OnDiskModelFileHashes[hashB] = struct{}{}
+	nodeB.OnDiskModelFileSourceHashes[sourceHash] = struct{}{}
+
+	req, err := newTaskModelRequirements(task)
+	if err != nil {
+		t.Fatalf("decode task requirements: %v", err)
+	}
+	if !nodeA.holdsRequiredModelFiles(req) {
+		t.Fatal("expected node holding commit A to match the persisted exact hash")
+	}
+	if nodeB.holdsRequiredModelFiles(req) {
+		t.Fatal("expected node holding only commit B not to match commit A exact hash")
+	}
+
+	resolved, err := resolveExecutionModelFileHashes(req, []models.NodeModelFileRow{fileRowOf(t, "org/model", commitA)}, nil)
+	if err != nil || len(resolved) != 1 || resolved[0] != hashA {
+		t.Fatalf("expected execution hashes to stay on commit A, got %v, %v", resolved, err)
+	}
+	if _, err := resolveExecutionModelFileHashes(req, []models.NodeModelFileRow{fileRowOf(t, "org/model", commitB)}, nil); !errors.Is(err, errModelFileNotHeldForTask) {
+		t.Fatalf("expected commit B inventory not to satisfy commit A exact requirement, got %v", err)
 	}
 }

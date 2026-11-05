@@ -17,6 +17,35 @@ type NodeModelFileRow struct {
 	ModelFileSourceHash []byte
 }
 
+// OnlineNodeModelFileBySource is one exact model file of a source held by an
+// Available or Busy node.
+type OnlineNodeModelFileBySource struct {
+	NodeAddress   string
+	ModelFileHash []byte
+	CanonicalJSON JSONText
+}
+
+// ListOnlineNodeModelFilesBySourceHash returns exact files of the given source
+// that Available or Busy nodes hold on disk. Paused, pending, and quit nodes
+// are excluded.
+func ListOnlineNodeModelFilesBySourceHash(ctx context.Context, db *gorm.DB, sourceHash Hash32) ([]OnlineNodeModelFileBySource, error) {
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var rows []OnlineNodeModelFileBySource
+	err := db.WithContext(dbCtx).Table("node_models").
+		Select("node_models.node_address AS node_address, node_models.model_file_hash AS model_file_hash, model_files.canonical_json AS canonical_json").
+		Joins("INNER JOIN model_files ON model_files.model_file_hash = node_models.model_file_hash").
+		Joins("INNER JOIN nodes ON nodes.address = node_models.node_address").
+		Where("model_files.model_file_source_hash = ?", sourceHash.Bytes()).
+		Where("nodes.status IN ?", []NodeStatus{NodeStatusAvailable, NodeStatusBusy}).
+		Order("node_models.node_address, node_models.model_file_hash").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ListNodeModelFileRows returns the disk inventory of the given nodes in
 // deterministic order. An empty address list returns the inventory of every node.
 func ListNodeModelFileRows(ctx context.Context, db *gorm.DB, nodeAddresses ...string) ([]NodeModelFileRow, error) {
@@ -78,6 +107,24 @@ func ListNodeInMemoryModels(ctx context.Context, db *gorm.DB) ([]NodeInMemoryMod
 	defer cancel()
 	var rows []NodeInMemoryModel
 	if err := db.WithContext(dbCtx).Order("node_address").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// ListNodeInMemoryModelsByAddresses returns the in-memory model rows of the
+// given nodes. An empty address list returns no rows.
+func ListNodeInMemoryModelsByAddresses(ctx context.Context, db *gorm.DB, addresses []string) ([]NodeInMemoryModel, error) {
+	if len(addresses) == 0 {
+		return nil, nil
+	}
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var rows []NodeInMemoryModel
+	if err := db.WithContext(dbCtx).
+		Where("node_address IN ?", addresses).
+		Order("node_address").
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil

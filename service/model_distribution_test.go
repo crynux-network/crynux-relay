@@ -6,6 +6,7 @@ import (
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"database/sql"
+	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
@@ -332,6 +333,120 @@ func TestRunModelDistributionRoundRespectsTaskHardwareRequirement(t *testing.T) 
 	}
 	if count := countDownloadModelEvents(t); count != 1 {
 		t.Fatalf("expected exactly one DownloadModel event, got %d", count)
+	}
+}
+
+func TestRunModelDistributionRoundEmitsFrozenCommitRevision(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	const commitA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	node := newDistributionTestNode("0xcandidate-frozen")
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	task := models.InferenceTask{
+		TaskIDCommitment:     "0xtask-frozen",
+		Status:               models.TaskQueued,
+		TaskType:             models.TaskTypeSD,
+		TaskArgs:             imageTaskArgs("model-a", ""),
+		CreateTime:           sql.NullTime{Time: now, Valid: true},
+		EstimatedNodeSeconds: 60,
+	}
+	requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
+	if err != nil {
+		t.Fatalf("derive requirements: %v", err)
+	}
+	if err := requirements.ResolveRevisions(map[int]string{0: commitA}); err != nil {
+		t.Fatalf("resolve revisions: %v", err)
+	}
+	task.SetModelRequirements(requirements)
+	files, err := requirements.ModelFiles()
+	if err != nil {
+		t.Fatalf("build model files: %v", err)
+	}
+	if err := models.UpsertModelFiles(ctx, db, files); err != nil {
+		t.Fatalf("upsert model files: %v", err)
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if err := runModelDistributionRound(ctx, db); err != nil {
+		t.Fatalf("distribution round: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 1 {
+		t.Fatalf("expected one DownloadModel event, got %d", count)
+	}
+
+	var event models.Event
+	if err := db.Where("type = ?", "DownloadModel").Order("id desc").First(&event).Error; err != nil {
+		t.Fatalf("load DownloadModel event: %v", err)
+	}
+	var payload models.DownloadModelEvent
+	if err := json.Unmarshal([]byte(event.Args), &payload); err != nil {
+		t.Fatalf("decode DownloadModel event: %v", err)
+	}
+	if len(payload.ModelFiles) != 1 {
+		t.Fatalf("expected one model file in event, got %+v", payload.ModelFiles)
+	}
+	if payload.ModelFiles[0].Revision != commitA {
+		t.Fatalf("expected frozen commit in DownloadModel event, got %q", payload.ModelFiles[0].Revision)
+	}
+}
+
+func TestRunModelDistributionRoundKeepsHistoricalSourceEmptyRevision(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	node := newDistributionTestNode("0xcandidate-source")
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	task := models.InferenceTask{
+		TaskIDCommitment:     "0xtask-source",
+		Status:               models.TaskQueued,
+		TaskType:             models.TaskTypeSD,
+		TaskArgs:             imageTaskArgs("model-a", ""),
+		CreateTime:           sql.NullTime{Time: now, Valid: true},
+		EstimatedNodeSeconds: 60,
+	}
+	requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
+	if err != nil {
+		t.Fatalf("derive requirements: %v", err)
+	}
+	task.SetModelRequirements(requirements)
+	if len(requirements.RequiredModelFileSourceHashes) == 0 || len(requirements.RequiredModelFileHashes) != 0 {
+		t.Fatalf("expected historical source-only requirements, got exact=%v source=%v",
+			requirements.RequiredModelFileHashes, requirements.RequiredModelFileSourceHashes)
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if err := runModelDistributionRound(ctx, db); err != nil {
+		t.Fatalf("distribution round: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 1 {
+		t.Fatalf("expected one DownloadModel event, got %d", count)
+	}
+
+	var event models.Event
+	if err := db.Where("type = ?", "DownloadModel").Order("id desc").First(&event).Error; err != nil {
+		t.Fatalf("load DownloadModel event: %v", err)
+	}
+	var payload models.DownloadModelEvent
+	if err := json.Unmarshal([]byte(event.Args), &payload); err != nil {
+		t.Fatalf("decode DownloadModel event: %v", err)
+	}
+	if len(payload.ModelFiles) != 1 || payload.ModelFiles[0].Revision != "" {
+		t.Fatalf("expected historical source DownloadModel to keep empty revision, got %+v", payload.ModelFiles)
 	}
 }
 

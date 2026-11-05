@@ -110,6 +110,24 @@ func (e ModelFileEntry) ModelFileSourceHash() (Hash32, error) {
 	return sha256.Sum256(data), nil
 }
 
+// IsCommitSHA reports whether revision is a 40-character hexadecimal Git commit.
+func IsCommitSHA(revision string) bool {
+	if len(revision) != 40 {
+		return false
+	}
+	for i := 0; i < len(revision); i++ {
+		c := revision[i]
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		case c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // CanonicalJSON encodes v as JSON with sorted object keys, no insignificant
 // whitespace, and no HTML escaping. Numbers keep their decoded textual form.
 func CanonicalJSON(v any) ([]byte, error) {

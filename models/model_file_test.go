@@ -27,6 +27,20 @@ func entryFromJSON(t *testing.T, raw string) ModelFileEntry {
 	return entry
 }
 
+func TestIsCommitSHA(t *testing.T) {
+	if !IsCommitSHA("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+		t.Fatal("expected 40-hex commit to pass")
+	}
+	if !IsCommitSHA("ABCDEF0123456789abcdef0123456789ABCDEF01") {
+		t.Fatal("expected mixed-case 40-hex commit to pass")
+	}
+	for _, revision := range []string{"", "main", "v1.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "gggggggggggggggggggggggggggggggggggggggg"} {
+		if IsCommitSHA(revision) {
+			t.Fatalf("expected %q not to be a commit SHA", revision)
+		}
+	}
+}
+
 func TestModelFileHashIgnoresObjectKeyOrder(t *testing.T) {
 	must := mustHash(t)
 	a := entryFromJSON(t, `{"source_type":"huggingface","repository":"org/repo","revision":"abc","format":"gguf","format_kwargs":{"filename":"m.gguf","nested":{"x":1,"y":2}}}`)
