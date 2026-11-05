@@ -29,7 +29,7 @@ Relay MUST first apply these hard filters to form the qualified node set:
 
 ## Model File Gate
 
-Every task carries required model files derived from its TaskArgs: `RequiredModelFileHashes` holds the exact hashes of the entries with a revision, and `RequiredModelFileSourceHashes` holds the source hashes of the entries without a revision. `InferenceTask.ModelIDs` MUST be ignored by Relay matching.
+Every task carries required model files persisted at creation as `RequiredModelFileHashes` and `RequiredModelFileSourceHashes`. New tasks MUST store only exact lowercase commit hashes in `RequiredModelFileHashes`, with empty `RequiredModelFileSourceHashes`. `RequiredModelFileSourceHashes` remains for historical revision-less tasks. Matching MUST use these persisted hashes and MUST NOT recompute model file identity from `TaskArgs`. `InferenceTask.ModelIDs` MUST be ignored by Relay matching.
 
 A qualified node is model-ready only when its on-disk model file inventory contains every exact hash and at least one file of every source hash. When no qualified node is model-ready, Relay MUST leave the task queued and MUST NOT fall back to hardware-only or other qualification-only selection.
 

@@ -128,6 +128,27 @@ func TestBuildHeldModelFilesValidatesAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestBuildHeldModelFilesLowercasesCommitRevision(t *testing.T) {
+	const upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	const lower = "abcdef0123456789abcdef0123456789abcdef01"
+	files, err := BuildHeldModelFiles([]models.ModelFileEntry{
+		testModelFileEntry("org/model", upper),
+	})
+	if err != nil {
+		t.Fatalf("build held model files: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	entry, err := files[0].Entry()
+	if err != nil {
+		t.Fatalf("decode catalog entry: %v", err)
+	}
+	if entry.Revision != lower {
+		t.Fatalf("catalog revision = %q, want %q", entry.Revision, lower)
+	}
+}
+
 func newModelStateTestNode(t *testing.T) (*gorm.DB, models.Node) {
 	t.Helper()
 	initServiceTestConfig(t)
@@ -304,5 +325,59 @@ func TestNodeIndexEntryModelCoverage(t *testing.T) {
 	entry.CurrentModelCacheHash = nil
 	if entry.holdsRequiredModelInMemory(exactReq) {
 		t.Fatal("expected empty memory to miss the in-memory model")
+	}
+}
+
+func TestFrozenExactRequirementIgnoresSiblingCommit(t *testing.T) {
+	const commitA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const commitB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	hashA := testModelFileHash(t, "org/model", commitA)
+	hashB := testModelFileHash(t, "org/model", commitB)
+	sourceHash := testModelFileSourceHash(t, "org/model")
+	cacheHash := models.Hash32{9}
+
+	task := &models.InferenceTask{
+		TaskType: models.TaskTypeLLM,
+		TaskArgs: llmTaskArgs("org/model", ""),
+	}
+	requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
+	if err != nil {
+		t.Fatalf("derive requirements: %v", err)
+	}
+	if err := requirements.ResolveRevisions(map[int]string{0: commitA}); err != nil {
+		t.Fatalf("resolve revisions: %v", err)
+	}
+	task.SetModelRequirements(requirements)
+
+	req, err := newTaskModelRequirements(task)
+	if err != nil {
+		t.Fatalf("decode requirements: %v", err)
+	}
+	if len(req.exact) != 1 || req.exact[0] != hashA || len(req.source) != 0 {
+		t.Fatalf("expected persisted exact commit A only, got %+v", req)
+	}
+
+	holderA := &NodeIndexEntry{
+		OnDiskModelFileHashes:       map[models.Hash32]struct{}{hashA: {}},
+		OnDiskModelFileSourceHashes: map[models.Hash32]struct{}{sourceHash: {}},
+		CurrentModelCacheHash:       &cacheHash,
+		CurrentModelFileHashes:      map[models.Hash32]struct{}{hashA: {}},
+		CurrentModelFileSourceHashes: map[models.Hash32]struct{}{sourceHash: {}},
+	}
+	holderB := &NodeIndexEntry{
+		OnDiskModelFileHashes:       map[models.Hash32]struct{}{hashB: {}},
+		OnDiskModelFileSourceHashes: map[models.Hash32]struct{}{sourceHash: {}},
+		CurrentModelCacheHash:       &cacheHash,
+		CurrentModelFileHashes:      map[models.Hash32]struct{}{hashB: {}},
+		CurrentModelFileSourceHashes: map[models.Hash32]struct{}{sourceHash: {}},
+	}
+	if !holderA.holdsRequiredModelFiles(req) || holderB.holdsRequiredModelFiles(req) {
+		t.Fatal("expected only commit A holder to satisfy the frozen exact requirement")
+	}
+
+	resolved, err := resolveExecutionModelFileHashes(req, []models.NodeModelFileRow{fileRowOf(t, "org/model", commitA)}, map[models.Hash32]struct{}{hashA: {}})
+	if err != nil || len(resolved) != 1 || resolved[0] != hashA {
+		t.Fatalf("expected execution model files to remain commit A, got %v, %v", resolved, err)
 	}
 }

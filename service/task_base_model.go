@@ -49,9 +49,10 @@ func SetHuggingFaceClientForTest(client *huggingface.Client) {
 // PrepareTaskModelRequirements derives the model file requirements of a task
 // from its TaskArgs and registers the exact model files in the catalog.
 //
-// A file that no node holds is checked on the Hub. An entry with a revision
-// is resolved to its commit SHA, so the exact hash always names a commit. An
-// entry without a revision keeps its revision-less source identity.
+// Every required entry is frozen to a commit SHA. An entry with an empty
+// revision reuses a commit already held by Available or Busy nodes when one
+// exists; otherwise Relay resolves HuggingFace main. An explicit revision is
+// resolved to its commit SHA unless it is already a held commit.
 func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType models.TaskType, taskArgs string) (*models.TaskModelRequirements, error) {
 	requirements, err := models.DeriveTaskModelRequirements(taskArgs, taskType)
 	if err != nil {
@@ -62,16 +63,18 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 	revisions := make(map[int]string)
 	for index, entry := range requirements.Entries {
 		if entry.Revision != "" {
-			hash, err := entry.ModelFileHash()
-			if err != nil {
-				return nil, err
-			}
-			held, err := models.NodeModelExists(ctx, db, hash)
-			if err != nil {
-				return nil, err
-			}
-			if held {
-				continue
+			if models.IsCommitSHA(entry.Revision) {
+				hash, err := entry.ModelFileHash()
+				if err != nil {
+					return nil, err
+				}
+				held, err := models.NodeModelExists(ctx, db, hash)
+				if err != nil {
+					return nil, err
+				}
+				if held {
+					continue
+				}
 			}
 			sha, err := client.ResolveRevision(ctx, entry.Repository, entry.Revision)
 			if err != nil {
@@ -81,22 +84,27 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 			continue
 		}
 
-		sourceHash, err := entry.ModelFileSourceHash()
+		selected, found, err := SelectNetworkModelFileRevision(ctx, db, entry)
 		if err != nil {
 			return nil, err
 		}
-		held, err := models.NodeModelSourceExists(ctx, db, sourceHash)
-		if err != nil {
-			return nil, err
-		}
-		if held {
+		if found {
+			revisions[index] = selected.Revision
 			continue
 		}
+
 		// SD entries[0] is always the base pipeline from DeriveTaskModelRequirements.
 		requirePipeline := taskType == models.TaskTypeSD && index == 0
-		if err := validateEntryOnHub(ctx, client, entry, requirePipeline); err != nil {
+		if requirePipeline {
+			if err := validateEntryOnHub(ctx, client, entry, true); err != nil {
+				return nil, hubValidationError(err)
+			}
+		}
+		sha, err := client.ResolveRevision(ctx, entry.Repository, "main")
+		if err != nil {
 			return nil, hubValidationError(err)
 		}
+		revisions[index] = sha
 	}
 
 	if len(revisions) > 0 {

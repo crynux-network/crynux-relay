@@ -81,6 +81,28 @@ func TestValidateBaseModelNotFoundAndUnavailable(t *testing.T) {
 	}
 }
 
+func TestResolveRevisionLowercasesSHA(t *testing.T) {
+	const upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	const lower = "abcdef0123456789abcdef0123456789abcdef01"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/models/org/model/revision/main" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"sha": upper})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, time.Second, time.Minute)
+	sha, err := client.ResolveRevision(context.Background(), "org/model", "main")
+	if err != nil {
+		t.Fatalf("ResolveRevision: %v", err)
+	}
+	if sha != lower {
+		t.Fatalf("ResolveRevision sha = %q, want %q", sha, lower)
+	}
+}
+
 func TestFetchRepoFileJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/org/model/resolve/main/config.json" {
