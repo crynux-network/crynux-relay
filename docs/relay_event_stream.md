@@ -67,7 +67,7 @@ The node SHALL handle these event types:
 
 ## DownloadModel Production
 
-Relay MUST produce `DownloadModel` events only from the model distribution controller specified in [model_distribution.md](./model_distribution.md). Neither task matching nor task start produces these events.
+Relay MUST produce `DownloadModel` events only from the model distribution paths specified in [model_distribution.md](./model_distribution.md): the demand-driven controller, required-models-by-VRAM evaluation after node join, required-models-by-VRAM evaluation after capability synchronization, and the one-shot required-models-by-VRAM evaluation for online nodes at process startup. Neither task matching nor task start produces these events.
 
 Each `DownloadModel` event MUST target one selected qualified node and contain the complete required model file set as a `model_files` list, whose set is not covered by that node's authoritative on-disk model file inventory. A member with a revision is an exact file; a member without a revision is a source of which the node downloads one revision.
 
@@ -81,6 +81,7 @@ The AddModelID node report MUST remain authoritative for the corresponding on-di
 |---------------|-------------|
 | Node lifecycle service | `NodeJoin`, `NodeQuit`, `NodeKickedOut`, `NodeSlashed` |
 | Model distribution controller | `DownloadModel` |
+| Required-models-by-VRAM Ensure after join, capability synchronization, and process startup | `DownloadModel` |
 | Task status service | `TaskStarted`, `TaskScoreReady`, `TaskErrorReported`, `TaskValidated`, `TaskEndInvalidated`, `TaskEndGroupRefund`, `TaskEndAborted`, `TaskEndSuccess`, `TaskEndGroupSuccess` |
 | Node staking chain processor | `NodeStaking` |
 | Delegated staking chain processor | `DelegatorStaking`, `DelegatorUnstaking`, `NodeDelegatorShareChanged`, `DelegatedStakingSlashed` |

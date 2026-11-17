@@ -224,3 +224,169 @@ func TestSyncNodeCapabilitiesEmitsRequiredModelDownload(t *testing.T) {
 		t.Fatalf("unexpected selections: %+v", selections)
 	}
 }
+
+func TestEnsureRequiredModelDownloadsForOnlineNodesEmitsForAvailableAndBusy(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+
+	setRequiredModelsByVRAMForTest(t, []config.RequiredModelsByVRAMConfig{
+		requiredLLMConfigItem(24, "org/online-model", "rev-1"),
+	})
+
+	available := newDistributionTestNode("0xonline-available")
+	busy := newDistributionTestNode("0xonline-busy")
+	busy.Status = models.NodeStatusBusy
+	paused := newDistributionTestNode("0xonline-paused")
+	paused.Status = models.NodeStatusPaused
+	quit := newDistributionTestNode("0xonline-quit")
+	quit.Status = models.NodeStatusQuit
+	for _, node := range []models.Node{available, busy, paused, quit} {
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatalf("create node: %v", err)
+		}
+	}
+
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err != nil {
+		t.Fatalf("ensure online nodes: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 2 {
+		t.Fatalf("expected downloads for Available and Busy only, got %d", count)
+	}
+
+	for _, address := range []string{available.Address, busy.Address} {
+		selections, err := models.GetNodeModelDownloadSelectionsByNodeAddress(ctx, db, address)
+		if err != nil {
+			t.Fatalf("load selections for %s: %v", address, err)
+		}
+		if len(selections) != 1 || selections[0].Status != models.NodeModelDownloadSelectionPending {
+			t.Fatalf("unexpected selections for %s: %+v", address, selections)
+		}
+	}
+	for _, address := range []string{paused.Address, quit.Address} {
+		selections, err := models.GetNodeModelDownloadSelectionsByNodeAddress(ctx, db, address)
+		if err != nil {
+			t.Fatalf("load selections for %s: %v", address, err)
+		}
+		if len(selections) != 0 {
+			t.Fatalf("expected no selections for %s, got %+v", address, selections)
+		}
+	}
+}
+
+func TestEnsureRequiredModelDownloadsForOnlineNodesIdempotentAndSkipsCovered(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+
+	setRequiredModelsByVRAMForTest(t, []config.RequiredModelsByVRAMConfig{
+		requiredLLMConfigItem(24, "org/online-idem", "rev-1"),
+	})
+
+	pendingNode := newDistributionTestNode("0xonline-pending")
+	coveredNode := newDistributionTestNode("0xonline-covered")
+	for _, node := range []models.Node{pendingNode, coveredNode} {
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatalf("create node: %v", err)
+		}
+	}
+	seedNodeModelFiles(t, db, coveredNode.Address, testModelFile(t, "org/online-idem", "rev-1"))
+
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err != nil {
+		t.Fatalf("first ensure online nodes: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 1 {
+		t.Fatalf("expected one download for uncovered node, got %d", count)
+	}
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err != nil {
+		t.Fatalf("second ensure online nodes: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 1 {
+		t.Fatalf("expected no additional download with pending selection, got %d", count)
+	}
+}
+
+func TestEnsureRequiredModelDownloadsForOnlineNodesRetriesExpired(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	setRequiredModelsByVRAMForTest(t, []config.RequiredModelsByVRAMConfig{
+		requiredLLMConfigItem(24, "org/online-expired", "rev-1"),
+	})
+
+	node := newDistributionTestNode("0xonline-expired")
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	exact := []models.Hash32{testModelFileHash(t, "org/online-expired", "rev-1")}
+	selection := models.NewNodeModelDownloadSelection(exact, nil, node.Address, 24, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	if err := models.CreateNodeModelDownloadSelection(ctx, db, selection); err != nil {
+		t.Fatalf("create selection: %v", err)
+	}
+	if err := models.ExpireNodeModelDownloadSelections(ctx, db, now); err != nil {
+		t.Fatalf("expire selections: %v", err)
+	}
+
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err != nil {
+		t.Fatalf("ensure online nodes: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 1 {
+		t.Fatalf("expected one DownloadModel after expired selection, got %d", count)
+	}
+	selections, err := models.GetNodeModelDownloadSelectionsByNodeAddress(ctx, db, node.Address)
+	if err != nil {
+		t.Fatalf("load selections: %v", err)
+	}
+	pendingCount := 0
+	for _, s := range selections {
+		if s.Status == models.NodeModelDownloadSelectionPending {
+			pendingCount++
+		}
+	}
+	if pendingCount != 1 {
+		t.Fatalf("expected one pending selection after retry, got %+v", selections)
+	}
+}
+
+func TestEnsureRequiredModelDownloadsForOnlineNodesEmptyConfig(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+	ctx := context.Background()
+
+	setRequiredModelsByVRAMForTest(t, nil)
+
+	node := newDistributionTestNode("0xonline-empty")
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err != nil {
+		t.Fatalf("ensure online nodes: %v", err)
+	}
+	if count := countDownloadModelEvents(t); count != 0 {
+		t.Fatalf("expected no downloads with empty required models, got %d", count)
+	}
+}
+
+func TestEnsureRequiredModelDownloadsForOnlineNodesReturnsError(t *testing.T) {
+	initModelDistributionTest(t)
+	db := config.GetDB()
+
+	setRequiredModelsByVRAMForTest(t, []config.RequiredModelsByVRAMConfig{
+		requiredLLMConfigItem(24, "org/online-err", "rev-1"),
+	})
+
+	node := newDistributionTestNode("0xonline-err")
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err == nil {
+		t.Fatal("expected error from canceled context")
+	}
+}

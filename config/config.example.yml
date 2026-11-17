@@ -162,7 +162,6 @@ model_distribution:
   max_nodes: 10
   download_timeout_seconds: 1800
   # Example (disabled by default): force-download a Diffusers base plus a GGUF
-  # transformer onto nodes with GPU VRAM >= min_vram after join / capability sync.
   # - min_vram: 16
   #   task_type: 0
   #   model_files:

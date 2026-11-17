@@ -40,7 +40,8 @@ type RequiredModelFileEntryConfig struct {
 
 // RequiredModelsByVRAMConfig binds a minimum GPU VRAM to a required model file
 // set. Nodes with GPUVram >= MinVRAM receive DownloadModel events for the set
-// when their on-disk inventory does not already cover it.
+// when their on-disk inventory does not already cover it, after join, after
+// capability synchronization, and once for online nodes at process startup.
 type RequiredModelsByVRAMConfig struct {
 	MinVRAM    uint64                        `mapstructure:"min_vram"`
 	TaskType   uint8                         `mapstructure:"task_type"`
