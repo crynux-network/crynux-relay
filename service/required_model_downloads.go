@@ -97,6 +97,29 @@ func EnsureRequiredModelDownloads(ctx context.Context, db *gorm.DB, node *models
 	return nil
 }
 
+// EnsureRequiredModelDownloadsForOnlineNodes runs EnsureRequiredModelDownloads
+// once for every Available or Busy node. It is the process-startup trigger for
+// required_models_by_vram and uses the same per-node Ensure path as join and
+// capability synchronization.
+func EnsureRequiredModelDownloadsForOnlineNodes(ctx context.Context, db *gorm.DB) error {
+	appCfg := config.GetConfig()
+	if appCfg == nil || len(appCfg.ModelDistribution.RequiredModelsByVRAM) == 0 {
+		return nil
+	}
+
+	nodes, err := getDownloadCandidateNodes(ctx, db)
+	if err != nil {
+		return err
+	}
+	for i := range nodes {
+		node := nodes[i]
+		if err := EnsureRequiredModelDownloads(ctx, db, &node); err != nil {
+			return fmt.Errorf("ensure required model downloads for node %s: %w", node.Address, err)
+		}
+	}
+	return nil
+}
+
 func requiredModelsMatchingVRAM(items []config.RequiredModelsByVRAMConfig, gpuVram uint64) []config.RequiredModelsByVRAMConfig {
 	matched := make([]config.RequiredModelsByVRAMConfig, 0, len(items))
 	for _, item := range items {

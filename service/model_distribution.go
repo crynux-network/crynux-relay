@@ -117,6 +117,10 @@ func StartModelDistribution(ctx context.Context, db *gorm.DB) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	if err := EnsureRequiredModelDownloadsForOnlineNodes(ctx, db); err != nil {
+		log.Errorf("ModelDistribution: ensure required model downloads for online nodes error: %v", err)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
