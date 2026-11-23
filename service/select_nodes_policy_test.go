@@ -35,6 +35,10 @@ func initSelectionPolicyTestConfig(t *testing.T, minCount uint64, whitelistEnabl
 		"  minimum_node_name_number: " + strconv.FormatUint(minCount, 10) + "\n" +
 		"  node_name_whitelist_enabled: " + whitelistFlag + "\n" +
 		"  passive_slash_mode: true\n" +
+		"  video_distance_mean_threshold: 10\n" +
+		"  video_distance_max_threshold: 20\n" +
+		"  video_audio_distance_threshold: 16\n" +
+		"  video_upload_audio_distance_threshold: 2\n" +
 		"  history_cleanup_batch_size: 2000\n" +
 		"  batch_create_max_items: 100\n" +
 		"  batch_status_max_items: 500\n" +

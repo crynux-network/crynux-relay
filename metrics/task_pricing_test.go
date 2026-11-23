@@ -18,9 +18,10 @@ func gaugeValue(t *testing.T, metric prometheus.Metric) float64 {
 
 func TestCalibrationMetricsKeepBaseUnits(t *testing.T) {
 	ResetTaskPricingCalibrationMetrics()
-	SetTaskPricingCalibration("sd", "sd-model", "auto", "hash-a", 24, 30, 0.00004, [6]float64{})
-	SetTaskPricingCalibration("llm", "llm-model", "bfloat16", "hash-b", 24, 0, 0, [6]float64{12, 0.002, 0.3, 120, 10, 5})
-	SetGPUExecutionCalibration("llm", "A100", 40, "llm-model", "bfloat16", "hash-b", 16, 24, 15, 0.00003, [6]float64{10, 0.001, 0.2, 100, 8, 4}, 9)
+	SetTaskPricingCalibration("sd", "sd-model", "auto", "hash-a", 24, 30, 0.00004, 0, 0, [6]float64{})
+	SetTaskPricingCalibration("video", "video-model", "bfloat16", "hash-v", 24, 0, 0, 45, 0.000001, [6]float64{})
+	SetTaskPricingCalibration("llm", "llm-model", "bfloat16", "hash-b", 24, 0, 0, 0, 0, [6]float64{12, 0.002, 0.3, 120, 10, 5})
+	SetGPUExecutionCalibration("llm", "A100", 40, "llm-model", "bfloat16", "hash-b", 16, 24, 15, 0.00003, 40, 0.000002, [6]float64{10, 0.001, 0.2, 100, 8, 4}, 9)
 
 	assertGauge := func(name string, got, want float64) {
 		t.Helper()
@@ -30,6 +31,8 @@ func TestCalibrationMetricsKeepBaseUnits(t *testing.T) {
 	}
 	assertGauge("aggregate sd overhead", gaugeValue(t, TaskPricingSDOverheadSeconds.WithLabelValues("sd-model", "auto", "hash-a", "24")), 30)
 	assertGauge("aggregate sd", gaugeValue(t, TaskPricingSecondsPerSDPixelStep.WithLabelValues("sd-model", "auto", "hash-a", "24")), 0.00004)
+	assertGauge("aggregate video overhead", gaugeValue(t, TaskPricingVideoOverheadSeconds.WithLabelValues("video-model", "bfloat16", "hash-v", "24")), 45)
+	assertGauge("aggregate video rate", gaugeValue(t, TaskPricingSecondsPerVideoUnit.WithLabelValues("video-model", "bfloat16", "hash-v", "24")), 0.000001)
 	assertGauge("aggregate llm input", gaugeValue(t, TaskPricingLLMCoefficient.WithLabelValues("text_input", "llm-model", "bfloat16", "hash-b", "24")), 0.002)
 	assertGauge("aggregate llm image", gaugeValue(t, TaskPricingLLMCoefficient.WithLabelValues("image_count", "llm-model", "bfloat16", "hash-b", "24")), 10)
 	labels := []string{"llm", "A100", "40", "llm-model", "bfloat16", "hash-b", "16", "24"}

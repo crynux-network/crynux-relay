@@ -10,7 +10,7 @@ import (
 )
 
 type GetTaskWaitingTimeHistogramInput struct {
-	TaskType TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,All"`
+	TaskType TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,Video,All"`
 	Period   TimeUnit       `query:"period" validate:"required" enum:"Hour,Day,Week"`
 }
 
@@ -43,6 +43,8 @@ func GetTaskWaitingTimeHistogram(_ *gin.Context, input *GetTaskWaitingTimeHistog
 		subQuery = subQuery.Where("task_type = ?", models.TaskTypeSD)
 	case TextTaskType:
 		subQuery = subQuery.Where("task_type = ?", models.TaskTypeLLM)
+	case VideoTaskType:
+		subQuery = subQuery.Where("task_type = ?", models.TaskTypeVideo)
 	}
 
 	rows, err := config.GetDB().Table("(?) as s", subQuery).Select("s.seconds AS seconds", "SUM(s.count) AS count").Group("seconds").Order("seconds").Rows()

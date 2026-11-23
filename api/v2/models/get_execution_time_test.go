@@ -58,6 +58,10 @@ func initExecutionTimeAPITest(t *testing.T) {
 		"  gpu_flops_file: \"config/gpu_flops.json\"\n" +
 		"task:\n" +
 		"  passive_slash_mode: true\n" +
+		"  video_distance_mean_threshold: 10\n" +
+		"  video_distance_max_threshold: 20\n" +
+		"  video_audio_distance_threshold: 16\n" +
+		"  video_upload_audio_distance_threshold: 2\n" +
 		"  history_cleanup_batch_size: 2000\n" +
 		"  batch_create_max_items: 100\n" +
 		"  batch_status_max_items: 500\n" +
@@ -70,6 +74,8 @@ func initExecutionTimeAPITest(t *testing.T) {
 		"task_pricing:\n" +
 		"  initial_sd_overhead_seconds: 30\n" +
 		"  initial_seconds_per_sd_pixel_step: 0.00003814697265625\n" +
+		"  initial_video_overhead_seconds: 30\n" +
+		"  initial_seconds_per_video_unit: 0.000001\n" +
 		"  initial_llm_constant_seconds: 30\n" +
 		"  initial_llm_seconds_per_input_byte: 0.0001\n" +
 		"  initial_llm_seconds_per_output_token: 0.1\n" +

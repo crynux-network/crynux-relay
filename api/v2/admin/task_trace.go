@@ -281,6 +281,9 @@ func (b *taskTraceBuilder) addTaskCreated() {
 	if b.task.SDUnits != nil {
 		details["sd_units"] = *b.task.SDUnits
 	}
+	if b.task.VideoUnits != nil {
+		details["video_units"] = *b.task.VideoUnits
+	}
 	if b.task.LLMInputBytes != nil {
 		details["llm_input_bytes"] = *b.task.LLMInputBytes
 	}

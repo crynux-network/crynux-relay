@@ -1,6 +1,6 @@
 # Task Execution Time Coefficients API
 
-This document specifies the public Relay APIs that return SD and LLM execution-time coefficients. Coefficient production is specified only in [task_execution_parameters.md](./task_execution_parameters.md). These APIs MUST return the selected base coefficients. They MUST NOT receive workload values, MUST NOT return a combined `estimated_seconds`, and MUST NOT apply Timeout selection or `timeout_multiplier`.
+This document specifies the public Relay APIs that return SD, video, and LLM execution-time coefficients. Coefficient production is specified only in [task_execution_parameters.md](./task_execution_parameters.md). These APIs MUST return the selected base coefficients. They MUST NOT receive workload values, MUST NOT return a combined `estimated_seconds`, and MUST NOT apply Timeout selection or `timeout_multiplier`.
 
 SDFT LoRA MUST NOT have an execution-time coefficient API.
 
@@ -11,15 +11,16 @@ Relay MUST expose:
 ```text
 GET /v2/models/sd/execution-time
 GET /v2/models/llm/execution-time
+GET /v2/models/video/execution-time
 ```
 
-Both endpoints MUST be public and MUST NOT require authentication.
+All three endpoints MUST be public and MUST NOT require authentication.
 
 A request that names a model absent from `loaded_models` MUST still return coefficients. Relay MUST use matching calibration records when they exist and MUST use configured initial parameters when they do not. These endpoints MUST NOT return 404.
 
 ## Query Parameters
 
-Both endpoints MUST accept:
+All three endpoints MUST accept:
 
 | Parameter | Required | Rules |
 |-----------|----------|-------|
@@ -50,7 +51,7 @@ Relay MUST return 400 when:
 
 ## Parameter Selection
 
-Relay MUST select coefficients from the in-memory execution-parameter cache specified in [task_execution_parameters.md](./task_execution_parameters.md). `min_vram` selection MUST match SD and LLM task creation when `RequiredGPU` is empty. `gpu_name` and `gpu_vram` selection MUST match SD and LLM task creation when `RequiredGPU` and `RequiredGPUVRAM` are set. Relay MUST NOT implement a second selection path and MUST NOT use Timeout selection.
+Relay MUST select coefficients from the in-memory execution-parameter cache specified in [task_execution_parameters.md](./task_execution_parameters.md). `min_vram` selection MUST match SD, video, and LLM task creation when `RequiredGPU` is empty. `gpu_name` and `gpu_vram` selection MUST match SD, video, and LLM task creation when `RequiredGPU` and `RequiredGPUVRAM` are set. Relay MUST NOT implement a second selection path and MUST NOT use Timeout selection.
 
 An explicit `dtype` MUST select only records whose `ExecutionDType` equals that value. A requested dtype of `auto` MUST select `auto` records and records that store a reported actual execution dtype.
 
@@ -85,6 +86,20 @@ SD:
 ```
 
 `overhead_seconds` and `seconds_per_sd_pixel_step` MUST come from the selected calibration records, or from the configured initial SD overhead and initial SD rate when no record is selected.
+
+Video:
+
+```json
+{
+  "message": "success",
+  "data": {
+    "overhead_seconds": 30,
+    "seconds_per_video_unit": 0.000001
+  }
+}
+```
+
+`overhead_seconds` and `seconds_per_video_unit` MUST come from the selected video calibration records, or from `task_pricing.initial_video_overhead_seconds` and `task_pricing.initial_seconds_per_video_unit` when no record is selected.
 
 LLM:
 
@@ -124,6 +139,14 @@ estimated_seconds =
     + num_images * image_width * image_height * steps * seconds_per_sd_pixel_step
 ```
 
+Video:
+
+```
+estimated_seconds =
+    overhead_seconds
+    + resolved_width * resolved_height * num_frames * steps * seconds_per_video_unit
+```
+
 LLM:
 
 ```
@@ -136,4 +159,4 @@ estimated_seconds =
     + seconds_per_megapixel * (image_pixels / 1000000)
 ```
 
-`model_switched` MUST be `1` when the selected node must switch models and `0` otherwise. These APIs MUST NOT accept `input_tokens`, `output_tokens`, `num_images`, width, height, or `steps`.
+`model_switched` MUST be `1` when the selected node must switch models and `0` otherwise. These APIs MUST NOT accept `input_tokens`, `output_tokens`, `num_images`, `num_frames`, width, height, or `steps`.

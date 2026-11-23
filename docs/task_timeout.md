@@ -1,6 +1,6 @@
 # Task Timeout Flow
 
-This document specifies task-stage deadlines and all deadline-expiration effects. Creator-supplied queue wait budgets for normal SD and LLM tasks are specified in [queue_timeout.md](./queue_timeout.md). Queue priority is specified in [task-pricing.md](./task-pricing.md). Execution parameter calibration is specified in [task_execution_parameters.md](./task_execution_parameters.md).
+This document specifies task-stage deadlines and all deadline-expiration effects. Creator-supplied queue wait budgets for normal SD, LLM, and video tasks are specified in [queue_timeout.md](./queue_timeout.md). Queue priority is specified in [task-pricing.md](./task-pricing.md). Execution parameter calibration is specified in [task_execution_parameters.md](./task_execution_parameters.md).
 
 ## Current-Stage Deadline
 
@@ -8,7 +8,7 @@ Relay MUST assign exactly one active deadline to each non-terminal task accordin
 
 | Current status | Waiting for | Deadline | Expiration state and reason | Fee handling | Node health | Node Busy and finish |
 |---|---|---|---|---|---|---|
-| `TaskQueued` | Relay node assignment | Normal SD/LLM: `CreateTime +` resolved queue wait from [queue_timeout.md](./queue_timeout.md); SDFT LoRA: `CreateTime + 3 minutes + Timeout` | `TaskEndAborted`, `TaskAbortTimeout` | Full `TaskRefund`; task income MUST NOT be created | No selected node; no penalty | No selected node; `nodeFinishTask` MUST NOT run |
+| `TaskQueued` | Relay node assignment | Normal SD/LLM/video: `CreateTime +` resolved queue wait from [queue_timeout.md](./queue_timeout.md); SDFT LoRA: `CreateTime + 3 minutes + Timeout` | `TaskEndAborted`, `TaskAbortTimeout` | Full `TaskRefund`; task income MUST NOT be created | No selected node; no penalty | No selected node; `nodeFinishTask` MUST NOT run |
 | `TaskStarted`, `TaskParametersUploaded` | Node download, execution, score submission, or error report | `StartTime + Timeout` | `TaskEndAborted`, `TaskAbortTimeout` | Full `TaskRefund`; task income MUST NOT be created | Execution-timeout health penalty MUST apply | Node MUST remain `Busy` until expiration processing calls `nodeFinishTask` |
 | `TaskScoreReady`, `TaskErrorReported` | Creator application validation | `ScoreReadyTime + app_validation_timeout_seconds` | `TaskEndAborted`, `TaskAbortCreatorValidationTimeout` | `TaskRefund` MUST NOT be created; the task's full fee MUST be split by successful-task DAO, node operator, and eligible delegator rules | No penalty; no success health boost | Node MUST remain `Busy` until expiration processing calls `nodeFinishTask` |
 | `TaskValidated`, `TaskGroupValidated` | Node result upload | `ValidatedTime + result_upload_timeout_seconds` | `TaskEndAborted`, `TaskAbortResultUploadTimeout` | Full `TaskRefund`; task income MUST NOT be created | Result-upload-timeout health penalty MUST apply | Node MUST remain `Busy` until expiration processing calls `nodeFinishTask` |
@@ -19,7 +19,7 @@ Queue priority affects dispatch order only. It MUST NOT alter the resolved queue
 
 ## Execution Timeout
 
-Creators MUST NOT supply the execution Timeout for normal SD or LLM tasks. Relay MUST ignore a creator-supplied value for these task types.
+Creators MUST NOT supply the execution Timeout for normal SD, LLM, or video tasks. Relay MUST ignore a creator-supplied value for these task types.
 
 After Relay selects the node and exact GPU variant, Relay MUST calculate normal-task `Timeout` from the frozen model execution configuration and in-memory records defined in [task_execution_parameters.md](./task_execution_parameters.md). Requested `auto` MUST compare complete predictions from `auto` and reported actual dtype records. Unknown-model fallback MUST use the nearest task `MinVRAM` interval, prefer exact-GPU records over other GPU names with the same VRAM, and use the maximum complete prediction among equal-distance records.
 
@@ -35,6 +35,17 @@ Timeout = ceil(clamp(
 ```
 
 `overhead_seconds` and `seconds_per_sd_pixel_step` MUST come from the selected in-memory records. Timeout calculation MUST NOT read a configured fixed SD overhead.
+
+For video:
+
+```
+Timeout = ceil(clamp(
+    min_execution_timeout_seconds,
+    max_execution_timeout_seconds,
+    (video_overhead_seconds + VideoUnits * seconds_per_video_unit)
+        * timeout_multiplier
+))
+```
 
 For LLM:
 
@@ -63,7 +74,7 @@ The persisted execution GPU and estimated completion time MUST remain immutable 
 
 Execution Timeout covers only the period from `TaskStarted` until score submission or task-error reporting. It MUST NOT include queue waiting, creator validation, or result upload.
 
-SDFT LoRA MUST retain its creator-supplied Timeout for the complete task lifecycle and MUST NOT enter execution-parameter calibration or the normal SD/LLM staged timeout flow.
+SDFT LoRA MUST retain its creator-supplied Timeout for the complete task lifecycle and MUST NOT enter execution-parameter calibration or the normal SD, LLM, and video staged timeout flow.
 
 ## Creator Validation Timeout
 

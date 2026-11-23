@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/utils"
@@ -160,6 +161,43 @@ func checkHammingDistance(h1, h2 []byte, threshold uint64) bool {
 	return true
 }
 
+func checkVideoHammingDistance(h1, h2 []byte, expectedFrames int, meanThreshold float64, maxThreshold, audioThreshold uint64) bool {
+	if len(h1) == 0 || len(h1) != len(h2) || len(h1)%8 != 0 {
+		return false
+	}
+	indices, err := blockchain.SampledVideoFrameIndices(expectedFrames)
+	if err != nil || len(indices) == 0 {
+		return false
+	}
+	visualBlocks := len(indices)
+	visualBytes := visualBlocks * 8
+	hasAudio := false
+	if len(h1) == visualBytes+8 {
+		hasAudio = true
+	} else if len(h1) != visualBytes {
+		return false
+	}
+
+	var visualSum uint64
+	for i := 0; i < visualBytes; i += 8 {
+		distance := uint64(utils.HammingDistance(h1[i:i+8], h2[i:i+8]))
+		if distance >= maxThreshold {
+			return false
+		}
+		visualSum += distance
+	}
+	if float64(visualSum)/float64(visualBlocks) >= meanThreshold {
+		return false
+	}
+	if hasAudio {
+		audioDistance := uint64(utils.HammingDistance(h1[visualBytes:visualBytes+8], h2[visualBytes:visualBytes+8]))
+		if audioDistance >= audioThreshold {
+			return false
+		}
+	}
+	return true
+}
+
 func compareTaskScore(task1, task2 *models.InferenceTask, threshold uint64) bool {
 	if task1.TaskType != task2.TaskType {
 		return false
@@ -170,9 +208,31 @@ func compareTaskScore(task1, task2 *models.InferenceTask, threshold uint64) bool
 	if task1.Status == models.TaskScoreReady {
 		switch task1.TaskType {
 		case models.TaskTypeSD, models.TaskTypeSDFTLora:
-			h1 := hexutil.MustDecode(task1.Score)
-			h2 := hexutil.MustDecode(task2.Score)
+			h1, err1 := hexutil.Decode(task1.Score)
+			h2, err2 := hexutil.Decode(task2.Score)
+			if err1 != nil || err2 != nil {
+				return false
+			}
 			return checkHammingDistance(h1, h2, threshold)
+		case models.TaskTypeVideo:
+			h1, err1 := hexutil.Decode(task1.Score)
+			h2, err2 := hexutil.Decode(task2.Score)
+			if err1 != nil || err2 != nil {
+				return false
+			}
+			numFrames, _, _, err := blockchain.ExpectedVideoTaskSpec(task1.TaskArgs)
+			if err != nil {
+				return false
+			}
+			taskCfg := config.GetConfig().Task
+			return checkVideoHammingDistance(
+				h1,
+				h2,
+				numFrames,
+				taskCfg.VideoDistanceMeanThreshold,
+				taskCfg.VideoDistanceMaxThreshold,
+				taskCfg.VideoAudioDistanceThreshold,
+			)
 		case models.TaskTypeLLM:
 			return task1.Score == task2.Score
 		default:
@@ -520,6 +580,12 @@ func ValidateTaskGroup(ctx context.Context, originTasks []*models.InferenceTask,
 			(task.Status == models.TaskGroupValidated || task.Status == models.TaskEndGroupRefund) {
 			if err := CalibrateValidatedSDTask(task); err != nil {
 				log.Errorf("ValidateTaskGroup: failed to calibrate SD task %s: %v", task.TaskIDCommitment, err)
+			}
+			DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+		} else if task.TaskType == models.TaskTypeVideo &&
+			(task.Status == models.TaskGroupValidated || task.Status == models.TaskEndGroupRefund) {
+			if err := CalibrateValidatedVideoTask(task); err != nil {
+				log.Errorf("ValidateTaskGroup: failed to calibrate video task %s: %v", task.TaskIDCommitment, err)
 			}
 			DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
 		}

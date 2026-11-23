@@ -5,6 +5,7 @@ type TaskTypeString string
 const (
 	ImageTaskType TaskTypeString = "Image"
 	TextTaskType  TaskTypeString = "Text"
+	VideoTaskType TaskTypeString = "Video"
 	AllTaskType   TaskTypeString = "All"
 )
 

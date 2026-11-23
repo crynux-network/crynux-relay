@@ -3,7 +3,6 @@ package service
 import (
 	"crynux_relay/config"
 	"crynux_relay/models"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -114,16 +113,7 @@ func logNodeHealthEvent(eventName string, node *models.Node, task *models.Infere
 }
 
 func taskTypeTag(taskType models.TaskType) string {
-	switch taskType {
-	case models.TaskTypeLLM:
-		return "LLM"
-	case models.TaskTypeSD:
-		return "SD"
-	case models.TaskTypeSDFTLora:
-		return "SDFTLora"
-	default:
-		return fmt.Sprintf("Unknown(%d)", taskType)
-	}
+	return taskType.DisplayLabel()
 }
 
 func taskModelLabel(task *models.InferenceTask) string {

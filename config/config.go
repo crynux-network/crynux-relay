@@ -226,6 +226,18 @@ func checkTaskConfig() error {
 	if appConfig.Task.PassiveSlashMode == nil {
 		return errors.New("task.passive_slash_mode is not set")
 	}
+	if appConfig.Task.VideoDistanceMeanThreshold <= 0 || appConfig.Task.VideoDistanceMeanThreshold > 64 {
+		return errors.New("task.video_distance_mean_threshold must be in (0, 64]")
+	}
+	if appConfig.Task.VideoDistanceMaxThreshold == 0 || appConfig.Task.VideoDistanceMaxThreshold > 64 {
+		return errors.New("task.video_distance_max_threshold must be in [1, 64]")
+	}
+	if appConfig.Task.VideoAudioDistanceThreshold == 0 || appConfig.Task.VideoAudioDistanceThreshold > 64 {
+		return errors.New("task.video_audio_distance_threshold must be in [1, 64]")
+	}
+	if appConfig.Task.VideoUploadAudioDistanceThreshold == nil || *appConfig.Task.VideoUploadAudioDistanceThreshold > 64 {
+		return errors.New("task.video_upload_audio_distance_threshold must be in [0, 64]")
+	}
 	if appConfig.Task.HistoryCleanupBatchSize <= 0 {
 		return errors.New("task.history_cleanup_batch_size is not set")
 	}
@@ -257,6 +269,12 @@ func checkTaskPricingConfig() error {
 	}
 	if pricing.InitialSecondsPerSDPixelStep <= 0 {
 		return errors.New("task_pricing.initial_seconds_per_sd_pixel_step is not set")
+	}
+	if pricing.InitialVideoOverheadSeconds <= 0 {
+		return errors.New("task_pricing.initial_video_overhead_seconds is not set")
+	}
+	if pricing.InitialSecondsPerVideoUnit <= 0 {
+		return errors.New("task_pricing.initial_seconds_per_video_unit is not set")
 	}
 	if pricing.InitialLLMConstantSeconds <= 0 {
 		return errors.New("task_pricing.initial_llm_constant_seconds is not set")
@@ -362,7 +380,7 @@ func checkModelDistributionConfig() error {
 		if item.MinVRAM == 0 {
 			return fmt.Errorf("model_distribution.required_models_by_vram[%d].min_vram is not set", i)
 		}
-		if item.TaskType > 2 {
+		if item.TaskType > 3 {
 			return fmt.Errorf("model_distribution.required_models_by_vram[%d].task_type is invalid", i)
 		}
 		if len(item.ModelFiles) == 0 {

@@ -24,8 +24,9 @@ var (
 type ModelKind string
 
 const (
-	ModelKindLLM ModelKind = "llm"
-	ModelKindSD  ModelKind = "sd"
+	ModelKindLLM   ModelKind = "llm"
+	ModelKindSD    ModelKind = "sd"
+	ModelKindVideo ModelKind = "video"
 	// ModelKindRepository only checks that the repository exists.
 	ModelKindRepository ModelKind = "repository"
 )
@@ -85,7 +86,12 @@ func (c *Client) ValidateBaseModel(ctx context.Context, kind ModelKind, modelID 
 		return err
 	}
 	if kind == ModelKindSD {
-		if err := validateSDSiblings(info.Siblings); err != nil {
+		if err := validateSDSiblings(info.Siblings, false); err != nil {
+			c.putCached(cacheKey, err)
+			return err
+		}
+	} else if kind == ModelKindVideo {
+		if err := validateSDSiblings(info.Siblings, true); err != nil {
 			c.putCached(cacheKey, err)
 			return err
 		}
@@ -216,13 +222,15 @@ func (c *Client) fetchJSON(ctx context.Context, endpoint string, target any) err
 }
 func validateSDSiblings(siblings []struct {
 	RFilename string `json:"rfilename"`
-}) error {
+}, allowModular bool) error {
 	filenames := make([]string, 0, len(siblings))
 	hasModelIndex := false
 	for _, sibling := range siblings {
 		name := sibling.RFilename
 		filenames = append(filenames, name)
 		if name == "model_index.json" || strings.HasSuffix(name, "/model_index.json") {
+			hasModelIndex = true
+		} else if allowModular && (name == "modular_model_index.json" || strings.HasSuffix(name, "/modular_model_index.json")) {
 			hasModelIndex = true
 		}
 	}

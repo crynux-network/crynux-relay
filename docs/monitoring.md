@@ -23,7 +23,7 @@ Metric labels MUST stay low-cardinality. Per-node breakdowns stay in the databas
 
 | Label | Derivation |
 |-------|-----------|
-| `task_type` | `sd`, `llm`, or `sd_ft_lora` from the task type enum. |
+| `task_type` | `sd`, `llm`, `sd_ft_lora`, or `video` from the task type enum. |
 | `creator` | The task creator address. Creators are whitelist-controlled, so cardinality is bounded. |
 | `vram_tier` | The task `MinVRAM` mapped to the configured `metrics.vram_tiers` boundaries, producing labels `0-8`, `8-16`, ..., `48+`. Raw VRAM values MUST NOT be used as labels. For model download metrics, the mapped value is the demand group VRAM requirement stored on the download selection record. |
 | `hf_model_id` | The Hugging Face repository of a model file held by a node. Cardinality is bounded because the `relay_model_nodes` gauge exports only the top 50 repositories by on-disk node count. |
@@ -57,6 +57,7 @@ Counters and histograms MUST be incremented at the task and node state transitio
 | `relay_model_downloads_dispatched_total` | counter | `task_type`, `vram_tier` | The model distribution controller commits a download selection record together with its `DownloadModel` event. The `task_type` label carries the latest demanding task type of the demand group. |
 | `relay_model_downloads_completed_total` | counter | `vram_tier` | A pending download selection transitions to `completed` because the node's on-disk model set contains the model. The transition is detected on the controller round following the node's model report, so completion observations lag the report by at most one controller interval. |
 | `relay_model_downloads_expired_total` | counter | `vram_tier` | A pending download selection transitions to `expired` at the download deadline without completion. |
+| `relay_task_result_download_bytes_total` | counter | `task_type` | Whole-task result bytes streamed by `GET /v1/inference_tasks/:task_id_commitment/results` (`task_type` is `sd`, `llm`, or `video`). |
 
 `relay_tasks_aborted_total` MUST preserve the exact timeout reason. `TaskAbortTimeout`, `TaskAbortCreatorValidationTimeout`, and `TaskAbortResultUploadTimeout` MUST NOT be combined into one generic timeout series. Fee and QoS dashboards MUST use both `reason` and prior `status` to distinguish responsibility.
 
@@ -68,15 +69,19 @@ Relay MUST expose these in-memory execution parameter metrics:
 |---|---|---|
 | `relay_task_pricing_sd_overhead_seconds` | `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD overhead seconds for an initialized unpinned pricing key |
 | `relay_task_pricing_seconds_per_sd_pixel_step` | `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate SD seconds per pixel-step for an initialized unpinned pricing key |
+| `relay_task_pricing_video_overhead_seconds` | `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate video overhead seconds for an initialized unpinned pricing key |
+| `relay_task_pricing_seconds_per_video_unit` | `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate video seconds per pixel-frame-step unit for an initialized unpinned pricing key |
 | `relay_task_pricing_llm_coefficient` | `coefficient`, `model_name`, `requested_dtype`, `quantization_config_hash`, `vram_demand` | Aggregate LLM coefficient; `coefficient` MUST be `constant`, `text_input`, `output`, `model_switch`, `image_count`, or `image_megapixel` |
 | `relay_gpu_execution_sd_overhead_seconds` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD overhead seconds for one calibration key |
 | `relay_gpu_execution_seconds_per_sd_pixel_step` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | SD seconds per pixel-step for one calibration key |
+| `relay_gpu_execution_video_overhead_seconds` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | Video overhead seconds for one calibration key |
+| `relay_gpu_execution_seconds_per_video_unit` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | Video seconds per pixel-frame-step unit for one calibration key |
 | `relay_gpu_execution_llm_coefficient` | `coefficient`, `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | LLM coefficient for one calibration key |
 | `relay_gpu_execution_calibration_samples` | `task_type`, `gpu_name`, `gpu_vram`, `model_name`, `execution_dtype`, `quantization_config_hash`, `min_vram_requirement`, `max_vram_requirement` | Cumulative successful samples for one calibration key |
 
 The LLM `constant` coefficient MUST use seconds, `text_input` MUST use seconds per input byte, `output` MUST use seconds per output token, `model_switch` MUST use seconds per switch, `image_count` MUST use seconds per image, and `image_megapixel` MUST use seconds per megapixel. Sample count MUST NOT be used as a cross-GPU aggregation weight.
 
-Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM text input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST display model switch, image count, and image megapixel coefficients without unit conversion. Grafana MUST display the SD overhead coefficient in seconds without unit conversion. Grafana MUST multiply the SD pixel-step coefficient by `512 * 512` and label it seconds per 512×512 image-step.
+Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM text input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST display model switch, image count, and image megapixel coefficients without unit conversion. Grafana MUST display the SD and video overhead coefficients in seconds without unit conversion. Grafana MUST multiply the SD pixel-step coefficient by `512 * 512` and label it seconds per 512×512 image-step. Grafana MUST multiply the video unit coefficient by `832 * 480` and label it seconds per 832×480 frame-step.
 
 The `quantization_config_hash` label MUST be the lowercase hexadecimal encoding of the 32-byte `QuantizationConfigHash`.
 
@@ -133,3 +138,4 @@ The `nodes` table carries a nullable `last_seen_time` column recording the last 
 | `migrate/migrations/m_20260712.go` | `delivered_time` and `last_seen_time` columns |
 | `migrate/migrations/m_20260717.go` | `min_vram` column on `node_model_download_selections` |
 | `migrate/migrations/m_20260817.go` | Frozen task model configuration and model-keyed calibration schema |
+| `migrate/migrations/m_20261118.go` | `video_units` on `inference_tasks`, video execution calibration columns, and `video_task_count` on `node_incentives` |

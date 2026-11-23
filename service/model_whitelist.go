@@ -463,10 +463,10 @@ func IsModelWhitelisted(modelName string) (bool, error) {
 
 // taskModelNamesForWhitelist returns the normalized HuggingFace repository
 // names that MUST all be present in the model whitelist for the task.
-// For SD tasks this includes base_model and every components.*.repo that is a
-// required model file. For LLM and SDFT it is the task ModelName.
+// For SD and video tasks this includes base_model and every components.*.repo
+// that is a required model file. For LLM and SDFT it is the task ModelName.
 func taskModelNamesForWhitelist(task *models.InferenceTask) ([]string, error) {
-	if task.TaskType == models.TaskTypeSD {
+	if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeVideo {
 		requirements, err := models.DeriveTaskModelRequirements(task.TaskArgs, task.TaskType)
 		if err != nil {
 			return nil, err

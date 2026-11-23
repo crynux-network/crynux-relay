@@ -38,7 +38,7 @@ func createNodeEarningFixture(t *testing.T, db *gorm.DB, nodeAddress string, ope
 	}
 }
 
-func createNodeIncentiveFixture(t *testing.T, db *gorm.DB, nodeAddress string, taskCount, sdCount, llmCount, sdFTCount int64, day time.Time) {
+func createNodeIncentiveFixture(t *testing.T, db *gorm.DB, nodeAddress string, taskCount, sdCount, llmCount, sdFTCount, videoCount int64, day time.Time) {
 	t.Helper()
 	if err := db.Create(&models.NodeIncentive{
 		NodeAddress:       nodeAddress,
@@ -48,6 +48,7 @@ func createNodeIncentiveFixture(t *testing.T, db *gorm.DB, nodeAddress string, t
 		SDTaskCount:       sdCount,
 		LLMTaskCount:      llmCount,
 		SDFTLoraTaskCount: sdFTCount,
+		VideoTaskCount:    videoCount,
 	}).Error; err != nil {
 		t.Fatalf("create node incentive: %v", err)
 	}
@@ -76,14 +77,14 @@ func TestLoadTopNodesByTotalTaskFeeRanksByOperatorPlusDelegator(t *testing.T) {
 
 	// Operator-only node with higher operator fee than the high-delegation node.
 	createNodeEarningFixture(t, db, "0xnode-operator-high", 50_000_000_000_000_000, 0, start)
-	createNodeIncentiveFixture(t, db, "0xnode-operator-high", 10, 4, 6, 0, start)
+	createNodeIncentiveFixture(t, db, "0xnode-operator-high", 12, 4, 6, 0, 2, start)
 
 	// High total from delegator share; operator portion is tiny.
 	createNodeEarningFixture(t, db, "0xnode-delegator-high", 1_000_000_000_000_000, 100_000_000_000_000_000, start)
-	createNodeIncentiveFixture(t, db, "0xnode-delegator-high", 178, 0, 178, 0, start)
+	createNodeIncentiveFixture(t, db, "0xnode-delegator-high", 178, 0, 178, 0, 0, start)
 
 	createNodeEarningFixture(t, db, "0xnode-mid", 20_000_000_000_000_000, 5_000_000_000_000_000, start)
-	createNodeIncentiveFixture(t, db, "0xnode-mid", 30, 10, 20, 0, start)
+	createNodeIncentiveFixture(t, db, "0xnode-mid", 30, 10, 20, 0, 0, start)
 
 	// Other-day and total rows MUST NOT affect ranking.
 	createNodeEarningFixture(t, db, "0xnode-yesterday", 900_000_000_000_000_000, 0, start.Add(-24*time.Hour))
@@ -120,7 +121,7 @@ func TestLoadTopNodesByTotalTaskFeeRanksByOperatorPlusDelegator(t *testing.T) {
 	if nodes[0].TaskCount != 178 || nodes[0].LLMTaskCount != 178 {
 		t.Fatalf("unexpected task counters for first node: %+v", nodes[0])
 	}
-	if nodes[1].TaskCount != 10 || nodes[1].SDTaskCount != 4 || nodes[1].LLMTaskCount != 6 {
+	if nodes[1].TaskCount != 12 || nodes[1].SDTaskCount != 4 || nodes[1].LLMTaskCount != 6 || nodes[1].VideoTaskCount != 2 {
 		t.Fatalf("unexpected task counters for second node: %+v", nodes[1])
 	}
 }
@@ -134,7 +135,7 @@ func TestLoadTopNodesByTotalTaskFeeLimitsToTopTen(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		addr := fmt.Sprintf("0xnode-%02d", i)
 		createNodeEarningFixture(t, db, addr, int64(1000+i), 0, start)
-		createNodeIncentiveFixture(t, db, addr, int64(i+1), 0, 0, 0, start)
+		createNodeIncentiveFixture(t, db, addr, int64(i+1), 0, 0, 0, 0, start)
 	}
 
 	nodes, err := loadTopNodesByTotalTaskFee(context.Background(), db, start, end, topNodeIncentiveSize)

@@ -3,6 +3,7 @@ package inference_tasks
 import (
 	"crynux_relay/api/v1/response"
 	"crynux_relay/api/v1/validate"
+	"crynux_relay/blockchain"
 	"crynux_relay/config"
 	"crynux_relay/models"
 	"crynux_relay/service"
@@ -64,6 +65,30 @@ func SubmitScore(c *gin.Context, in *SubmitScoreInputWithSignature) (*response.R
 	}
 	if (task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeSDFTLora) && len(scoreBytes)%8 != 0 {
 		return nil, response.NewValidationErrorResponse("score", "invalid score")
+	}
+	if task.TaskType == models.TaskTypeVideo {
+		numFrames, _, _, specErr := blockchain.ExpectedVideoTaskSpec(task.TaskArgs)
+		if specErr != nil {
+			return nil, response.NewValidationErrorResponse("score", "invalid video task spec")
+		}
+		indices, idxErr := blockchain.SampledVideoFrameIndices(numFrames)
+		if idxErr != nil {
+			return nil, response.NewValidationErrorResponse("score", "invalid video frame count")
+		}
+		visualBytes := len(indices) * 8
+		if len(scoreBytes) != visualBytes && len(scoreBytes) != visualBytes+8 {
+			return nil, response.NewValidationErrorResponse("score", "invalid score")
+		}
+		allZero := true
+		for _, b := range scoreBytes {
+			if b != 0 {
+				allZero = false
+				break
+			}
+		}
+		if allZero {
+			return nil, response.NewValidationErrorResponse("score", "invalid score")
+		}
 	}
 
 	task.Score = in.Score

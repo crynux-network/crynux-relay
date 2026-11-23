@@ -27,7 +27,7 @@ func getStatsInitStartTime() time.Time {
 func getTaskCounts(ctx context.Context, start, end time.Time) ([]*models.TaskCount, error) {
 	var results []*models.TaskCount
 
-	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora}
+	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora, models.TaskTypeVideo}
 
 	for _, taskType := range taskTypes {
 		var successCount, abortedCount int64
@@ -154,7 +154,7 @@ func StartStatsTaskCount(ctx context.Context) {
 func getTaskExecutionTimeCount(ctx context.Context, start, end time.Time) ([]*models.TaskExecutionTimeCount, error) {
 	var results []*models.TaskExecutionTimeCount
 
-	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora}
+	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora, models.TaskTypeVideo}
 	modelSwitchedEnums := []bool{false, true}
 	binSize := 5
 	for _, taskType := range taskTypes {
@@ -281,7 +281,7 @@ func StartStatsTaskExecutionTimeCount(ctx context.Context) {
 func getTaskUploadResultTimeCount(ctx context.Context, start, end time.Time) ([]*models.TaskUploadResultTimeCount, error) {
 	var results []*models.TaskUploadResultTimeCount
 
-	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora}
+	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora, models.TaskTypeVideo}
 	binSize := 5
 	for _, taskType := range taskTypes {
 		rows, err := func() (*sql.Rows, error) {
@@ -400,7 +400,7 @@ func StartStatsTaskUploadResultTimeCount(ctx context.Context) {
 func getTaskWaitingTimeCount(ctx context.Context, start, end time.Time) ([]*models.TaskWaitingTimeCount, error) {
 	var results []*models.TaskWaitingTimeCount
 
-	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora}
+	taskTypes := []models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeSDFTLora, models.TaskTypeVideo}
 	binSize := 5
 	for _, taskType := range taskTypes {
 		rows, err := func() (*sql.Rows, error) {

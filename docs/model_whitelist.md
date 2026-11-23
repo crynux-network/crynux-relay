@@ -38,9 +38,9 @@ When `task.model_whitelist_enabled` is `true`, Relay MUST require every reposito
 
 - LLM: `model` (`InferenceTask.ModelName`)
 - SDFT: `model.name` (`InferenceTask.ModelName`)
-- SD: `base_model.name` and every `components.*.repo` that is a required model file
+- SD and video: `base_model.name` and every `components.*.repo` that is a required model file
 
-An SD task with a whitelisted base model and a non-whitelisted component repository MUST be rejected. LoRA weight references (`lora.model`) are not required model files and MUST NOT be checked by this whitelist.
+An SD or video task with a whitelisted base model and a non-whitelisted component repository MUST be rejected. LoRA weight references (`lora.model`, `loras.*.model`) are not required model files and MUST NOT be checked by this whitelist.
 
 Admin add and delete inputs MUST be normalized and validated with the same rules before persistence. Empty names after normalization MUST be rejected. Delete MUST remove the exact stored entry string after normalization, so deleting `qwen/qwen3` MUST NOT remove `qwen/*`.
 

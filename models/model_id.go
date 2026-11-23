@@ -27,7 +27,7 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 		config.RequestedDType = strings.ToLower(dtype)
 	}
 	switch taskType {
-	case TaskTypeSD:
+	case TaskTypeSD, TaskTypeVideo:
 		switch baseModel := args["base_model"].(type) {
 		case string:
 			config.ModelName = NormalizeModelName(baseModel)
@@ -51,7 +51,30 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 }
 
 func NormalizeModelID(modelID string) string {
-	return strings.ToLower(modelID)
+	prefix, rest, ok := strings.Cut(modelID, ":")
+	if !ok {
+		return strings.ToLower(modelID)
+	}
+	lowerPrefix := strings.ToLower(prefix)
+	if strings.HasPrefix(rest, "http://") || strings.HasPrefix(rest, "https://") {
+		return lowerPrefix + ":" + rest
+	}
+	if lowerPrefix == "component" {
+		compName, repo, hasRepo := strings.Cut(rest, ":")
+		if hasRepo {
+			return "component:" + strings.ToLower(compName) + ":" + NormalizeModelName(repo)
+		}
+	}
+	repoAndMeta, weightFile, hasWeight := strings.Cut(rest, "#")
+	repoPart, revPart, hasRev := strings.Cut(repoAndMeta, "@")
+	normalized := lowerPrefix + ":" + strings.ToLower(repoPart)
+	if hasRev && revPart != "" {
+		normalized += "@" + NormalizeCommitRevision(revPart)
+	}
+	if hasWeight && weightFile != "" {
+		normalized += "#" + weightFile
+	}
+	return normalized
 }
 
 func NormalizeModelIDs(modelIDs []string) []string {
@@ -146,6 +169,10 @@ func NormalizeTaskArgsModelNames(taskArgs string, taskType TaskType) (string, er
 		}
 	case TaskTypeSDFTLora:
 		normalizeObjectModelName(argsMap, "model", "name")
+	case TaskTypeVideo:
+		normalizeObjectModelName(argsMap, "base_model", "name")
+		normalizeComponentsRepos(argsMap)
+		normalizeVideoLoras(argsMap)
 	}
 
 	normalized, err := json.Marshal(argsMap)
@@ -183,6 +210,22 @@ func normalizeComponentsRepos(argsMap map[string]interface{}) {
 		}
 		if repo, ok := object["repo"].(string); ok {
 			object["repo"] = NormalizeModelName(repo)
+		}
+	}
+}
+
+func normalizeVideoLoras(argsMap map[string]interface{}) {
+	loras, ok := argsMap["loras"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, item := range loras {
+		object, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if modelName, ok := object["model"].(string); ok {
+			object["model"] = NormalizeModelName(modelName)
 		}
 	}
 }

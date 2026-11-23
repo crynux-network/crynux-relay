@@ -64,7 +64,7 @@ When an LLM task is selected for group validation, the two additional tasks MUST
 
 ### Validation Group Model Files
 
-Every member of a validation group MUST execute with the same exact model files. The creator MUST copy the primary task's TaskArgs and MUST write each primary execution model file's revision into the matching TaskArgs field: LLM `revision`, or Image `base_model.revision` / `components.*.revision` matched by repository and format. Relay MUST derive required model file hashes from that pinned TaskArgs and MUST match the additional tasks only to nodes that hold those exact files. Relay task status MUST return the primary task's execution model files to the creator, as specified in [task_batch_api.md](./task_batch_api.md).
+Every member of a validation group MUST execute with the same exact model files. The creator MUST copy the primary task's TaskArgs and MUST write each primary execution model file's revision into the matching TaskArgs field: LLM `revision`, or SD/video `base_model.revision` / `components.*.revision` matched by repository and format. Relay MUST derive required model file hashes from that pinned TaskArgs and MUST match the additional tasks only to nodes that hold those exact files. Relay task status MUST return the primary task's execution model files to the creator, as specified in [task_batch_api.md](./task_batch_api.md).
 
 Group validation MUST require every started member of the group to have identical `ExecutionModelFileHashes`. Relay MUST reject the validation with an error and MUST NOT change any task, node, account, or event state when the started members differ. A member that was aborted before it started has no execution model files and MUST be excluded from the comparison.
 
@@ -109,6 +109,7 @@ After executing a task, the node submits a **score** (result fingerprint) rather
 
 - **SD / SD Fine-tune LoRA tasks**: The score is a perceptual hash (pHash) of the generated image(s). Each pHash is an 8-byte block; multiple images produce concatenated blocks.
 - **LLM tasks**: The score is the SHA-256 hash of the full text response.
+- **Video tasks**: The score is computed by decoding the encoded `0.mp4` artifact over `K = min(8, num_frames)` uniformly sampled raw `yuv420p` plane-0 luma frames without color-range scaling (`8K` bytes), plus one additional 8-byte audio spectrogram pHash block computed over the per-sample arithmetic channel mean of decoded `float64` PCM when `0.mp4` contains an audio stream (`8(K+1)` bytes). `SubmitScore` MUST reject a video score whose byte length is neither `8K` nor `8(K+1)` or whose bytes are all zero.
 
 The score is submitted via the `SubmitScore` API, which transitions the task to `TaskScoreReady`.
 
@@ -125,7 +126,7 @@ For tasks where the VRF confirms no validation is needed (single task):
 3. If the task status is `TaskScoreReady` → transition to `TaskValidated`.
 4. If the task status is `TaskErrorReported` → abort with reason `TaskAbortErrorReported`.
 
-An SD task that enters `TaskValidated` MUST provide a calibration sample when its execution GPU snapshot exists. An LLM task MUST wait for verified result upload before it can provide a sample. The complete sample rules are specified in [task_execution_parameters.md](./task_execution_parameters.md).
+An SD or video task that enters `TaskValidated` MUST provide a calibration sample when its execution GPU snapshot exists. An LLM task MUST wait for verified result upload before it can provide a sample. The complete sample rules are specified in [task_execution_parameters.md](./task_execution_parameters.md).
 
 ### Group Task Validation (`ValidateTaskGroup`)
 
@@ -148,8 +149,9 @@ The comparison method depends on task type:
 |-----------|--------|-----------------|
 | SD / SD Fine-tune LoRA | Hamming distance on pHash blocks | Distance < `DistanceThreshold` for every 8-byte block |
 | LLM | Exact string comparison | Score strings are identical |
+| Video | Two-level Hamming distance on sampled frame pHash blocks (+ optional audio block) | Equal score length (`8K` or `8(K+1)` bytes), mean visual Hamming distance < `VideoDistanceMeanThreshold`, maximum visual block Hamming distance < `VideoDistanceMaxThreshold`, and audio block Hamming distance < `VideoAudioDistanceThreshold` when present |
 
-The `DistanceThreshold` is configured via `task.distance_threshold` in the application config.
+The `DistanceThreshold` is configured via `task.distance_threshold` in the application config. Video validation thresholds MUST be configured via `task.video_distance_mean_threshold`, `task.video_distance_max_threshold`, `task.video_audio_distance_threshold`, and `task.video_upload_audio_distance_threshold`. During `UploadResult` for a video task, Relay MUST verify that the uploaded `0.mp4` contains a valid `h264` (`yuv420p`) video stream with positive dimensions, exact frame count equal to `task_config.num_frames` (default `81`), and exact `width` and `height` whenever `width` or `height` is explicitly set in `task_config`. When `width` or `height` is omitted in `task_config`, Relay MUST NOT compare the uploaded video dimensions against the pricing fallback dimensions (`832x480` or raw conditioning image size), because omitting `width` or `height` delegates spatial sizing to each video model's native default resolution or spatial-grid alignment of conditioning images, whereas the fallback dimensions in Relay pricing are solely a workload estimation baseline and do not represent the encoded output resolution. Relay MUST recompute the score on CPU from the uploaded `0.mp4`, require exact equality across the `K` visual blocks, and require Hamming distance <= `task.video_upload_audio_distance_threshold` on the audio block when present. Content or score mismatches on the uploaded file MUST be rejected as a file validation error, whereas missing `ffprobe`/`ffmpeg` binaries, subprocess timeouts, or OS execution errors MUST be logged and returned as internal server errors without blaming the node's upload.
 
 ### Group Validation Outcomes
 
@@ -188,7 +190,7 @@ Where `total_qos_score` is the sum of QoS scores across all valid tasks in the g
 
 Tasks in `GroupRefund` status have their task fee refunded to the creator since the task was a duplicate used purely for validation.
 
-SD tasks entering `TaskGroupValidated` or `TaskEndGroupRefund` MUST provide validation-confirmed calibration samples when their execution GPU snapshots exist. LLM group samples MUST wait for a verified successful group result upload. A same-score `TaskEndGroupRefund` task MUST reuse only the verified completion-token count and MUST use its own workload, execution duration, and GPU snapshot. These execution parameter rules MUST NOT alter result comparison, payment, or slashing.
+SD and video tasks entering `TaskGroupValidated` or `TaskEndGroupRefund` MUST provide validation-confirmed calibration samples when their execution GPU snapshots exist. LLM group samples MUST wait for a verified successful group result upload. A same-score `TaskEndGroupRefund` task MUST reuse only the verified completion-token count and MUST use its own workload, execution duration, and GPU snapshot. These execution parameter rules MUST NOT alter result comparison, payment, or slashing.
 
 ## Node Slashing
 
@@ -256,6 +258,10 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 |-----------|-------------|
 | `task.stake_amount` | Required stake amount for joining the network (in ether) |
 | `task.distance_threshold` | Maximum Hamming distance per 8-byte pHash block for SD result comparison |
+| `task.video_distance_mean_threshold` | Strict upper bound on mean visual pHash Hamming distance across sampled video frames |
+| `task.video_distance_max_threshold` | Strict upper bound on single-frame visual pHash Hamming distance for video comparison |
+| `task.video_audio_distance_threshold` | Strict upper bound on audio spectrogram pHash Hamming distance for video group comparison |
+| `task.video_upload_audio_distance_threshold` | Inclusive upper bound on audio spectrogram pHash Hamming distance during `UploadResult` CPU verification |
 | `task.passive_slash_mode` | Required boolean that controls whether validation invalidation records pending slash evidence or executes automatic slash |
 | `qos.score_pool_size` | Number of task scores in the rolling QoS pool (default: 50) |
 | `qos.kickout_threshold` | QoS score below which a node is permanently kicked out |
@@ -275,7 +281,8 @@ Nodes can report execution errors (e.g., invalid task parameters) via the `Repor
 | `service/select_nodes.go` | Node selection for task assignment (weighted by QoS and staking) |
 | `blockchain/nodeStaking.go` | Blockchain interactions: `SlashStaking`, `QueueSlashStaking`, `Unstake`, `QueueUnstake` |
 | `docs/node_quit_and_unstake.md` | Node quit, Relay admin unstake, on-chain recovery unstake, kickout, and slash precedence |
-| `blockchain/task.go` | Perceptual hash and SHA-256 hash computation for result scoring |
+| `blockchain/task.go` | Perceptual hash and SHA-256 hash computation for SD and LLM result scoring |
+| `blockchain/video_hash.go` | MP4 container verification and CPU multi-frame luma/audio VSS hash computation for video results |
 | `models/inference_task.go` | Task model, status enum, abort reason enum |
 | `models/node.go` | Node model with staking, health, and QoS fields |
 | `models/event.go` | Event types: `NodeSlashed`, `NodeKickedOut`, `TaskEndInvalidated`, etc. |

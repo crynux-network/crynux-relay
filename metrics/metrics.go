@@ -111,6 +111,16 @@ var (
 		Help: "Aggregated stable diffusion execution seconds per pixel-step.",
 	}, []string{"model_name", "requested_dtype", "quantization_config_hash", "vram_demand"})
 
+	TaskPricingVideoOverheadSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_video_overhead_seconds",
+		Help: "Aggregated video execution overhead seconds.",
+	}, []string{"model_name", "requested_dtype", "quantization_config_hash", "vram_demand"})
+
+	TaskPricingSecondsPerVideoUnit = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_task_pricing_seconds_per_video_unit",
+		Help: "Aggregated video execution seconds per pixel-frame-step unit.",
+	}, []string{"model_name", "requested_dtype", "quantization_config_hash", "vram_demand"})
+
 	TaskPricingLLMCoefficient = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_task_pricing_llm_coefficient",
 		Help: "Aggregated LLM execution coefficient in its base unit.",
@@ -124,6 +134,16 @@ var (
 	GPUExecutionSecondsPerSDPixelStep = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "relay_gpu_execution_seconds_per_sd_pixel_step",
 		Help: "Stable diffusion execution seconds per pixel-step for an exact GPU variant.",
+	}, []string{"task_type", "gpu_name", "gpu_vram", "model_name", "execution_dtype", "quantization_config_hash", "min_vram_requirement", "max_vram_requirement"})
+
+	GPUExecutionVideoOverheadSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_gpu_execution_video_overhead_seconds",
+		Help: "Video execution overhead seconds for an exact GPU variant.",
+	}, []string{"task_type", "gpu_name", "gpu_vram", "model_name", "execution_dtype", "quantization_config_hash", "min_vram_requirement", "max_vram_requirement"})
+
+	GPUExecutionSecondsPerVideoUnit = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "relay_gpu_execution_seconds_per_video_unit",
+		Help: "Video execution seconds per pixel-frame-step unit for an exact GPU variant.",
 	}, []string{"task_type", "gpu_name", "gpu_vram", "model_name", "execution_dtype", "quantization_config_hash", "min_vram_requirement", "max_vram_requirement"})
 
 	GPUExecutionLLMCoefficient = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -213,9 +233,13 @@ func init() {
 		NodesAlive,
 		TaskPricingSDOverheadSeconds,
 		TaskPricingSecondsPerSDPixelStep,
+		TaskPricingVideoOverheadSeconds,
+		TaskPricingSecondsPerVideoUnit,
 		TaskPricingLLMCoefficient,
 		GPUExecutionSDOverheadSeconds,
 		GPUExecutionSecondsPerSDPixelStep,
+		GPUExecutionVideoOverheadSeconds,
+		GPUExecutionSecondsPerVideoUnit,
 		GPUExecutionLLMCoefficient,
 		GPUExecutionCalibrationSamples,
 		TaskPriority,
@@ -234,19 +258,28 @@ func init() {
 func ResetTaskPricingCalibrationMetrics() {
 	TaskPricingSDOverheadSeconds.Reset()
 	TaskPricingSecondsPerSDPixelStep.Reset()
+	TaskPricingVideoOverheadSeconds.Reset()
+	TaskPricingSecondsPerVideoUnit.Reset()
 	TaskPricingLLMCoefficient.Reset()
 	GPUExecutionSDOverheadSeconds.Reset()
 	GPUExecutionSecondsPerSDPixelStep.Reset()
+	GPUExecutionVideoOverheadSeconds.Reset()
+	GPUExecutionSecondsPerVideoUnit.Reset()
 	GPUExecutionLLMCoefficient.Reset()
 	GPUExecutionCalibrationSamples.Reset()
 }
 
-func SetTaskPricingCalibration(taskType, modelName, requestedDType, quantizationConfigHash string, vramDemand uint64, sdOverhead, sdRate float64, llm [6]float64) {
+func SetTaskPricingCalibration(taskType, modelName, requestedDType, quantizationConfigHash string, vramDemand uint64, sdOverhead, sdRate, videoOverhead, videoRate float64, llm [6]float64) {
 	vram := fmt.Sprint(vramDemand)
 	labels := []string{modelName, requestedDType, quantizationConfigHash, vram}
 	if taskType == "sd" {
 		TaskPricingSDOverheadSeconds.WithLabelValues(labels...).Set(sdOverhead)
 		TaskPricingSecondsPerSDPixelStep.WithLabelValues(labels...).Set(sdRate)
+		return
+	}
+	if taskType == "video" {
+		TaskPricingVideoOverheadSeconds.WithLabelValues(labels...).Set(videoOverhead)
+		TaskPricingSecondsPerVideoUnit.WithLabelValues(labels...).Set(videoRate)
 		return
 	}
 	if taskType == "llm" {
@@ -256,10 +289,12 @@ func SetTaskPricingCalibration(taskType, modelName, requestedDType, quantization
 	}
 }
 
-func SetGPUExecutionCalibration(taskType, gpuName string, gpuVram uint64, modelName, executionDType, quantizationConfigHash string, minVRAM, maxVRAM uint64, sdOverhead, sdRate float64, llm [6]float64, samples uint64) {
+func SetGPUExecutionCalibration(taskType, gpuName string, gpuVram uint64, modelName, executionDType, quantizationConfigHash string, minVRAM, maxVRAM uint64, sdOverhead, sdRate, videoOverhead, videoRate float64, llm [6]float64, samples uint64) {
 	labels := []string{taskType, gpuName, fmt.Sprint(gpuVram), modelName, executionDType, quantizationConfigHash, fmt.Sprint(minVRAM), fmt.Sprint(maxVRAM)}
 	GPUExecutionSDOverheadSeconds.WithLabelValues(labels...).Set(sdOverhead)
 	GPUExecutionSecondsPerSDPixelStep.WithLabelValues(labels...).Set(sdRate)
+	GPUExecutionVideoOverheadSeconds.WithLabelValues(labels...).Set(videoOverhead)
+	GPUExecutionSecondsPerVideoUnit.WithLabelValues(labels...).Set(videoRate)
 	for i, name := range []string{"constant", "text_input", "output", "model_switch", "image_count", "image_megapixel"} {
 		GPUExecutionLLMCoefficient.WithLabelValues(append([]string{name}, labels...)...).Set(llm[i])
 	}
@@ -365,6 +400,8 @@ func TaskTypeLabel(taskType models.TaskType) string {
 		return "llm"
 	case models.TaskTypeSDFTLora:
 		return "sd_ft_lora"
+	case models.TaskTypeVideo:
+		return "video"
 	default:
 		return "unknown"
 	}

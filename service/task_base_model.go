@@ -93,10 +93,10 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 			continue
 		}
 
-		// SD entries[0] is always the base pipeline from DeriveTaskModelRequirements.
-		requirePipeline := taskType == models.TaskTypeSD && index == 0
+		// SD/Video entries[0] is always the base pipeline from DeriveTaskModelRequirements.
+		requirePipeline := (taskType == models.TaskTypeSD || taskType == models.TaskTypeVideo) && index == 0
 		if requirePipeline {
-			if err := validateEntryOnHub(ctx, client, entry, true); err != nil {
+			if err := validateEntryOnHub(ctx, client, taskType, entry, true); err != nil {
 				return nil, hubValidationError(err)
 			}
 		}
@@ -128,11 +128,14 @@ func PrepareTaskModelRequirements(ctx context.Context, db *gorm.DB, taskType mod
 }
 
 // validateEntryOnHub checks that the repository of a model entry exists.
-// requirePipeline is true only for the SD base_model entry; other entries,
+// requirePipeline is true only for the SD/Video base_model entry; other entries,
 // including Diffusers-format components, are validated as public repositories.
-func validateEntryOnHub(ctx context.Context, client *huggingface.Client, entry models.ModelFileEntry, requirePipeline bool) error {
+func validateEntryOnHub(ctx context.Context, client *huggingface.Client, taskType models.TaskType, entry models.ModelFileEntry, requirePipeline bool) error {
 	if !requirePipeline {
 		return client.ValidateBaseModel(ctx, huggingface.ModelKindRepository, entry.Repository)
+	}
+	if taskType == models.TaskTypeVideo {
+		return client.ValidateBaseModel(ctx, huggingface.ModelKindVideo, entry.Repository)
 	}
 	return client.ValidateBaseModel(ctx, huggingface.ModelKindSD, entry.Repository)
 }

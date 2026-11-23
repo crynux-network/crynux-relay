@@ -29,9 +29,23 @@ type GetLLMExecutionTimeInput struct {
 	GPUVRAM            *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
 }
 
+type GetVideoExecutionTimeInput struct {
+	Model              string  `query:"model" description:"HuggingFace model name"`
+	Dtype              *string `query:"dtype" description:"Requested dtype"`
+	QuantizationConfig *string `query:"quantization_config" description:"Complete quantization_config as a JSON value"`
+	MinVRAM            *uint64 `query:"min_vram" description:"Minimum GPU VRAM in GB"`
+	GPUName            *string `query:"gpu_name" description:"Exact GPU name"`
+	GPUVRAM            *uint64 `query:"gpu_vram" description:"Exact GPU VRAM in GB"`
+}
+
 type SDExecutionTimeData struct {
 	OverheadSeconds       float64 `json:"overhead_seconds"`
 	SecondsPerSDPixelStep float64 `json:"seconds_per_sd_pixel_step"`
+}
+
+type VideoExecutionTimeData struct {
+	OverheadSeconds     float64 `json:"overhead_seconds"`
+	SecondsPerVideoUnit float64 `json:"seconds_per_video_unit"`
 }
 
 type LLMExecutionTimeData struct {
@@ -51,6 +65,11 @@ type GetSDExecutionTimeResponse struct {
 type GetLLMExecutionTimeResponse struct {
 	response.Response
 	Data LLMExecutionTimeData `json:"data"`
+}
+
+type GetVideoExecutionTimeResponse struct {
+	response.Response
+	Data VideoExecutionTimeData `json:"data"`
 }
 
 type executionTimeRequest struct {
@@ -96,6 +115,23 @@ func GetLLMExecutionTime(c *gin.Context, in *GetLLMExecutionTimeInput) (*GetLLME
 			ModelSwitchSeconds:    coefficients.ModelSwitchSeconds,
 			SecondsPerImage:       coefficients.SecondsPerImage,
 			SecondsPerMegapixel:   coefficients.SecondsPerMegapixel,
+		},
+	}, nil
+}
+
+func GetVideoExecutionTime(c *gin.Context, in *GetVideoExecutionTimeInput) (*GetVideoExecutionTimeResponse, error) {
+	query, err := parseExecutionTimeQuery(executionTimeRequest{
+		Model: in.Model, Dtype: in.Dtype, QuantizationConfig: in.QuantizationConfig,
+		MinVRAM: in.MinVRAM, GPUName: in.GPUName, GPUVRAM: in.GPUVRAM,
+	})
+	if err != nil {
+		return nil, err
+	}
+	coefficients := service.GetVideoExecutionTimeCoefficients(query)
+	return &GetVideoExecutionTimeResponse{
+		Data: VideoExecutionTimeData{
+			OverheadSeconds:     coefficients.OverheadSeconds,
+			SecondsPerVideoUnit: coefficients.SecondsPerVideoUnit,
 		},
 	}, nil
 }

@@ -43,7 +43,34 @@ const (
 	TaskTypeSD TaskType = iota
 	TaskTypeLLM
 	TaskTypeSDFTLora
+	TaskTypeVideo
 )
+
+const DefaultVideoNumFrames = 81
+
+func IsSupportedTaskType(taskType TaskType) bool {
+	switch taskType {
+	case TaskTypeSD, TaskTypeLLM, TaskTypeSDFTLora, TaskTypeVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+func (taskType TaskType) DisplayLabel() string {
+	switch taskType {
+	case TaskTypeLLM:
+		return "LLM"
+	case TaskTypeSD:
+		return "SD"
+	case TaskTypeSDFTLora:
+		return "SDFTLora"
+	case TaskTypeVideo:
+		return "Video"
+	default:
+		return fmt.Sprintf("Unknown(%d)", taskType)
+	}
+}
 
 type TaskAbortReason uint8
 
@@ -138,6 +165,7 @@ type InferenceTask struct {
 	VRAMWeight              float64         `json:"vram_weight" gorm:"column:vram_weight;not null;default:0"`
 	PricingUnits            float64         `json:"pricing_units" gorm:"not null;default:0"`
 	SDUnits                 *uint64         `json:"sd_units" gorm:"type:bigint unsigned;null;default:null"`
+	VideoUnits              *uint64         `json:"video_units" gorm:"type:bigint unsigned;null;default:null"`
 	LLMInputBytes           *uint64         `json:"llm_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
 	LLMTextInputBytes       *uint64         `json:"llm_text_input_bytes" gorm:"type:bigint unsigned;null;default:null"`
 	LLMImageCount           *uint64         `json:"llm_image_count" gorm:"type:bigint unsigned;null;default:null"`

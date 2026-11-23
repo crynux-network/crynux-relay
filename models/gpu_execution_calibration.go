@@ -28,6 +28,15 @@ type GPUExecutionCalibration struct {
 	SDXTY0                   float64  `gorm:"column:sd_xty_0;not null"`
 	SDXTY1                   float64  `gorm:"column:sd_xty_1;not null"`
 	SDSuccessSamples         uint64   `gorm:"not null"`
+	SecondsPerVideoUnit      float64  `gorm:"column:seconds_per_video_unit;not null;default:0"`
+	VideoOverheadSeconds     float64  `gorm:"column:video_overhead_seconds;not null;default:0"`
+	VideoFormulaVersion      uint64   `gorm:"column:video_formula_version;not null;default:0"`
+	VideoXTX00               float64  `gorm:"column:video_xtx_00;not null;default:0"`
+	VideoXTX01               float64  `gorm:"column:video_xtx_01;not null;default:0"`
+	VideoXTX11               float64  `gorm:"column:video_xtx_11;not null;default:0"`
+	VideoXTY0                float64  `gorm:"column:video_xty_0;not null;default:0"`
+	VideoXTY1                float64  `gorm:"column:video_xty_1;not null;default:0"`
+	VideoSuccessSamples      uint64   `gorm:"column:video_success_samples;not null;default:0"`
 	LLMConstantSeconds       float64  `gorm:"not null"`
 	LLMSecondsPerInputByte   float64  `gorm:"not null"`
 	LLMSecondsPerOutputToken float64  `gorm:"not null"`

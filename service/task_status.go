@@ -21,6 +21,9 @@ var (
 )
 
 func CreateTask(ctx context.Context, db *gorm.DB, task *models.InferenceTask) error {
+	if err := ValidateRequiredGPUPlatform(task.TaskType, task.RequireLinuxCuda, task.RequiredGPU); err != nil {
+		return err
+	}
 	if err := ApplyTaskPricing(task); err != nil {
 		return err
 	}
@@ -351,6 +354,11 @@ func SetTaskStatusValidated(ctx context.Context, db *gorm.DB, originTask *models
 	if task.TaskType == models.TaskTypeSD {
 		if err := CalibrateValidatedSDTask(&task); err != nil {
 			log.Errorf("SetTaskStatusValidated: failed to calibrate SD task %s: %v", task.TaskIDCommitment, err)
+		}
+		DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
+	} else if task.TaskType == models.TaskTypeVideo {
+		if err := CalibrateValidatedVideoTask(&task); err != nil {
+			log.Errorf("SetTaskStatusValidated: failed to calibrate video task %s: %v", task.TaskIDCommitment, err)
 		}
 		DeleteTaskExecutionGPUSnapshot(task.TaskIDCommitment)
 	}

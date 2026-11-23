@@ -72,6 +72,10 @@ network_flops:
   gpu_flops_file: "config/gpu_flops.json"
 task:
   passive_slash_mode: true
+  video_distance_mean_threshold: 10
+  video_distance_max_threshold: 20
+  video_audio_distance_threshold: 16
+  video_upload_audio_distance_threshold: 2
   history_cleanup_batch_size: 2000
   batch_create_max_items: 100
   batch_status_max_items: 500
@@ -82,6 +86,8 @@ task:
 task_pricing:
   initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
+  initial_video_overhead_seconds: 30
+  initial_seconds_per_video_unit: 0.000001
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001
   initial_llm_seconds_per_output_token: 0.1

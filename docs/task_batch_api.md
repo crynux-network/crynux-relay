@@ -14,27 +14,28 @@ The batch APIs MUST NOT replace or change the behavior of the existing single-ta
 
 ## Batch Creation
 
-`POST /v1/inference_tasks/batch` MUST be the signed batch creation endpoint. Its items MUST contain the complete normal-task creation input, including `task_id_commitment`. The endpoint MUST accept ordinary SD and LLM tasks. SDFT checkpoint upload MUST remain on its existing multipart single-task endpoint.
+`POST /v1/inference_tasks/batch` MUST be the signed batch creation endpoint. Its items MUST contain the complete normal-task creation input, including `task_id_commitment`. The endpoint MUST accept ordinary SD, LLM, and video tasks. SDFT checkpoint upload MUST remain on its existing multipart single-task endpoint.
 
 Single-task create (`POST /v1/inference_tasks/:task_id_commitment`) and batch create MUST both require client-supplied `min_vram`. Relay MUST reject a missing `min_vram` before charging. Relay MUST NOT fill `min_vram` from `loaded_models` or any other server-side table.
 
-Create input MUST contain protocol identity fields, `task_args`, `task_type`, `task_fee`, GPU constraints (`required_gpu`, `required_gpu_vram`, `min_vram`), optional `timeout` for SDFT, and optional `queue_timeout` for normal SD and LLM tasks as specified in [queue_timeout.md](./queue_timeout.md). Create input MUST NOT accept `task_version`, `task_model_ids`, `task_size`, or `required_model_files`.
+Create input MUST contain protocol identity fields, `task_args`, `task_type`, `task_fee`, GPU constraints (`required_gpu`, `required_gpu_vram`, `min_vram`), optional `timeout` for SDFT, and optional `queue_timeout` for normal SD, LLM, and video tasks as specified in [queue_timeout.md](./queue_timeout.md). Create input MUST NOT accept `task_version`, `task_model_ids`, `task_size`, or `required_model_files`.
 
 After TaskArgs schema validation, Relay MUST parse `version` from TaskArgs, require the `major.minor.patch` numeric format, and store it as `InferenceTask.TaskVersion`. Relay MUST accept any version string that matches that format. Relay MUST NOT reject a create request because the version equals or differs from a fixed release number.
 
-Relay MUST derive `TaskSize` from TaskArgs and store it on the task row: for an SD task, `task_config.num_images_per_prompt` with schema default `1` when absent; for an LLM or SDFT task, `1`. Relay MUST derive `ModelIDs` from TaskArgs and store them on the task row. Result download continues to use the stored `TaskSize`.
+Relay MUST derive `TaskSize` from TaskArgs and store it on the task row: for an SD task, `task_config.num_images_per_prompt` with schema default `1` when absent; for an LLM, video, or SDFT task, `1`. Relay MUST derive `ModelIDs` from TaskArgs and store them on the task row. Result download continues to use the stored `TaskSize`.
 
 Before charging, Relay MUST derive the required model files from the TaskArgs of each item and validate them as follows:
 
-1. Each member of the required model file set is one model file entry derived from the TaskArgs: the LLM model repository, or the diffusers base model and each component repository of an image task.
+1. Each member of the required model file set is one model file entry derived from the TaskArgs: the LLM model repository, or the diffusers base model and each component repository of an image or video task.
 2. Clients MAY omit revision. Relay MUST freeze every member to a lowercase 40-character hex commit SHA before charging. The original TaskArgs string MUST remain unchanged. Commit SHAs that differ only by letter case MUST identify the same exact model file after `Normalized()`.
 3. When revision is omitted, Relay MUST first reuse a commit already held by an `Available` or `Busy` node for that exact source identity (repository, format, and format kwargs). Preference order MUST be: a commit loaded in memory; otherwise the commit held on disk by the most online nodes; ties MUST break by exact model file hash. Branch, tag, and non-commit inventory revisions MUST NOT be reused. When no reusable commit exists, Relay MUST resolve HuggingFace `main`.
 4. An entry whose revision is already a held commit SHA MUST skip Hub resolution. Any other explicit revision MUST be resolved on the Hub to its commit SHA. Resolved and reused commit SHAs MUST be stored lowercase.
-5. When Hub resolution is required, Relay MUST query the HuggingFace Hub model API without downloading weights. LLM tasks and image components MUST accept a resolvable public model repository, including components whose format is `diffusers`. Hub pipeline checks MUST apply only to the image base model entry derived from `base_model`, not to every entry whose format string is `diffusers`. A diffusers base model MUST accept a repository whose file list includes `model_index.json` and a default non-variant weight file.
+5. When Hub resolution is required, Relay MUST query the HuggingFace Hub model API without downloading weights. LLM tasks and image/video components MUST accept a resolvable public model repository, including components whose format is `diffusers`. Hub pipeline checks MUST apply only to the image or video base model entry derived from `base_model`, not to every entry whose format string is `diffusers`. An image diffusers base model MUST accept a repository whose file list includes `model_index.json` and a default non-variant weight file; a video diffusers base model MUST accept a repository whose file list includes `model_index.json` or `modular_model_index.json` and a default non-variant weight file.
 6. Relay MUST register every exact model file in the `model_files` catalog and MUST store commit exact hashes on the task as `RequiredModelFileHashes`, with empty `RequiredModelFileSourceHashes` for new tasks, together with `RequestedModelCacheHash` and `QuantizationConfigHash`. Matching and later downloads MUST use those persisted exact hashes, not a recomputation from TaskArgs.
 7. Relay MUST detect and store immutable `RequireLinuxCuda` from TaskArgs quantization methods and Hub embedded quantization metadata as specified in [quantization_platform_support.md](./quantization_platform_support.md). A Hub outage with a cache miss MUST follow the same permanent or temporary create failure rules as Hub model validation when TaskArgs alone does not already require Linux CUDA.
-8. A permanent Hub rejection MUST become a create `permanent_error` for that batch item, or a `validation_error` on single create, and MUST NOT charge the creator.
-9. A Hub timeout or Hub 5xx MUST become a create `temporary_error` for that batch item, or a retryable exception on single create, and MUST NOT charge the creator.
+8. When `required_gpu` is non-empty and its normalized GPU name identifies a platform excluded for the task (`Darwin` or a missing `+` suffix for `LLM` and `Video` tasks, or any platform suffix other than `docker` or `Linux` when `RequireLinuxCuda` is true), single-task create MUST return a `validation_error` on `required_gpu` and batch create MUST return `permanent_error` for that item without charging the creator.
+9. A permanent Hub rejection MUST become a create `permanent_error` for that batch item, or a `validation_error` on single create, and MUST NOT charge the creator.
+10. A Hub timeout or Hub 5xx MUST become a create `temporary_error` for that batch item, or a retryable exception on single create, and MUST NOT charge the creator.
 
 Relay MUST normalize, validate, price, and create each item independently through the existing single-task financial boundary. Each item MUST use its own database transaction for:
 
@@ -135,6 +136,8 @@ Before sending response headers, Relay MUST:
 - enforce a configured maximum aggregate uncompressed size.
 
 For an LLM task, Relay MUST stream the single `0.json` file as the response with `Content-Type: application/json`.
+
+For a video task, Relay MUST require `TaskSize = 1` and stream the single `0.mp4` file as the response with `Content-Type: video/mp4`.
 
 For an SD task with `TaskSize = 1`, Relay MUST stream the single `0.png` file as the response with `Content-Type: image/png`. For an SD task with `TaskSize > 1`, Relay MUST stream one ZIP archive containing all result images. Archive entries MUST use only `<index>.png`, in ascending index order from `0` through `TaskSize - 1`. Relay MUST construct entry names from validated numeric indexes and MUST NOT derive an entry path from client input or a filesystem path.
 

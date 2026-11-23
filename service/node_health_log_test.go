@@ -15,6 +15,9 @@ func TestTaskTypeTag(t *testing.T) {
 	if got := taskTypeTag(models.TaskTypeSDFTLora); got != "SDFTLora" {
 		t.Fatalf("expected SDFTLora, got %s", got)
 	}
+	if got := taskTypeTag(models.TaskTypeVideo); got != "Video" {
+		t.Fatalf("expected Video, got %s", got)
+	}
 }
 
 func TestShouldLogHealthBoost(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 )
 
 type GetTaskFeeHistogramParams struct {
-	TaskType TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,All"`
+	TaskType TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,Video,All"`
 }
 
 type GetTaskFeeHistogramData struct {
@@ -48,6 +48,8 @@ func GetTaskFeeHistogram(_ *gin.Context, input *GetTaskFeeHistogramParams) (*Get
 		stmt = stmt.Where("task_type IN ?", []models.TaskType{models.TaskTypeSD, models.TaskTypeSDFTLora})
 	case TextTaskType:
 		stmt = stmt.Where("task_type = ?", models.TaskTypeLLM)
+	case VideoTaskType:
+		stmt = stmt.Where("task_type = ?", models.TaskTypeVideo)
 	}
 
 	rows, err := stmt.Select("task_fee").Rows()

@@ -78,6 +78,18 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 		}
 	}
 
+	if !models.IsSupportedTaskType(in.TaskType) {
+		return nil, response.NewValidationErrorResponse("task_type", "Unsupported task type")
+	}
+
+	requiredGPU := ""
+	if in.RequiredGPU != nil {
+		requiredGPU = *in.RequiredGPU
+	}
+	if err := service.ValidateRequiredGPUPlatform(in.TaskType, false, requiredGPU); err != nil {
+		return nil, response.NewValidationErrorResponse("required_gpu", err.Error())
+	}
+
 	validationErr, err := models.ValidateTaskArgsJsonStr(in.TaskArgs, in.TaskType)
 	if err != nil {
 		return nil, response.NewExceptionResponse(err)
@@ -92,7 +104,7 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrQueueTimeoutNotAllowed):
-			return nil, response.NewValidationErrorResponse("queue_timeout", "queue_timeout is only supported for ordinary SD and LLM tasks")
+			return nil, response.NewValidationErrorResponse("queue_timeout", "queue_timeout is only supported for ordinary SD, LLM, and video tasks")
 		case errors.Is(err, service.ErrQueueTimeoutZero):
 			return nil, response.NewValidationErrorResponse("queue_timeout", "queue_timeout must be greater than 0")
 		case errors.Is(err, service.ErrQueueTimeoutTooLarge):
@@ -136,6 +148,9 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	if err != nil {
 		return nil, modelRequirementsErrorResponse(err)
 	}
+	if err := service.ValidateRequiredGPUPlatform(in.TaskType, requirements.RequireLinuxCuda, requiredGPU); err != nil {
+		return nil, response.NewValidationErrorResponse("required_gpu", err.Error())
+	}
 
 	if in.TaskType == models.TaskTypeSDFTLora && c.ContentType() == "multipart/form-data" {
 		form, err := c.MultipartForm()
@@ -167,10 +182,6 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 	samplingSeed := hexutil.Encode(samplingSeedBytes)
 
-	requiredGPU := ""
-	if in.RequiredGPU != nil {
-		requiredGPU = *in.RequiredGPU
-	}
 	requiredGPUVRAM := uint64(0)
 	if in.RequiredGPUVram != nil {
 		requiredGPUVRAM = *in.RequiredGPUVram
@@ -202,6 +213,12 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 	}
 
 	if err := service.CreateTask(c.Request.Context(), config.GetDB(), task); err != nil {
+		if errors.Is(err, service.ErrUnsupportedRequiredGPUPlatform) {
+			return nil, response.NewValidationErrorResponse("required_gpu", err.Error())
+		}
+		if errors.Is(err, service.ErrInvalidTaskArgs) {
+			return nil, response.NewValidationErrorResponse("task_args", err.Error())
+		}
 		if errors.Is(err, service.ErrInsufficientRelayAccount) {
 			return nil, response.NewValidationErrorResponse("task_fee", "Insufficient relay account balance")
 		}

@@ -7,11 +7,23 @@ import (
 )
 
 func TestNormalizeModelID(t *testing.T) {
-	modelID := "BaSe:Qwen/Qwen3.5-9B+FP16"
-	got := NormalizeModelID(modelID)
-	want := "base:qwen/qwen3.5-9b+fp16"
-	if got != want {
-		t.Fatalf("unexpected normalized model id, got %q, want %q", got, want)
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"BaSe:Qwen/Qwen3.5-9B+FP16", "base:qwen/qwen3.5-9b+fp16"},
+		{"LoRa:https://example.com/Models/MyLora_V2.safetensors", "lora:https://example.com/Models/MyLora_V2.safetensors"},
+		{"LoRa:http://Example.com/Path/Weights.bin", "lora:http://Example.com/Path/Weights.bin"},
+		{"LoRa:Wan-AI/Wan2.2-Lora@Main#Wan2.2_HighNoise_FP16.safetensors", "lora:wan-ai/wan2.2-lora@Main#Wan2.2_HighNoise_FP16.safetensors"},
+		{"LoRa:Wan-AI/Wan2.2-Lora@ABCDEF0123456789ABCDEF0123456789ABCDEF01#Rank32_LoRA.safetensors", "lora:wan-ai/wan2.2-lora@abcdef0123456789abcdef0123456789abcdef01#Rank32_LoRA.safetensors"},
+		{"Component:Transformer_2:Unsloth/Wan2.2-GGUF", "component:transformer_2:unsloth/wan2.2-gguf"},
+		{"Component:Transformer:https://example.com/Models/Transformer.gguf", "component:transformer:https://example.com/Models/Transformer.gguf"},
+	}
+	for _, tc := range cases {
+		got := NormalizeModelID(tc.input)
+		if got != tc.want {
+			t.Fatalf("NormalizeModelID(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
 

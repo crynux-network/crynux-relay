@@ -16,7 +16,7 @@ import (
 )
 
 // modelDemandKey identifies one distribution unit: a required model file set
-// together with the VRAM demand, the LLM Darwin exclusion, and RequireLinuxCuda
+// together with the VRAM demand, the LLM and video Darwin exclusion, and RequireLinuxCuda
 // of the tasks requiring it. Tasks with different VRAM demands form separate
 // demand groups because a node only counts toward coverage of the groups it
 // can execute.
@@ -53,26 +53,21 @@ func modelDemandKeyOf(task *models.InferenceTask) (key modelDemandKey, exact, so
 	key = modelDemandKey{
 		setKey:           models.DistributionKey(exact, source),
 		minVRAM:          taskVRAMDemand(task),
-		excludeDarwin:    task.TaskType == models.TaskTypeLLM,
+		excludeDarwin:    isTaskDarwinExcluded(task.TaskType),
 		requireLinuxCuda: task.RequireLinuxCuda,
 	}
 	return key, exact, source, true, nil
 }
 
 // nodeSatisfiesDemand reports whether a node's VRAM covers the demand
-// group's requirement, the node is not a Darwin node for LLM demand, and the
-// node is a Linux CUDA platform when RequireLinuxCuda is set.
+// group's requirement, the node is not a Darwin node when Darwin exclusion
+// applies (LLM and video demand), and the node is a Linux CUDA platform when
+// RequireLinuxCuda is set.
 func nodeSatisfiesDemand(gpuName string, gpuVram uint64, key modelDemandKey) bool {
 	if gpuVram < key.minVRAM {
 		return false
 	}
-	if key.excludeDarwin && isDarwinGPUName(gpuName) {
-		return false
-	}
-	if key.requireLinuxCuda && !isLinuxCudaPlatform(gpuName) {
-		return false
-	}
-	return true
+	return isGPUPlatformSupported(key.excludeDarwin, key.requireLinuxCuda, gpuName)
 }
 
 // modelDemand aggregates the demand facts of one demand group over the

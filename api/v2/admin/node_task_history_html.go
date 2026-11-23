@@ -114,16 +114,7 @@ func yesNo(v bool) string {
 }
 
 func taskTypeLabel(taskType models.TaskType) string {
-	switch taskType {
-	case models.TaskTypeLLM:
-		return "LLM"
-	case models.TaskTypeSD:
-		return "SD"
-	case models.TaskTypeSDFTLora:
-		return "SDFTLora"
-	default:
-		return fmt.Sprintf("Unknown(%d)", taskType)
-	}
+	return taskType.DisplayLabel()
 }
 
 func taskStatusLabel(status models.TaskStatus, abortReason models.TaskAbortReason) string {
