@@ -81,7 +81,7 @@ Relay MUST expose these in-memory execution parameter metrics:
 
 The LLM `constant` coefficient MUST use seconds, `text_input` MUST use seconds per input byte, `output` MUST use seconds per output token, `model_switch` MUST use seconds per switch, `image_count` MUST use seconds per image, and `image_megapixel` MUST use seconds per megapixel. Sample count MUST NOT be used as a cross-GPU aggregation weight.
 
-Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM text input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST display model switch, image count, and image megapixel coefficients without unit conversion. Grafana MUST display the SD and video overhead coefficients in seconds without unit conversion. Grafana MUST multiply the SD pixel-step coefficient by `512 * 512` and label it seconds per 512×512 image-step.
+Prometheus output MUST remain in these base units. Grafana MUST multiply the LLM text input and output coefficients by `5000` and label them seconds per 5,000 input bytes and seconds per 5,000 output tokens. Grafana MUST display model switch, image count, and image megapixel coefficients without unit conversion. Grafana MUST display the SD and video overhead coefficients in seconds without unit conversion. Grafana MUST multiply the SD pixel-step coefficient by `512 * 512` and label it seconds per 512×512 image-step. Grafana MUST multiply the video unit coefficient by `832 * 480` and label it seconds per 832×480 frame-step.
 
 The `quantization_config_hash` label MUST be the lowercase hexadecimal encoding of the 32-byte `QuantizationConfigHash`.
 
