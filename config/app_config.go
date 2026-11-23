@@ -159,9 +159,13 @@ type AppConfig struct {
 	DepositWithdrawNetworks map[string]DepositWithdrawNetworkConfig `mapstructure:"deposit_withdraw_networks"`
 
 	Task struct {
-		StakeAmount                uint64 `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
-		DistanceThreshold          uint64 `mapstructure:"distance_threshold"`
-		TaskWhitelistEnabled       bool   `mapstructure:"task_whitelist_enabled"`
+		StakeAmount                       uint64  `mapstructure:"stake_amount" description:"stake amount, in ether unit"`
+		DistanceThreshold                 uint64  `mapstructure:"distance_threshold"`
+		VideoDistanceMeanThreshold        float64 `mapstructure:"video_distance_mean_threshold"`
+		VideoDistanceMaxThreshold         uint64  `mapstructure:"video_distance_max_threshold"`
+		VideoAudioDistanceThreshold       uint64  `mapstructure:"video_audio_distance_threshold"`
+		VideoUploadAudioDistanceThreshold *uint64 `mapstructure:"video_upload_audio_distance_threshold"`
+		TaskWhitelistEnabled              bool    `mapstructure:"task_whitelist_enabled"`
 		ModelWhitelistEnabled      bool   `mapstructure:"model_whitelist_enabled"`
 		MinimumNodeNameNumber      uint64 `mapstructure:"minimum_node_name_number"`
 		NodeNameWhitelistEnabled   bool   `mapstructure:"node_name_whitelist_enabled"`
@@ -180,6 +184,8 @@ type AppConfig struct {
 	TaskPricing struct {
 		InitialSDOverheadSeconds                  float64 `mapstructure:"initial_sd_overhead_seconds"`
 		InitialSecondsPerSDPixelStep              float64 `mapstructure:"initial_seconds_per_sd_pixel_step"`
+		InitialVideoOverheadSeconds               float64 `mapstructure:"initial_video_overhead_seconds"`
+		InitialSecondsPerVideoUnit                float64 `mapstructure:"initial_seconds_per_video_unit"`
 		InitialLLMConstantSeconds                 float64 `mapstructure:"initial_llm_constant_seconds"`
 		InitialLLMSecondsPerInputByte             float64 `mapstructure:"initial_llm_seconds_per_input_byte"`
 		InitialLLMSecondsPerOutputToken           float64 `mapstructure:"initial_llm_seconds_per_output_token"`
@@ -228,6 +234,7 @@ type AppConfig struct {
 		StableDiffusionInference    string `mapstructure:"stable_diffusion_inference"`
 		GPTInference                string `mapstructure:"gpt_inference"`
 		StableDiffusionFinetuneLora string `mapstructure:"stable_diffusion_finetune_lora"`
+		VideoInference              string `mapstructure:"video_inference"`
 	} `mapstructure:"task_schema"`
 
 	Stats struct {

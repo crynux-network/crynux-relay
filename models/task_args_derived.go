@@ -60,7 +60,7 @@ func DeriveTaskSize(taskArgs string, taskType TaskType) (uint64, error) {
 			return 0, errors.New("task_config.num_images_per_prompt must be greater than 0")
 		}
 		return *args.TaskConfig.NumImagesPerPrompt, nil
-	case TaskTypeLLM, TaskTypeSDFTLora:
+	case TaskTypeLLM, TaskTypeSDFTLora, TaskTypeVideo:
 		return 1, nil
 	default:
 		return 0, fmt.Errorf("unsupported task type %d", taskType)
@@ -137,6 +137,55 @@ func DeriveTaskModelIDs(taskArgs string, taskType TaskType) ([]string, error) {
 			id += "+" + args.Model.Variant
 		}
 		return NormalizeModelIDs([]string{id}), nil
+	case TaskTypeVideo:
+		var args struct {
+			BaseModel struct {
+				Name string `json:"name"`
+			} `json:"base_model"`
+			Loras []struct {
+				Model          string  `json:"model"`
+				Revision       *string `json:"revision"`
+				WeightFileName string  `json:"weight_file_name"`
+			} `json:"loras"`
+			Components map[string]struct {
+				Repo string `json:"repo"`
+			} `json:"components"`
+		}
+		if err := json.Unmarshal([]byte(taskArgs), &args); err != nil {
+			return nil, fmt.Errorf("invalid task args: %w", err)
+		}
+		if args.BaseModel.Name == "" {
+			return nil, errors.New("task args base_model name is empty")
+		}
+		ids := []string{"base:" + args.BaseModel.Name}
+		for i, lora := range args.Loras {
+			if lora.Model == "" {
+				return nil, fmt.Errorf("task args loras[%d].model is empty", i)
+			}
+			loraID := "lora:" + lora.Model
+			if !strings.HasPrefix(lora.Model, "http://") && !strings.HasPrefix(lora.Model, "https://") {
+				if lora.Revision != nil && *lora.Revision != "" {
+					loraID += "@" + *lora.Revision
+				}
+				if lora.WeightFileName != "" {
+					loraID += "#" + lora.WeightFileName
+				}
+			}
+			ids = append(ids, loraID)
+		}
+		names := make([]string, 0, len(args.Components))
+		for name := range args.Components {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			repo := args.Components[name].Repo
+			if repo == "" {
+				return nil, fmt.Errorf("task args components.%s.repo is empty", name)
+			}
+			ids = append(ids, "component:"+name+":"+repo)
+		}
+		return NormalizeModelIDs(ids), nil
 	default:
 		return nil, fmt.Errorf("unsupported task type %d", taskType)
 	}

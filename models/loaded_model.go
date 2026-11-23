@@ -11,15 +11,20 @@ import (
 type LoadedModelType string
 
 const (
-	LoadedModelTypeSD  LoadedModelType = "sd"
-	LoadedModelTypeLLM LoadedModelType = "llm"
+	LoadedModelTypeSD    LoadedModelType = "sd"
+	LoadedModelTypeLLM   LoadedModelType = "llm"
+	LoadedModelTypeVideo LoadedModelType = "video"
 )
 
 func LoadedModelTypeFromTaskType(taskType TaskType) LoadedModelType {
-	if taskType == TaskTypeLLM {
+	switch taskType {
+	case TaskTypeLLM:
 		return LoadedModelTypeLLM
+	case TaskTypeVideo:
+		return LoadedModelTypeVideo
+	default:
+		return LoadedModelTypeSD
 	}
-	return LoadedModelTypeSD
 }
 
 // LoadedModel is the successful-execution projection of one loaded model. A row

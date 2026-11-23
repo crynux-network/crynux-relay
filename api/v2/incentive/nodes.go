@@ -34,6 +34,7 @@ type NodeIncentive struct {
 	SDTaskCount       int64   `json:"sd_task_count"`
 	LLMTaskCount      int64   `json:"llm_task_count"`
 	SDFTLoraTaskCount int64   `json:"sd_ft_lora_task_count"`
+	VideoTaskCount    int64   `json:"video_task_count"`
 }
 
 type GetNodeIncentiveData struct {
@@ -85,7 +86,7 @@ func loadTopNodesByTotalTaskFee(ctx context.Context, db *gorm.DB, start, end tim
 	}
 
 	rows, err := db.WithContext(ctx).Model(&models.NodeIncentive{}).
-		Select("node_address, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count").
+		Select("node_address, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count, SUM(video_task_count) as video_task_count").
 		Where("time >= ?", start).
 		Where("time < ?", end).
 		Where("node_address IN ?", nodeAddresses).
@@ -102,7 +103,8 @@ func loadTopNodesByTotalTaskFee(ctx context.Context, db *gorm.DB, start, end tim
 		var sdTaskCount sql.NullInt64
 		var llmTaskCount sql.NullInt64
 		var sdFTLoraTaskCount sql.NullInt64
-		if err := rows.Scan(&nodeAddress, &taskCount, &sdTaskCount, &llmTaskCount, &sdFTLoraTaskCount); err != nil {
+		var videoTaskCount sql.NullInt64
+		if err := rows.Scan(&nodeAddress, &taskCount, &sdTaskCount, &llmTaskCount, &sdFTLoraTaskCount, &videoTaskCount); err != nil {
 			return nil, err
 		}
 		nodeIncentive, ok := nodeIncentiveMap[nodeAddress]
@@ -118,6 +120,9 @@ func loadTopNodesByTotalTaskFee(ctx context.Context, db *gorm.DB, start, end tim
 		}
 		if sdFTLoraTaskCount.Valid {
 			nodeIncentive.SDFTLoraTaskCount = sdFTLoraTaskCount.Int64
+		}
+		if videoTaskCount.Valid {
+			nodeIncentive.VideoTaskCount = videoTaskCount.Int64
 		}
 		nodeIncentiveMap[nodeAddress] = nodeIncentive
 	}
@@ -262,7 +267,7 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 	}
 
 	rows, err := config.GetDB().WithContext(ctx).Model(&models.NodeIncentive{}).
-		Select("node_address, SUM(incentive) as incentive, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count").
+		Select("node_address, SUM(incentive) as incentive, SUM(task_count) as task_count, SUM(sd_task_count) as sd_task_count, SUM(llm_task_count) as llm_task_count, SUM(sd_ft_lora_task_count) as sd_ft_lora_task_count, SUM(video_task_count) as video_task_count").
 		Where("time >= ?", start).
 		Where("time < ?", end).
 		Group("node_address").
@@ -286,8 +291,9 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 		var sd_task_count sql.NullInt64
 		var llm_task_count sql.NullInt64
 		var sd_ft_lora_task_count sql.NullInt64
+		var video_task_count sql.NullInt64
 
-		if err := rows.Scan(&nodeAddress, &incentive, &task_count, &sd_task_count, &llm_task_count, &sd_ft_lora_task_count); err != nil {
+		if err := rows.Scan(&nodeAddress, &incentive, &task_count, &sd_task_count, &llm_task_count, &sd_ft_lora_task_count, &video_task_count); err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
 		nodeIncentive := NodeIncentive{
@@ -303,6 +309,9 @@ func GetAllNodeIncentive(c *gin.Context, input *GetAllNodeIncentiveParamsWithSig
 		}
 		if sd_ft_lora_task_count.Valid {
 			nodeIncentive.SDFTLoraTaskCount = sd_ft_lora_task_count.Int64
+		}
+		if video_task_count.Valid {
+			nodeIncentive.VideoTaskCount = video_task_count.Int64
 		}
 		nodeAddresses = append(nodeAddresses, nodeAddress)
 		nodeIncentiveMap[nodeAddress] = nodeIncentive

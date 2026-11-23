@@ -8,6 +8,7 @@ The validation contract does not require every floating-point intermediate value
 
 - LLM validation scores MUST match exactly.
 - SD and SD fine-tuning validation scores MUST satisfy the configured per-image perceptual-hash distance threshold.
+- Video validation scores MUST satisfy the configured sampled-frame mean and maximum perceptual-hash distance thresholds, and the configured audio perceptual-hash distance threshold when audio is present.
 
 The complete validation and slashing behavior is specified in [task_validation_and_slashing.md](./task_validation_and_slashing.md).
 
@@ -130,7 +131,7 @@ Relay compares LLM score strings exactly. The Node computes the LLM score as the
 
 An exact score match proves that the submitted result files have the same bytes. A score mismatch proves only that the result files differ. The score alone does not identify whether the first difference came from task data, model artifacts, runtime selection, random state, a nondeterministic operator, serialization, or incorrect node behavior.
 
-The validation outcome MUST continue to follow the majority rules in [task_validation_and_slashing.md](./task_validation_and_slashing.md). Explanations of numerical nondeterminism MUST NOT weaken exact LLM score comparison or change the configured image perceptual-hash threshold.
+The validation outcome MUST continue to follow the majority rules in [task_validation_and_slashing.md](./task_validation_and_slashing.md). Explanations of numerical nondeterminism MUST NOT weaken exact LLM score comparison or change the configured image or video perceptual-hash thresholds.
 
 ## Execution Mode Requirements
 

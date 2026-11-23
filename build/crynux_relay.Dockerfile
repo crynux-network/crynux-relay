@@ -13,7 +13,7 @@ RUN CGO_ENABLED=1 go build
 
 FROM alpine:3.23
 
-RUN apk add --no-cache tzdata \
+RUN apk add --no-cache tzdata ffmpeg \
     && addgroup -S -g 10001 crynux \
     && adduser -S -u 10001 -G crynux crynux
 

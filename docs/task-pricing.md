@@ -31,6 +31,16 @@ estimated_node_seconds =
 
 `overhead_seconds` and `seconds_per_sd_pixel_step` MUST come from the selected or aggregated calibration records specified above. Task creation MUST NOT read a configured fixed SD overhead.
 
+For video, Relay MUST compute:
+
+```
+estimated_node_seconds =
+    video_overhead_seconds
+    + VideoUnits * seconds_per_video_unit
+```
+
+`video_overhead_seconds` and `seconds_per_video_unit` MUST come from the selected or aggregated video calibration records specified above, or from `task_pricing.initial_video_overhead_seconds` and `task_pricing.initial_seconds_per_video_unit` when no compatible sampled record exists.
+
 For LLM, Relay MUST compute:
 
 ```
@@ -46,7 +56,7 @@ Task creation MUST set the model-switch term to zero because the selected node i
 
 At task creation, if `generation_config.max_new_tokens` is absent, Relay MUST store the configured default into `LLMMaxNewTokens`. Relay MUST assume generation can reach `LLMMaxNewTokens` and MUST NOT reduce output work by a historical early-stop ratio.
 
-For SDFT LoRA, Relay MUST use the creator-supplied stored `Timeout` as `estimated_node_seconds`. SDFT LoRA MUST NOT use the SD or LLM execution parameter cache.
+For SDFT LoRA, Relay MUST use the creator-supplied stored `Timeout` as `estimated_node_seconds`. SDFT LoRA MUST NOT use the SD, video, or LLM execution parameter cache.
 
 Relay MUST enforce a positive lower bound on `estimated_node_seconds` before division.
 
@@ -64,7 +74,7 @@ Relay MUST compute:
 priority = task_fee / (estimated_node_seconds * vram_weight)
 ```
 
-Relay MUST store `SDUnits` or all of `LLMTextInputBytes`, `LLMImageCount`, `LLMImagePixels`, and `LLMMaxNewTokens`, together with `estimated_node_seconds`, `vram_weight`, and `priority` on task creation. These values MUST remain unchanged for the task lifetime. Later execution-parameter updates and the model-switch decision at dispatch MUST NOT recalculate existing task priority.
+Relay MUST store `SDUnits`, `VideoUnits`, or all of `LLMTextInputBytes`, `LLMImageCount`, `LLMImagePixels`, and `LLMMaxNewTokens`, together with `estimated_node_seconds`, `vram_weight`, and `priority` on task creation. These values MUST remain unchanged for the task lifetime. Later execution-parameter updates and the model-switch decision at dispatch MUST NOT recalculate existing task priority.
 
 VRAM weight MUST affect queue priority only. It MUST NOT alter candidate filtering, node score, staking score, QoS, model locality, or weighted node sampling.
 

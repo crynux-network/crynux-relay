@@ -30,11 +30,11 @@ const (
 )
 
 func UsesRelayOwnedTimeouts(task *models.InferenceTask) bool {
-	return task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM
+	return task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM || task.TaskType == models.TaskTypeVideo
 }
 
 var (
-	ErrQueueTimeoutNotAllowed = errors.New("queue_timeout is only supported for ordinary SD and LLM tasks")
+	ErrQueueTimeoutNotAllowed = errors.New("queue_timeout is only supported for ordinary SD, LLM, and video tasks")
 	ErrQueueTimeoutZero       = errors.New("queue_timeout must be greater than 0")
 	ErrQueueTimeoutTooLarge   = errors.New("queue_timeout exceeds max_queue_timeout_seconds")
 )
@@ -167,7 +167,7 @@ func getTimedOutQueuedTasks(ctx context.Context, db *gorm.DB, now time.Time) ([]
 		dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		relayOwnedCandidate := db.Where(
 			"task_type IN ?",
-			[]models.TaskType{models.TaskTypeSD, models.TaskTypeLLM},
+			[]models.TaskType{models.TaskTypeSD, models.TaskTypeLLM, models.TaskTypeVideo},
 		).Where("create_time <= ?", relayOwnedCutoff)
 		sdftCandidate := db.Where("task_type = ?", models.TaskTypeSDFTLora).
 			Where("create_time <= ?", sdftEarliestCutoff)

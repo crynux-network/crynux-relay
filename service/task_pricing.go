@@ -19,11 +19,16 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+var ErrInvalidTaskArgs = errors.New("invalid task args")
+
 const (
 	defaultSDNumImages          = uint64(1)
 	defaultSDImageWidth         = uint64(1024)
 	defaultSDImageHeight        = uint64(1024)
 	defaultSDSteps              = uint64(30)
+	defaultVideoWidth           = uint64(832)
+	defaultVideoHeight          = uint64(480)
+	defaultVideoSteps           = uint64(30)
 	minEstimatedNodeSeconds     = 1.0
 	llmInputBytesPerPublicToken = 4
 )
@@ -42,6 +47,11 @@ type TaskExecutionTimeQuery struct {
 type SDExecutionTimeCoefficients struct {
 	OverheadSeconds       float64
 	SecondsPerSDPixelStep float64
+}
+
+type VideoExecutionTimeCoefficients struct {
+	OverheadSeconds     float64
+	SecondsPerVideoUnit float64
 }
 
 type LLMExecutionTimeCoefficients struct {
@@ -81,7 +91,7 @@ type llmWorkload struct {
 func computeSDPricingUnits(taskArgs string) (uint64, error) {
 	var args sdPricingArgs
 	if err := json.Unmarshal([]byte(taskArgs), &args); err != nil {
-		return 0, fmt.Errorf("parse sd task args: %w", err)
+		return 0, fmt.Errorf("%w: parse sd task args: %w", ErrInvalidTaskArgs, err)
 	}
 	numImages, imageWidth, imageHeight, steps := defaultSDNumImages, defaultSDImageWidth, defaultSDImageHeight, defaultSDSteps
 	if args.TaskConfig != nil {
@@ -99,18 +109,124 @@ func computeSDPricingUnits(taskArgs string) (uint64, error) {
 		}
 	}
 	if numImages == 0 || imageWidth == 0 || imageHeight == 0 || steps == 0 {
-		return 0, errors.New("sd pixel-step factors must be positive")
+		return 0, fmt.Errorf("%w: sd pixel-step factors must be positive", ErrInvalidTaskArgs)
 	}
 	if numImages > math.MaxUint64/imageWidth || numImages*imageWidth > math.MaxUint64/imageHeight || numImages*imageWidth*imageHeight > math.MaxUint64/steps {
-		return 0, errors.New("sd pixel-step units overflow uint64")
+		return 0, fmt.Errorf("%w: sd pixel-step units overflow uint64", ErrInvalidTaskArgs)
 	}
 	return numImages * imageWidth * imageHeight * steps, nil
+}
+
+type videoPricingTaskConfig struct {
+	Width     *uint64 `json:"width"`
+	Height    *uint64 `json:"height"`
+	NumFrames *uint64 `json:"num_frames"`
+	Steps     *uint64 `json:"steps"`
+}
+
+type videoPricingArgs struct {
+	Image      *string                 `json:"image"`
+	LastImage  *string                 `json:"last_image"`
+	Keyframes  []struct{ Image string `json:"image"` } `json:"keyframes"`
+	References []struct {
+		Type string `json:"type"`
+		Data string `json:"data"`
+	} `json:"references"`
+	TaskConfig *videoPricingTaskConfig `json:"task_config"`
+}
+
+func decodeDataURLDimensions(dataURL string) (uint64, uint64, error) {
+	header, payload, ok := strings.Cut(dataURL, ",")
+	if !ok || !strings.HasPrefix(header, "data:image/") || !strings.Contains(header, ";base64") {
+		return 0, 0, fmt.Errorf("%w: video image input must be a base64 image data URL", ErrInvalidTaskArgs)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: decode video image base64: %w", ErrInvalidTaskArgs, err)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(decoded))
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: read video image dimensions: %w", ErrInvalidTaskArgs, err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, fmt.Errorf("%w: video image dimensions must be positive", ErrInvalidTaskArgs)
+	}
+	return uint64(cfg.Width), uint64(cfg.Height), nil
+}
+
+func firstVideoImageDataURL(args *videoPricingArgs) string {
+	if args.Image != nil && *args.Image != "" {
+		return *args.Image
+	}
+	if args.LastImage != nil && *args.LastImage != "" {
+		return *args.LastImage
+	}
+	if len(args.Keyframes) > 0 && args.Keyframes[0].Image != "" {
+		return args.Keyframes[0].Image
+	}
+	for _, ref := range args.References {
+		if ref.Type == "image" && ref.Data != "" {
+			return ref.Data
+		}
+	}
+	return ""
+}
+
+func computeVideoPricingUnits(taskArgs string) (uint64, error) {
+	var args videoPricingArgs
+	if err := json.Unmarshal([]byte(taskArgs), &args); err != nil {
+		return 0, fmt.Errorf("%w: parse video task args: %w", ErrInvalidTaskArgs, err)
+	}
+	width, height := uint64(0), uint64(0)
+	numFrames, steps := uint64(models.DefaultVideoNumFrames), defaultVideoSteps
+	if args.TaskConfig != nil {
+		if args.TaskConfig.Width != nil {
+			width = *args.TaskConfig.Width
+		}
+		if args.TaskConfig.Height != nil {
+			height = *args.TaskConfig.Height
+		}
+		if args.TaskConfig.NumFrames != nil {
+			numFrames = *args.TaskConfig.NumFrames
+		}
+		if args.TaskConfig.Steps != nil {
+			steps = *args.TaskConfig.Steps
+		}
+	}
+	if width == 0 || height == 0 {
+		if imgURL := firstVideoImageDataURL(&args); imgURL != "" {
+			imgW, imgH, err := decodeDataURLDimensions(imgURL)
+			if err != nil {
+				return 0, err
+			}
+			if width == 0 {
+				width = imgW
+			}
+			if height == 0 {
+				height = imgH
+			}
+		} else {
+			if width == 0 {
+				width = defaultVideoWidth
+			}
+			if height == 0 {
+				height = defaultVideoHeight
+			}
+		}
+	}
+	if width == 0 || height == 0 || numFrames == 0 || steps == 0 {
+		return 0, fmt.Errorf("%w: video workload factors must be positive", ErrInvalidTaskArgs)
+	}
+	if width > math.MaxUint64/height || width*height > math.MaxUint64/numFrames || width*height*numFrames > math.MaxUint64/steps {
+		return 0, fmt.Errorf("%w: video workload units overflow uint64", ErrInvalidTaskArgs)
+	}
+	return width * height * numFrames * steps, nil
 }
 
 func computeLLMMaxNewTokens(taskArgs string) (uint64, error) {
 	var args llmPricingArgs
 	if err := json.Unmarshal([]byte(taskArgs), &args); err != nil {
-		return 0, fmt.Errorf("parse llm task args: %w", err)
+		return 0, fmt.Errorf("%w: parse llm task args: %w", ErrInvalidTaskArgs, err)
 	}
 	if args.GenerationConfig != nil && args.GenerationConfig.MaxNewTokens != nil {
 		return *args.GenerationConfig.MaxNewTokens, nil
@@ -123,7 +239,7 @@ func computeLLMWorkload(taskArgs string) (llmWorkload, error) {
 	decoder.UseNumber()
 	var args map[string]interface{}
 	if err := decoder.Decode(&args); err != nil {
-		return llmWorkload{}, fmt.Errorf("parse llm task args: %w", err)
+		return llmWorkload{}, fmt.Errorf("%w: parse llm task args: %w", ErrInvalidTaskArgs, err)
 	}
 	messages, workload, err := stripLLMImagePayloads(args["messages"])
 	if err != nil {
@@ -136,7 +252,7 @@ func computeLLMWorkload(taskArgs string) (llmWorkload, error) {
 	}
 	encoded, err := json.Marshal(canonical)
 	if err != nil {
-		return llmWorkload{}, fmt.Errorf("encode canonical llm input: %w", err)
+		return llmWorkload{}, fmt.Errorf("%w: encode canonical llm input: %w", ErrInvalidTaskArgs, err)
 	}
 	workload.textInputBytes = uint64(len(encoded))
 	return workload, nil
@@ -155,7 +271,7 @@ func stripLLMImagePayloads(value interface{}) (interface{}, llmWorkload, error) 
 			result[i] = cleaned
 			if total.imageCount > math.MaxUint64-workload.imageCount ||
 				total.imagePixels > math.MaxUint64-workload.imagePixels {
-				return nil, llmWorkload{}, errors.New("llm image workload overflows uint64")
+				return nil, llmWorkload{}, fmt.Errorf("%w: llm image workload overflows uint64", ErrInvalidTaskArgs)
 			}
 			total.imageCount += workload.imageCount
 			total.imagePixels += workload.imagePixels
@@ -169,22 +285,22 @@ func stripLLMImagePayloads(value interface{}) (interface{}, llmWorkload, error) 
 		if imageType, _ := value["type"].(string); imageType == "image" {
 			rawBase64, ok := value["base64"].(string)
 			if !ok {
-				return nil, llmWorkload{}, errors.New("llm image block base64 is not a string")
+				return nil, llmWorkload{}, fmt.Errorf("%w: llm image block base64 is not a string", ErrInvalidTaskArgs)
 			}
 			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rawBase64))
 			if err != nil {
-				return nil, llmWorkload{}, fmt.Errorf("decode llm image base64: %w", err)
+				return nil, llmWorkload{}, fmt.Errorf("%w: decode llm image base64: %w", ErrInvalidTaskArgs, err)
 			}
 			imageConfig, _, err := image.DecodeConfig(bytes.NewReader(decoded))
 			if err != nil {
-				return nil, llmWorkload{}, fmt.Errorf("read llm image dimensions: %w", err)
+				return nil, llmWorkload{}, fmt.Errorf("%w: read llm image dimensions: %w", ErrInvalidTaskArgs, err)
 			}
 			if imageConfig.Width <= 0 || imageConfig.Height <= 0 {
-				return nil, llmWorkload{}, errors.New("llm image dimensions must be positive")
+				return nil, llmWorkload{}, fmt.Errorf("%w: llm image dimensions must be positive", ErrInvalidTaskArgs)
 			}
 			width, height := uint64(imageConfig.Width), uint64(imageConfig.Height)
 			if width > math.MaxUint64/height {
-				return nil, llmWorkload{}, errors.New("llm image pixels overflow uint64")
+				return nil, llmWorkload{}, fmt.Errorf("%w: llm image pixels overflow uint64", ErrInvalidTaskArgs)
 			}
 			delete(result, "base64")
 			return result, llmWorkload{imageCount: 1, imagePixels: width * height}, nil
@@ -198,7 +314,7 @@ func stripLLMImagePayloads(value interface{}) (interface{}, llmWorkload, error) 
 			result[key] = cleaned
 			if total.imageCount > math.MaxUint64-workload.imageCount ||
 				total.imagePixels > math.MaxUint64-workload.imagePixels {
-				return nil, llmWorkload{}, errors.New("llm image workload overflows uint64")
+				return nil, llmWorkload{}, fmt.Errorf("%w: llm image workload overflows uint64", ErrInvalidTaskArgs)
 			}
 			total.imageCount += workload.imageCount
 			total.imagePixels += workload.imagePixels
@@ -221,6 +337,11 @@ func computeEstimatedNodeSeconds(task *models.InferenceTask, parameters executio
 			return 0, errors.New("sd_units is not set")
 		}
 		return parameters.sdOverhead + float64(*task.SDUnits)*parameters.sdRate, nil
+	case models.TaskTypeVideo:
+		if task.VideoUnits == nil {
+			return 0, errors.New("video_units is not set")
+		}
+		return parameters.videoOverhead + float64(*task.VideoUnits)*parameters.videoRate, nil
 	case models.TaskTypeLLM:
 		if task.LLMTextInputBytes == nil {
 			return 0, errors.New("llm_text_input_bytes is not set")
@@ -268,7 +389,7 @@ func computeTaskVRAMWeight(task *models.InferenceTask) float64 {
 func FreezeTaskModelExecutionConfig(task *models.InferenceTask) error {
 	config, err := models.ExtractModelExecutionConfig(task.TaskArgs, task.TaskType)
 	if err != nil {
-		return fmt.Errorf("extract model execution config: %w", err)
+		return fmt.Errorf("%w: extract model execution config: %w", ErrInvalidTaskArgs, err)
 	}
 	task.ModelName = config.ModelName
 	task.RequestedDType = config.RequestedDType
@@ -286,6 +407,20 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 			return err
 		}
 		task.SDUnits = &units
+		task.VideoUnits = nil
+		task.LLMInputBytes = nil
+		task.LLMTextInputBytes = nil
+		task.LLMImageCount = nil
+		task.LLMImagePixels = nil
+		task.LLMMaxNewTokens = nil
+		task.PricingUnits = float64(units)
+	case models.TaskTypeVideo:
+		units, err := computeVideoPricingUnits(task.TaskArgs)
+		if err != nil {
+			return err
+		}
+		task.VideoUnits = &units
+		task.SDUnits = nil
 		task.LLMInputBytes = nil
 		task.LLMTextInputBytes = nil
 		task.LLMImageCount = nil
@@ -307,9 +442,11 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 		task.LLMImagePixels = &workload.imagePixels
 		task.LLMMaxNewTokens = &maxNewTokens
 		task.SDUnits = nil
+		task.VideoUnits = nil
 		task.PricingUnits = float64(maxNewTokens)
 	case models.TaskTypeSDFTLora:
 		task.SDUnits = nil
+		task.VideoUnits = nil
 		task.LLMInputBytes = nil
 		task.LLMTextInputBytes = nil
 		task.LLMImageCount = nil
@@ -317,10 +454,10 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 		task.LLMMaxNewTokens = nil
 		task.PricingUnits = 0
 	default:
-		return fmt.Errorf("unknown task type %d", task.TaskType)
+		return fmt.Errorf("%w: unknown task type %d", ErrInvalidTaskArgs, task.TaskType)
 	}
 	var parameters executionParameters
-	if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM {
+	if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeLLM || task.TaskType == models.TaskTypeVideo {
 		parameters = getTaskPricingParameters(task)
 	}
 	estimatedNodeSeconds, err := computeEstimatedNodeSeconds(task, parameters, false)
@@ -370,6 +507,15 @@ func GetSDExecutionTimeCoefficients(query TaskExecutionTimeQuery) SDExecutionTim
 	return SDExecutionTimeCoefficients{
 		OverheadSeconds:       parameters.sdOverhead,
 		SecondsPerSDPixelStep: parameters.sdRate,
+	}
+}
+
+func GetVideoExecutionTimeCoefficients(query TaskExecutionTimeQuery) VideoExecutionTimeCoefficients {
+	query.TaskType = models.TaskTypeVideo
+	parameters := getTaskPricingParameters(executionTimeLookupTask(query))
+	return VideoExecutionTimeCoefficients{
+		OverheadSeconds:     parameters.videoOverhead,
+		SecondsPerVideoUnit: parameters.videoRate,
 	}
 }
 

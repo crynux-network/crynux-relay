@@ -58,7 +58,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
 
 - Handler: `api/v1/stats/task_count.go:GetTaskCountLineChart`
 - Inputs:
-  - `task_type`: `All|Image|Text`
+  - `task_type`: `All|Image|Text|Video`
   - `period`: `Hour|Day|Week`
   - optional `end`, optional `count`
 - Window and bucket count:
@@ -99,7 +99,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
 
 - Handler: `api/v1/stats/task_success_rate.go:GetTaskSuccessRateLineChart`
 - Inputs:
-  - `task_type`: `All|Image|Text`
+  - `task_type`: `All|Image|Text|Video`
   - `period`: `Hour|Day|Week`
 - Window:
   - `Hour`: last 24 hours
@@ -111,6 +111,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
   - Query rows in window and apply task type filter
     - `Image` maps to `task_type IN (SD, SD_FT_LORA)`
     - `Text` maps to `task_type = LLM`
+    - `Video` maps to `task_type = VIDEO`
     - `All` applies no `task_type` filter
   - Sum `success_count` and `total_count` by bucket
   - Compute `success_rate = success_count / total_count` when `total_count > 0`, otherwise `0`
@@ -123,7 +124,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
 
 - Handler: `api/v1/stats/task_execution_time.go:GetTaskExecutionTimeHistogram`
 - Inputs:
-  - `task_type`: `All|Image|Text`
+  - `task_type`: `All|Image|Text|Video`
   - `period`: `Hour|Day|Week`
   - optional `model_switched`: `0|1`
 - Data source:
@@ -153,7 +154,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
 
 - Handler: `api/v1/stats/task_fee.go:GetTaskFeeHistogram`
 - Inputs:
-  - `task_type`: `All|Image|Text`
+  - `task_type`: `All|Image|Text|Video`
 - Data source:
   - `models.InferenceTask` (`inference_tasks.task_fee`)
 - Query window:
@@ -222,6 +223,7 @@ If any stage has not been reached, the corresponding timestamp MUST remain `NULL
     - `sd_task_count`
     - `llm_task_count`
     - `sd_ft_lora_task_count`
+    - `video_task_count`
 - Enrichment:
   - Join `network_node_data` by node address
   - Compute QoS and selection probability fields through service helpers

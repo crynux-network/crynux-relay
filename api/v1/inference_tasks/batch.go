@@ -169,8 +169,8 @@ func checkBatchCreatorAllowed(ctx context.Context, address string) error {
 }
 
 func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, error) {
-	if in.TaskType != models.TaskTypeSD && in.TaskType != models.TaskTypeLLM {
-		return nil, errors.New("batch creation supports only ordinary SD and LLM tasks")
+	if in.TaskType != models.TaskTypeSD && in.TaskType != models.TaskTypeLLM && in.TaskType != models.TaskTypeVideo {
+		return nil, errors.New("batch creation supports only ordinary SD, LLM, and video tasks")
 	}
 	if in.MinVram == nil {
 		return nil, errors.New("min_vram is required")
@@ -206,6 +206,9 @@ func prepareBatchTask(in TaskInput, address string) (*models.InferenceTask, erro
 	requiredGPU := ""
 	if in.RequiredGPU != nil {
 		requiredGPU = models.NormalizeGPUName(*in.RequiredGPU)
+	}
+	if err := service.ValidateRequiredGPUPlatform(in.TaskType, false, requiredGPU); err != nil {
+		return nil, err
 	}
 	requiredGPUVRAM := uint64(0)
 	if in.RequiredGPUVram != nil {
@@ -297,7 +300,9 @@ func createBatchItem(ctx context.Context, in TaskInput, address string) BatchCre
 			return result
 		}
 		if errors.Is(err, service.ErrInsufficientRelayAccount) ||
-			errors.Is(err, service.ErrModelNotWhitelisted) {
+			errors.Is(err, service.ErrModelNotWhitelisted) ||
+			errors.Is(err, service.ErrInvalidTaskArgs) ||
+			errors.Is(err, service.ErrUnsupportedRequiredGPUPlatform) {
 			result.Outcome, result.Error = "permanent_error", err.Error()
 		} else {
 			result.Outcome, result.Error = "temporary_error", err.Error()

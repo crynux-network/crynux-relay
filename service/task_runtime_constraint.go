@@ -138,6 +138,12 @@ func ResolveRequireLinuxCuda(
 		}
 		entry := requirements.Entries[0]
 		return resolveHubLinuxCudaConstraint(ctx, db, "sd", entry.Repository, entry.Revision, detectSDNunchakuLinuxCuda)
+	case models.TaskTypeVideo:
+		if len(requirements.Entries) == 0 {
+			return false, nil
+		}
+		entry := requirements.Entries[0]
+		return resolveHubLinuxCudaConstraint(ctx, db, "video", entry.Repository, entry.Revision, detectVideoLinuxCuda)
 	default:
 		return false, nil
 	}
@@ -209,6 +215,39 @@ func detectSDNunchakuLinuxCuda(ctx context.Context, client *huggingface.Client, 
 	}
 
 	componentNames := []string{"transformer", "unet"}
+	for _, name := range componentNames {
+		if _, ok := index[name]; !ok {
+			continue
+		}
+		var componentCfg map[string]any
+		path := name + "/config.json"
+		if err := client.FetchRepoFileJSON(ctx, repository, revision, path, &componentCfg); err != nil {
+			if err == huggingface.ErrModelNotFound || err == huggingface.ErrRevisionNotFound {
+				continue
+			}
+			return false, "", err
+		}
+		if method := quantMethodFromConfigJSON(componentCfg); isLinuxCudaOnlyQuantMethod(method) {
+			return true, runtimeConstraintSourceHubTransformer, nil
+		}
+	}
+	return false, runtimeConstraintSourceHubModelIndex, nil
+}
+
+func detectVideoLinuxCuda(ctx context.Context, client *huggingface.Client, repository, revision string) (bool, string, error) {
+	var index map[string]any
+	err := client.FetchRepoFileJSON(ctx, repository, revision, "model_index.json", &index)
+	if err == huggingface.ErrModelNotFound {
+		err = client.FetchRepoFileJSON(ctx, repository, revision, "modular_model_index.json", &index)
+	}
+	if err != nil {
+		return false, "", err
+	}
+	if method := quantMethodFromConfigJSON(index); isLinuxCudaOnlyQuantMethod(method) {
+		return true, runtimeConstraintSourceHubModelIndex, nil
+	}
+
+	componentNames := []string{"transformer", "transformer_2", "transformer_ref", "unet"}
 	for _, name := range componentNames {
 		if _, ok := index[name]; !ok {
 			continue

@@ -176,6 +176,61 @@ func TestFilterIndexEntriesForTaskExcludesDarwinForLLM(t *testing.T) {
 	}
 }
 
+func TestFilterIndexEntriesForTaskExcludesDarwinWithRequiredGPU(t *testing.T) {
+	for _, taskType := range []models.TaskType{models.TaskTypeLLM, models.TaskTypeVideo} {
+		task := newMatchingTestTask(t)
+		task.TaskType = taskType
+		task.RequiredGPU = "Apple M3+Darwin"
+		task.RequiredGPUVRAM = 24
+
+		darwin := newMatchingTestEntry("0xdarwin")
+		darwin.GPUName = "Apple M3+Darwin"
+		darwin.GPUVram = 24
+		linux := newMatchingTestEntry("0xlinux")
+		linux.GPUName = "NVIDIA GeForce RTX 4090+Linux"
+		linux.GPUVram = 24
+
+		filtered := filterIndexEntriesForTask(task, []*NodeIndexEntry{darwin, linux})
+		if len(filtered) != 0 {
+			t.Fatalf("expected empty candidates when %s pins Darwin RequiredGPU, got %d", taskType.DisplayLabel(), len(filtered))
+		}
+	}
+}
+
+func TestValidateRequiredGPUPlatform(t *testing.T) {
+	cases := []struct {
+		name             string
+		taskType         models.TaskType
+		requireLinuxCuda bool
+		requiredGPU      string
+		wantErr          bool
+	}{
+		{name: "empty required_gpu allowed for LLM", taskType: models.TaskTypeLLM, requireLinuxCuda: true, requiredGPU: "", wantErr: false},
+		{name: "SD allows Darwin when not LinuxCuda", taskType: models.TaskTypeSD, requireLinuxCuda: false, requiredGPU: "Apple M3 Max+Darwin", wantErr: false},
+		{name: "SD allows Windows when not LinuxCuda", taskType: models.TaskTypeSD, requireLinuxCuda: false, requiredGPU: "NVIDIA GeForce RTX 4090+Windows", wantErr: false},
+		{name: "SD rejects Windows when RequireLinuxCuda", taskType: models.TaskTypeSD, requireLinuxCuda: true, requiredGPU: "NVIDIA GeForce RTX 4090+Windows", wantErr: true},
+		{name: "SD rejects Darwin when RequireLinuxCuda", taskType: models.TaskTypeSD, requireLinuxCuda: true, requiredGPU: "Apple M3 Max+Darwin", wantErr: true},
+		{name: "SD allows docker when RequireLinuxCuda", taskType: models.TaskTypeSD, requireLinuxCuda: true, requiredGPU: "NVIDIA GeForce RTX 4090+docker", wantErr: false},
+		{name: "LLM rejects Darwin", taskType: models.TaskTypeLLM, requireLinuxCuda: false, requiredGPU: "Apple M3 Max+Darwin", wantErr: true},
+		{name: "LLM rejects missing platform suffix", taskType: models.TaskTypeLLM, requireLinuxCuda: false, requiredGPU: "NVIDIA GeForce RTX 4090", wantErr: true},
+		{name: "LLM allows Windows when not LinuxCuda", taskType: models.TaskTypeLLM, requireLinuxCuda: false, requiredGPU: "NVIDIA GeForce RTX 4090+Windows", wantErr: false},
+		{name: "LLM rejects Windows when RequireLinuxCuda", taskType: models.TaskTypeLLM, requireLinuxCuda: true, requiredGPU: "NVIDIA GeForce RTX 4090+Windows", wantErr: true},
+		{name: "Video rejects Darwin", taskType: models.TaskTypeVideo, requireLinuxCuda: false, requiredGPU: "Apple M3 Max+Darwin", wantErr: true},
+		{name: "Video rejects missing platform suffix", taskType: models.TaskTypeVideo, requireLinuxCuda: false, requiredGPU: "NVIDIA GeForce RTX 4090", wantErr: true},
+		{name: "Video allows Linux", taskType: models.TaskTypeVideo, requireLinuxCuda: false, requiredGPU: "NVIDIA GeForce RTX 4090+Linux", wantErr: false},
+		{name: "Video rejects Windows when RequireLinuxCuda", taskType: models.TaskTypeVideo, requireLinuxCuda: true, requiredGPU: "NVIDIA GeForce RTX 4090+Windows", wantErr: true},
+	}
+	for _, tc := range cases {
+		err := ValidateRequiredGPUPlatform(tc.taskType, tc.requireLinuxCuda, tc.requiredGPU)
+		if tc.wantErr && !errors.Is(err, ErrUnsupportedRequiredGPUPlatform) {
+			t.Fatalf("%s: expected ErrUnsupportedRequiredGPUPlatform, got %v", tc.name, err)
+		}
+		if !tc.wantErr && err != nil {
+			t.Fatalf("%s: unexpected error: %v", tc.name, err)
+		}
+	}
+}
+
 func TestFilterIndexEntriesForTaskRequireLinuxCuda(t *testing.T) {
 	task := newMatchingTestTask(t)
 	task.RequireLinuxCuda = true

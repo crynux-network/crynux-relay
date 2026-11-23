@@ -53,6 +53,8 @@ func entryMatchesTaskVersion(entry *NodeIndexEntry, taskVersionNumbers [3]uint64
 			(entry.MinorVersion == taskVersionNumbers[1] && entry.PatchVersion >= taskVersionNumbers[2]))
 }
 
+var ErrUnsupportedRequiredGPUPlatform = errors.New("unsupported required_gpu platform")
+
 func isDarwinGPUName(gpuName string) bool {
 	names := strings.SplitN(gpuName, "+", 2)
 	if len(names) != 2 {
@@ -61,8 +63,8 @@ func isDarwinGPUName(gpuName string) bool {
 	return strings.TrimSpace(names[1]) == "Darwin"
 }
 
-func isDarwinEntry(entry *NodeIndexEntry) bool {
-	return isDarwinGPUName(entry.GPUName)
+func isTaskDarwinExcluded(taskType models.TaskType) bool {
+	return taskType == models.TaskTypeLLM || taskType == models.TaskTypeVideo
 }
 
 // platformFromGPUName returns the GPU-name platform suffix after the first +,
@@ -82,15 +84,41 @@ func isLinuxCudaPlatform(gpuName string) bool {
 	return platform == "docker" || platform == "Linux"
 }
 
+func isGPUPlatformSupported(excludeDarwin, requireLinuxCuda bool, gpuName string) bool {
+	if requireLinuxCuda && !isLinuxCudaPlatform(gpuName) {
+		return false
+	}
+	if excludeDarwin && isDarwinGPUName(gpuName) {
+		return false
+	}
+	return true
+}
+
+// ValidateRequiredGPUPlatform rejects a non-empty required_gpu whose platform
+// cannot execute the task under Relay's platform rules.
+func ValidateRequiredGPUPlatform(taskType models.TaskType, requireLinuxCuda bool, requiredGPU string) error {
+	if requiredGPU == "" {
+		return nil
+	}
+	if requireLinuxCuda && !isLinuxCudaPlatform(requiredGPU) {
+		return fmt.Errorf("%w: task requires a Linux CUDA platform (docker or Linux)", ErrUnsupportedRequiredGPUPlatform)
+	}
+	if isTaskDarwinExcluded(taskType) && isDarwinGPUName(requiredGPU) {
+		return fmt.Errorf("%w: %s task is not supported on Darwin or unspecified GPU platforms", ErrUnsupportedRequiredGPUPlatform, taskType.DisplayLabel())
+	}
+	return nil
+}
+
 // filterIndexEntriesForTask applies the hard filters over the round's node
 // view: node availability, GPU or VRAM requirement, version compatibility,
-// the LLM Darwin exclusion, and RequireLinuxCuda platform filtering.
+// the LLM and video Darwin exclusion, and RequireLinuxCuda platform filtering.
 func filterIndexEntriesForTask(task *models.InferenceTask, entries []*NodeIndexEntry) []*NodeIndexEntry {
 	return filterIndexEntriesForTaskAt(task, entries, time.Now().UTC())
 }
 
 func filterIndexEntriesForTaskAt(task *models.InferenceTask, entries []*NodeIndexEntry, now time.Time) []*NodeIndexEntry {
 	taskVersionNumbers := task.VersionNumbers()
+	excludeDarwin := isTaskDarwinExcluded(task.TaskType)
 	filtered := make([]*NodeIndexEntry, 0, len(entries))
 	for _, entry := range entries {
 		if entry.Status != models.NodeStatusAvailable || entry.HasCurrentTask {
@@ -103,20 +131,15 @@ func filterIndexEntriesForTaskAt(task *models.InferenceTask, entries []*NodeInde
 		if !entryMatchesTaskVersion(entry, taskVersionNumbers) {
 			continue
 		}
-		if task.RequireLinuxCuda && !isLinuxCudaPlatform(entry.GPUName) {
+		if !isGPUPlatformSupported(excludeDarwin, task.RequireLinuxCuda, entry.GPUName) {
 			continue
 		}
 		if len(task.RequiredGPU) > 0 {
 			if entry.GPUName != task.RequiredGPU || entry.GPUVram != task.RequiredGPUVRAM {
 				continue
 			}
-		} else {
-			if entry.GPUVram < task.MinVRAM {
-				continue
-			}
-			if task.TaskType == models.TaskTypeLLM && isDarwinEntry(entry) {
-				continue
-			}
+		} else if entry.GPUVram < task.MinVRAM {
+			continue
 		}
 		filtered = append(filtered, entry)
 	}

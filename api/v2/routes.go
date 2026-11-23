@@ -37,6 +37,11 @@ func InitRoutes(r *fizz.Fizz) {
 		fizz.Summary("Get LLM execution-time coefficients"),
 		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
 	}, tonic.Handler(modelapi.GetLLMExecutionTime, 200))
+	modelsGroup.GET("/video/execution-time", []fizz.OperationOption{
+		fizz.ID("video_execution_time_v2"),
+		fizz.Summary("Get video execution-time coefficients"),
+		fizz.Response("400", "validation errors", response.ValidationErrorResponse{}, nil, nil),
+	}, tonic.Handler(modelapi.GetVideoExecutionTime, 200))
 
 	incentiveGroup := v2g.Group("incentive", "incentive", "incentive statistics related APIs")
 

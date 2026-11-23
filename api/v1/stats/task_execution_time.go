@@ -10,7 +10,7 @@ import (
 )
 
 type GetTaskExecutionTimeHistogramInput struct {
-	TaskType      TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,All"`
+	TaskType      TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,Video,All"`
 	Period        TimeUnit       `query:"period" validate:"required" enum:"Hour,Day,Week"`
 	ModelSwitched *bool          `query:"model_switched" enums:"0,1"`
 }
@@ -44,6 +44,8 @@ func GetTaskExecutionTimeHistogram(_ *gin.Context, input *GetTaskExecutionTimeHi
 		subQuery = subQuery.Where("task_type = ?", models.TaskTypeSD)
 	case TextTaskType:
 		subQuery = subQuery.Where("task_type = ?", models.TaskTypeLLM)
+	case VideoTaskType:
+		subQuery = subQuery.Where("task_type = ?", models.TaskTypeVideo)
 	}
 
 	if input.ModelSwitched != nil {

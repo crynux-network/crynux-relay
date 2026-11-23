@@ -100,45 +100,102 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 		return nil, response.NewExceptionResponse(err)
 	}
 	files, ok := form.File["files"]
-	if !ok {
+	if !ok || len(files) == 0 {
 		return nil, response.NewValidationErrorResponse("files", "Files is empty")
 	}
 
-	for _, file := range files {
+	appConfig := config.GetConfig()
 
-		fileObj, err := file.Open()
+	if task.TaskType == models.TaskTypeVideo {
+		if len(files) != 1 {
+			return nil, response.NewValidationErrorResponse("files", "Video task requires exactly one result file")
+		}
+		expectedFrames, expectedW, expectedH, specErr := blockchain.ExpectedVideoTaskSpec(task.TaskArgs)
+		if specErr != nil {
+			return nil, response.NewExceptionResponse(specErr)
+		}
+		tmpFile, tmpErr := os.CreateTemp("", "crynux-upload-video-*.mp4")
+		if tmpErr != nil {
+			return nil, response.NewExceptionResponse(tmpErr)
+		}
+		tmpPath := tmpFile.Name()
+		_ = tmpFile.Close()
+		defer os.Remove(tmpPath)
 
-		if err != nil {
+		if err := c.SaveUploadedFile(files[0], tmpPath); err != nil {
 			return nil, response.NewExceptionResponse(err)
 		}
-
-		var hash []byte
-		if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeSDFTLora {
-			hash, err = blockchain.GetPHashForImage(fileObj)
-		} else {
-			hash, err = blockchain.GetHashForGPTResponse(fileObj)
+		uploadedVideoScore, hasAudio, scoreErr := blockchain.VerifyAndScoreVideoMP4(
+			c.Request.Context(),
+			tmpPath,
+			expectedFrames,
+			expectedW,
+			expectedH,
+		)
+		if scoreErr != nil {
+			if errors.Is(scoreErr, blockchain.ErrInvalidUploadedVideo) {
+				log.Warnf("UploadResult: rejected video file for task %s from node %s: %v", task.TaskIDCommitment, task.SelectedNode, scoreErr)
+				return nil, response.NewValidationErrorResponse("files", "Wrong result files uploaded")
+			}
+			log.Errorf("UploadResult: failed to verify uploaded video for task %s from node %s: %v", task.TaskIDCommitment, task.SelectedNode, scoreErr)
+			return nil, response.NewExceptionResponse(scoreErr)
 		}
-
-		if err != nil {
+		maxUploadAudioDist := uint64(0)
+		if appConfig.Task.VideoUploadAudioDistanceThreshold != nil {
+			maxUploadAudioDist = *appConfig.Task.VideoUploadAudioDistanceThreshold
+		}
+		if err := blockchain.VerifyUploadedVideoScore(
+			task.Score,
+			uploadedVideoScore,
+			hasAudio,
+			expectedFrames,
+			maxUploadAudioDist,
+		); err != nil {
+			if errors.Is(err, blockchain.ErrInvalidUploadedVideo) {
+				log.Warnf("UploadResult: video score mismatch for task %s from node %s: %v", task.TaskIDCommitment, task.SelectedNode, err)
+				return nil, response.NewValidationErrorResponse("files", "Wrong result files uploaded")
+			}
+			log.Errorf("UploadResult: failed to compare uploaded video score for task %s from node %s: %v", task.TaskIDCommitment, task.SelectedNode, err)
 			return nil, response.NewExceptionResponse(err)
 		}
+	} else {
+		for _, file := range files {
 
-		uploadedScoreBytes = append(uploadedScoreBytes, hash...)
+			fileObj, err := file.Open()
 
-		err = fileObj.Close()
-		if err != nil {
-			return nil, response.NewExceptionResponse(err)
+			if err != nil {
+				return nil, response.NewExceptionResponse(err)
+			}
+
+			var hash []byte
+			if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeSDFTLora {
+				hash, err = blockchain.GetPHashForImage(fileObj)
+			} else {
+				hash, err = blockchain.GetHashForGPTResponse(fileObj)
+			}
+
+			if err != nil {
+				_ = fileObj.Close()
+				return nil, response.NewExceptionResponse(err)
+			}
+
+			uploadedScoreBytes = append(uploadedScoreBytes, hash...)
+
+			err = fileObj.Close()
+			if err != nil {
+				return nil, response.NewExceptionResponse(err)
+			}
 		}
-	}
 
-	uploadedScore := hexutil.Encode(uploadedScoreBytes)
+		uploadedScore := hexutil.Encode(uploadedScoreBytes)
 
-	log.Debugln("image compare: submitted score: " + task.Score)
-	log.Debugln("image compare: score from the uploaded file: " + uploadedScore)
+		log.Debugln("image compare: submitted score: " + task.Score)
+		log.Debugln("image compare: score from the uploaded file: " + uploadedScore)
 
-	if task.Score != uploadedScore {
-		validationErr := response.NewValidationErrorResponse("files", "Wrong result files uploaded")
-		return nil, validationErr
+		if task.Score != uploadedScore {
+			validationErr := response.NewValidationErrorResponse("files", "Wrong result files uploaded")
+			return nil, validationErr
+		}
 	}
 
 	var completionTokens uint64
@@ -168,8 +225,6 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 		}
 	}
 
-	appConfig := config.GetConfig()
-
 	taskDir := filepath.Join(appConfig.DataDir.InferenceTasks, task.TaskIDCommitment, "results")
 	if task.Status == models.TaskValidated || task.Status == models.TaskGroupValidated {
 		if err = os.MkdirAll(taskDir, 0o711); err != nil {
@@ -186,6 +241,8 @@ func UploadResult(c *gin.Context, in *ResultInputWithSignature) (*response.Respo
 	var fileExt string
 	if task.TaskType == models.TaskTypeSD || task.TaskType == models.TaskTypeSDFTLora {
 		fileExt = ".png"
+	} else if task.TaskType == models.TaskTypeVideo {
+		fileExt = ".mp4"
 	} else {
 		fileExt = ".json"
 	}

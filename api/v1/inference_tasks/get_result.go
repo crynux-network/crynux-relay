@@ -76,6 +76,11 @@ func GetResult(c *gin.Context, in *GetResultInputWithSignature) error {
 			return response.NewValidationErrorResponse("task_id_commitment", "LLM task size must be 1")
 		}
 		extension = ".json"
+	} else if task.TaskType == models.TaskTypeVideo {
+		if task.TaskSize != 1 {
+			return response.NewValidationErrorResponse("task_id_commitment", "Video task size must be 1")
+		}
+		extension = ".mp4"
 	}
 	files := make([]*os.File, 0, task.TaskSize)
 	defer func() {
@@ -114,6 +119,13 @@ func GetResult(c *gin.Context, in *GetResultInputWithSignature) error {
 		c.Header("Content-Type", "application/json")
 		written, err := io.Copy(c.Writer, files[0])
 		metrics.TaskResultDownloadBytes.WithLabelValues("llm").Add(float64(written))
+		return err
+	}
+	if task.TaskType == models.TaskTypeVideo {
+		c.Header("Content-Disposition", "attachment; filename=0.mp4")
+		c.Header("Content-Type", "video/mp4")
+		written, err := io.Copy(c.Writer, files[0])
+		metrics.TaskResultDownloadBytes.WithLabelValues("video").Add(float64(written))
 		return err
 	}
 

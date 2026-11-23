@@ -45,6 +45,14 @@ type taskArgsLora struct {
 	Weight         any    `json:"weight"`
 }
 
+type taskArgsVideoLora struct {
+	Model          string  `json:"model"`
+	Revision       *string `json:"revision"`
+	WeightFileName string  `json:"weight_file_name"`
+	Weight         any     `json:"weight"`
+	Target         string  `json:"target"`
+}
+
 type taskArgsModelFiles struct {
 	Version            string                       `json:"version"`
 	DType              string                       `json:"dtype"`
@@ -54,6 +62,14 @@ type taskArgsModelFiles struct {
 	BaseModel          *taskArgsModelSource         `json:"base_model"`
 	Components         map[string]taskArgsComponent `json:"components"`
 	Lora               *taskArgsLora                `json:"lora"`
+	Loras              []taskArgsVideoLora          `json:"loras"`
+	Image              *string                      `json:"image"`
+	LastImage          *string                      `json:"last_image"`
+	Keyframes          []any                        `json:"keyframes"`
+	References         []any                        `json:"references"`
+	Video              *string                      `json:"video"`
+	Audio              *string                      `json:"audio"`
+	Animate            any                          `json:"animate"`
 }
 
 // QuantizationConfigHash hashes the canonical JSON of a complete quantization_config.
@@ -126,6 +142,38 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 		cacheKey["base_model"] = usages["base_model"]
 		cacheKey["components"] = components
 		cacheKey["lora"] = canonicalLora(args.Lora)
+	case TaskTypeVideo:
+		if args.BaseModel == nil || args.BaseModel.Name == "" {
+			return nil, errors.New("task args base_model name is empty")
+		}
+		base := ModelFileEntry{
+			SourceType:   ModelSourceTypeHuggingFace,
+			Repository:   NormalizeModelName(args.BaseModel.Name),
+			Revision:     NormalizeCommitRevision(optionalString(args.BaseModel.Revision)),
+			Format:       ImageBaseModelFormat,
+			FormatKwargs: map[string]any{},
+		}
+		entries = append(entries, base)
+		components := make(map[string]any, len(args.Components))
+		for name, component := range args.Components {
+			if name == "" || component.Format == "" || component.Repo == "" {
+				return nil, fmt.Errorf("task args component %q requires name, format and repo", name)
+			}
+			entry := ModelFileEntry{
+				SourceType:   ModelSourceTypeHuggingFace,
+				Repository:   NormalizeModelName(component.Repo),
+				Revision:     NormalizeCommitRevision(optionalString(component.Revision)),
+				Format:       component.Format,
+				FormatKwargs: component.FormatKwargs,
+			}
+			entries = append(entries, entry)
+			components[name] = entry.canonicalObject(false)
+		}
+		cacheKey["task_kind"] = "video"
+		cacheKey["input_mode"] = deriveVideoInputMode(&args)
+		cacheKey["base_model"] = base.canonicalObject(false)
+		cacheKey["components"] = components
+		cacheKey["loras"] = canonicalVideoLoras(args.Loras)
 	default:
 		return nil, fmt.Errorf("task type %d has no model file requirements", taskType)
 	}
@@ -287,6 +335,55 @@ func canonicalLora(lora *taskArgsLora) any {
 		"weight_file_name": lora.WeightFileName,
 		"weight":           weight,
 	}
+}
+
+func deriveVideoInputMode(args *taskArgsModelFiles) string {
+	if args.Animate != nil {
+		return "animate"
+	}
+	if args.Video != nil && *args.Video != "" {
+		return "v2v"
+	}
+	if len(args.References) > 0 {
+		return "r2v"
+	}
+	if len(args.Keyframes) > 0 {
+		return "keyframes"
+	}
+	if args.LastImage != nil && *args.LastImage != "" {
+		return "flf2v"
+	}
+	if args.Audio != nil && *args.Audio != "" {
+		return "a2v"
+	}
+	if args.Image != nil && *args.Image != "" {
+		return "i2v"
+	}
+	return "t2v"
+}
+
+func canonicalVideoLoras(loras []taskArgsVideoLora) []any {
+	if len(loras) == 0 {
+		return []any{}
+	}
+	result := make([]any, 0, len(loras))
+	for _, lora := range loras {
+		weight := lora.Weight
+		if weight == nil {
+			weight = json.Number("100")
+		}
+		target := lora.Target
+		if target == "" {
+			target = "auto"
+		}
+		result = append(result, map[string]any{
+			"model":            NormalizeModelName(lora.Model),
+			"weight_file_name": lora.WeightFileName,
+			"weight":           weight,
+			"target":           target,
+		})
+	}
+	return result
 }
 
 // HasRequiredModelFiles reports whether the requirements contain any entry.

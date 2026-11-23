@@ -1,6 +1,6 @@
 # Creator Queue Timeout
 
-This document specifies the creator-supplied queue wait budget for normal SD and LLM tasks. Stage deadlines, abort reasons, fee handling, and Node Busy behavior for every task status are specified in [task_timeout.md](./task_timeout.md). Queue priority is specified in [task-pricing.md](./task-pricing.md).
+This document specifies the creator-supplied queue wait budget for normal SD, LLM, and video tasks. Stage deadlines, abort reasons, fee handling, and Node Busy behavior for every task status are specified in [task_timeout.md](./task_timeout.md). Queue priority is specified in [task-pricing.md](./task-pricing.md).
 
 ## Purpose
 
@@ -17,7 +17,7 @@ Creator `queue_timeout` supplies that per-task wait budget. It MUST NOT change p
 
 Creator `queue_timeout` applies only while the task status is `TaskQueued`.
 
-After Relay selects a node and starts the task, normal SD and LLM execution timeout remains Relay-owned as specified in [task_timeout.md](./task_timeout.md). Creators MUST NOT use `queue_timeout` to control execution, creator-validation, or result-upload deadlines.
+After Relay selects a node and starts the task, normal SD, LLM, and video execution timeout remains Relay-owned as specified in [task_timeout.md](./task_timeout.md). Creators MUST NOT use `queue_timeout` to control execution, creator-validation, or result-upload deadlines.
 
 SDFT LoRA MUST NOT accept creator `queue_timeout`. SDFT queue and lifecycle deadlines remain `CreateTime + 3 minutes + Timeout` with creator-supplied execution `timeout` as specified in [task_timeout.md](./task_timeout.md).
 
@@ -34,7 +34,7 @@ SDFT LoRA MUST NOT accept creator `queue_timeout`. SDFT queue and lifecycle dead
 
 ## Create Contract
 
-Create input for normal SD and LLM tasks MAY include optional `queue_timeout` as an unsigned integer number of seconds.
+Create input for normal SD, LLM, and video tasks MAY include optional `queue_timeout` as an unsigned integer number of seconds.
 
 When `queue_timeout` is omitted, Relay MUST resolve the queue wait to `default_queue_timeout_seconds`.
 
@@ -50,7 +50,7 @@ Single create and batch create MUST apply the same rules. Batch create MUST vali
 
 ## Persistence and Deadline
 
-For each accepted normal SD or LLM task, Relay MUST persist the resolved queue wait seconds on the task row as `queue_timeout`.
+For each accepted normal SD, LLM, or video task, Relay MUST persist the resolved queue wait seconds on the task row as `queue_timeout`.
 
 Relay MUST set the queue-stage deadline to:
 

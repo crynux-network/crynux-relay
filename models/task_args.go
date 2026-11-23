@@ -13,14 +13,20 @@ import (
 var sdInferenceTaskSchema *jsonschema.Schema
 var gptInferenceTaskSchema *jsonschema.Schema
 var sdFinetuneLoraTaskSchema *jsonschema.Schema
+var videoInferenceTaskSchema *jsonschema.Schema
 
 func ValidateTaskArgsJsonStr(jsonStr string, taskType TaskType) (validationError, err error) {
-	if taskType == TaskTypeSD {
+	switch taskType {
+	case TaskTypeSD:
 		return validateSDTaskArgs(jsonStr)
-	} else if taskType == TaskTypeLLM {
+	case TaskTypeLLM:
 		return validateGPTTaskArgs(jsonStr)
-	} else {
+	case TaskTypeSDFTLora:
 		return validateSDFinetuneLoraTaskArgs(jsonStr)
+	case TaskTypeVideo:
+		return validateVideoTaskArgs(jsonStr)
+	default:
+		return nil, errors.New("unsupported task type")
 	}
 }
 
@@ -90,6 +96,27 @@ func validateSDFinetuneLoraTaskArgs(jsonStr string) (validationError, err error)
 		return nil, err
 	}
 	return sdFinetuneLoraTaskSchema.Validate(v), nil
+}
+
+func validateVideoTaskArgs(jsonStr string) (validationError, err error) {
+	if videoInferenceTaskSchema == nil {
+		schemaJson := config.GetConfig().TaskSchema.VideoInference
+
+		if !isValidUrl(schemaJson) {
+			return nil, errors.New("invalid URL for task json schema")
+		}
+
+		videoInferenceTaskSchema, err = jsonschema.Compile(schemaJson)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var v interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &v); err != nil {
+		return nil, err
+	}
+	return videoInferenceTaskSchema.Validate(v), nil
 }
 
 func isValidUrl(toTest string) bool {

@@ -32,6 +32,8 @@ func addNodeIncentive(ctx context.Context, db *gorm.DB, nodeAddress string, ince
 			nodeIncentive.LLMTaskCount += 1
 		} else if taskType == models.TaskTypeSDFTLora {
 			nodeIncentive.SDFTLoraTaskCount += 1
+		} else if taskType == models.TaskTypeVideo {
+			nodeIncentive.VideoTaskCount += 1
 		}
 		if err := db.WithContext(dbCtx).Save(&nodeIncentive).Error; err != nil {
 			return err
@@ -45,6 +47,8 @@ func addNodeIncentive(ctx context.Context, db *gorm.DB, nodeAddress string, ince
 			nodeIncentive.LLMTaskCount = 1
 		} else if taskType == models.TaskTypeSDFTLora {
 			nodeIncentive.SDFTLoraTaskCount = 1
+		} else if taskType == models.TaskTypeVideo {
+			nodeIncentive.VideoTaskCount = 1
 		}
 		if err := db.WithContext(dbCtx).Create(&nodeIncentive).Error; err != nil {
 			return err

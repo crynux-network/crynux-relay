@@ -11,7 +11,7 @@ import (
 )
 
 type GetTaskCountLineChartParams struct {
-	TaskType TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,All"`
+	TaskType TaskTypeString `query:"task_type" validate:"required" enum:"Image,Text,Video,All"`
 	Period   TimeUnit       `query:"period" validate:"required" enum:"Hour,Day,Week"`
 	End    *int64   `query:"end"`
 	Count  *int     `query:"count"`
@@ -69,6 +69,8 @@ func GetTaskCountLineChart(_ *gin.Context, input *GetTaskCountLineChartParams) (
 		stmt = stmt.Where("task_type IN ?", []models.TaskType{models.TaskTypeSD, models.TaskTypeSDFTLora})
 	case TextTaskType:
 		stmt = stmt.Where("task_type = ?", models.TaskTypeLLM)
+	case VideoTaskType:
+		stmt = stmt.Where("task_type = ?", models.TaskTypeVideo)
 	}
 	stmt = stmt.Order("id")
 

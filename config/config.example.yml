@@ -113,6 +113,10 @@ deposit_withdraw_networks:
 task:
   stake_amount: 0
   distance_threshold: 0
+  video_distance_mean_threshold: 10
+  video_distance_max_threshold: 20
+  video_audio_distance_threshold: 16
+  video_upload_audio_distance_threshold: 2
   task_whitelist_enabled: false
   model_whitelist_enabled: false
   minimum_node_name_number: 10
@@ -130,6 +134,8 @@ task:
 task_pricing:
   initial_sd_overhead_seconds: 30
   initial_seconds_per_sd_pixel_step: 0.00003814697265625
+  initial_video_overhead_seconds: 30
+  initial_seconds_per_video_unit: 0.000001
   initial_llm_constant_seconds: 30
   initial_llm_seconds_per_input_byte: 0.0001
   initial_llm_seconds_per_output_token: 0.1
@@ -182,9 +188,10 @@ huggingface:
   timeout_seconds: 5
   cache_ttl_seconds: 300
 task_schema:
-  stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.7.1/schema/image-task.json"
+  stable_diffusion_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.8.0/schema/image-task.json"
   gpt_inference: "https://raw.githubusercontent.com/crynux-network/gpt-task/refs/tags/v3.7.0/schema/gpt-inference-task.json"
-  stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.7.1/schema/stable-diffusion-finetune-lora-task.json"
+  stable_diffusion_finetune_lora: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.8.0/schema/stable-diffusion-finetune-lora-task.json"
+  video_inference: "https://raw.githubusercontent.com/crynux-network/stable-diffusion-task/refs/tags/v3.8.0/schema/video-task.json"
 stats:
   init_start_time: "2026-01-01T00:00:00Z"
 network_flops:
