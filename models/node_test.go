@@ -66,11 +66,11 @@ func TestNodeInMemoryModelSaveReplaceAndClear(t *testing.T) {
 	}
 
 	files := []Hash32{{9}, {3}}
-	row := NewNodeInMemoryModel("0x1", Hash32{7}, files, []byte(`{"dtype":"auto"}`), "bfloat16")
+	row := NewNodeInMemoryModel("0x1", Hash32{7}, files, []byte(`{"dtype":"bfloat16"}`))
 	if err := SaveNodeInMemoryModel(ctx, db, &row); err != nil {
 		t.Fatalf("failed to save in-memory model: %v", err)
 	}
-	replacement := NewNodeInMemoryModel("0x1", Hash32{8}, files[:1], []byte(`{"dtype":"float16"}`), "float16")
+	replacement := NewNodeInMemoryModel("0x1", Hash32{8}, files[:1], []byte(`{"dtype":"float16"}`))
 	if err := SaveNodeInMemoryModel(ctx, db, &replacement); err != nil {
 		t.Fatalf("failed to replace in-memory model: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestNodeInMemoryModelSaveReplaceAndClear(t *testing.T) {
 	if err != nil || stored == nil {
 		t.Fatalf("failed to load in-memory model: %v, %v", stored, err)
 	}
-	if !bytes.Equal(stored.CurrentModelCacheHash, (Hash32{8}).Bytes()) || stored.ExecutionDType != "float16" {
+	if !bytes.Equal(stored.CurrentModelCacheHash, (Hash32{8}).Bytes()) {
 		t.Fatalf("unexpected stored in-memory model: %+v", stored)
 	}
 	if string(stored.CurrentModelCacheConfig) != `{"dtype":"float16"}` {

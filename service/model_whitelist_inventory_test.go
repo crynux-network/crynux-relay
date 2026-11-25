@@ -89,14 +89,14 @@ func TestPruneNonWhitelistedInventoryKeepsOrganizationWildcard(t *testing.T) {
 	pearl := testModelFile(t, "evil/pearl", "rev-1")
 	foo := testModelFile(t, "qwen/foo", "rev-1")
 	seedNodeModelFiles(t, db, node.Address, pearl, foo)
-	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{9}, []models.Hash32{testModelFileHash(t, "qwen/foo", "rev-1")}, []byte(`{}`), "float16")
+	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{9}, []models.Hash32{testModelFileHash(t, "qwen/foo", "rev-1")}, []byte(`{"dtype":"float16"}`))
 	if err := db.Create(&memory).Error; err != nil {
 		t.Fatalf("create in-memory: %v", err)
 	}
 	if err := db.Create(&models.LoadedModel{
 		RequiredModelFilesHash:  models.RequiredModelFilesHash([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}).Bytes(),
 		ModelCacheHash:          models.Hash32{1}.Bytes(),
-		ExecutionDType:          "float16",
+		DType:                   "float16",
 		RequiredModelFileHashes: models.EncodeHashList([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}),
 		QuantizationConfig:      models.JSONText(`null`),
 		ModelCacheConfig:        models.JSONText(`{}`),
@@ -223,7 +223,6 @@ func TestSetNodeInMemoryModelRejectsNonWhitelisted(t *testing.T) {
 		CacheHash:      models.Hash32{1},
 		Files:          []models.ModelFile{testModelFile(t, "evil/pearl", "rev-1")},
 		CacheConfig:    []byte(`{}`),
-		ExecutionDType: "float16",
 	})
 	if !errors.Is(err, ErrModelNotWhitelisted) {
 		t.Fatalf("expected ErrModelNotWhitelisted, got %v", err)
@@ -245,7 +244,6 @@ func TestSetNodeInMemoryModelAllowsOrganizationWildcard(t *testing.T) {
 		CacheHash:      models.Hash32{2},
 		Files:          []models.ModelFile{testModelFile(t, "Qwen/Bar", "rev-1")},
 		CacheConfig:    []byte(`{}`),
-		ExecutionDType: "float16",
 	}); err != nil {
 		t.Fatalf("organization wildcard should allow in-memory report: %v", err)
 	}
@@ -306,14 +304,14 @@ func TestPruneNonWhitelistedInventoryOnRefresh(t *testing.T) {
 	pearl := testModelFile(t, "evil/pearl", "rev-1")
 	foo := testModelFile(t, "qwen/foo", "rev-1")
 	seedNodeModelFiles(t, db, node.Address, pearl, foo)
-	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{9}, []models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}, []byte(`{}`), "float16")
+	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{9}, []models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}, []byte(`{"dtype":"float16"}`))
 	if err := db.Create(&memory).Error; err != nil {
 		t.Fatalf("create in-memory: %v", err)
 	}
 	if err := db.Create(&models.LoadedModel{
 		RequiredModelFilesHash:  models.RequiredModelFilesHash([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}).Bytes(),
 		ModelCacheHash:          models.Hash32{1}.Bytes(),
-		ExecutionDType:          "float16",
+		DType:                   "float16",
 		RequiredModelFileHashes: models.EncodeHashList([]models.Hash32{testModelFileHash(t, "evil/pearl", "rev-1")}),
 		QuantizationConfig:      models.JSONText(`null`),
 		ModelCacheConfig:        models.JSONText(`{}`),

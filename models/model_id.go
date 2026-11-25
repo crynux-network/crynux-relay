@@ -2,14 +2,44 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 )
 
-const AutoExecutionDType = "auto"
+const (
+	DTypeFloat16  = "float16"
+	DTypeBFloat16 = "bfloat16"
+	DTypeFloat32  = "float32"
+)
+
+var ErrInvalidTaskDType = errors.New("dtype must be float16, bfloat16, or float32")
 
 type ModelExecutionConfig struct {
-	ModelName      string
-	RequestedDType string
+	ModelName string
+	DType     string
+}
+
+// ParseConcreteTaskDType normalizes and validates a task dtype. Empty values and
+// "auto" are rejected. Only float16, bfloat16, and float32 are accepted.
+func ParseConcreteTaskDType(raw string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case DTypeFloat16, DTypeBFloat16, DTypeFloat32:
+		return normalized, nil
+	default:
+		return "", ErrInvalidTaskDType
+	}
+}
+
+// RequiresConcreteTaskDType reports whether the task type stores a TaskArgs dtype.
+func RequiresConcreteTaskDType(taskType TaskType) bool {
+	switch taskType {
+	case TaskTypeSD, TaskTypeLLM, TaskTypeVideo:
+		return true
+	default:
+		return false
+	}
 }
 
 func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecutionConfig, error) {
@@ -22,10 +52,7 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 	if err := decoder.Decode(&args); err != nil {
 		return ModelExecutionConfig{}, err
 	}
-	config := ModelExecutionConfig{RequestedDType: AutoExecutionDType}
-	if dtype, ok := args["dtype"].(string); ok && dtype != "" {
-		config.RequestedDType = strings.ToLower(dtype)
-	}
+	config := ModelExecutionConfig{}
 	switch taskType {
 	case TaskTypeSD, TaskTypeVideo:
 		switch baseModel := args["base_model"].(type) {
@@ -46,6 +73,14 @@ func ExtractModelExecutionConfig(taskArgs string, taskType TaskType) (ModelExecu
 				config.ModelName = NormalizeModelName(name)
 			}
 		}
+	}
+	if RequiresConcreteTaskDType(taskType) {
+		raw, _ := args["dtype"].(string)
+		dtype, err := ParseConcreteTaskDType(raw)
+		if err != nil {
+			return ModelExecutionConfig{}, fmt.Errorf("%w", err)
+		}
+		config.DType = dtype
 	}
 	return config, nil
 }
@@ -163,9 +198,15 @@ func NormalizeTaskArgsModelNames(taskArgs string, taskType TaskType) (string, er
 		normalizeStringModelName(argsMap, "vae")
 		normalizeStringModelName(argsMap, "textual_inversion")
 		normalizeComponentsRepos(argsMap)
+		if err := normalizeTaskArgsDType(argsMap); err != nil {
+			return "", err
+		}
 	case TaskTypeLLM:
 		if model, ok := argsMap["model"].(string); ok {
 			argsMap["model"] = NormalizeModelName(model)
+		}
+		if err := normalizeTaskArgsDType(argsMap); err != nil {
+			return "", err
 		}
 	case TaskTypeSDFTLora:
 		normalizeObjectModelName(argsMap, "model", "name")
@@ -173,6 +214,9 @@ func NormalizeTaskArgsModelNames(taskArgs string, taskType TaskType) (string, er
 		normalizeObjectModelName(argsMap, "base_model", "name")
 		normalizeComponentsRepos(argsMap)
 		normalizeVideoLoras(argsMap)
+		if err := normalizeTaskArgsDType(argsMap); err != nil {
+			return "", err
+		}
 	}
 
 	normalized, err := json.Marshal(argsMap)
@@ -180,6 +224,16 @@ func NormalizeTaskArgsModelNames(taskArgs string, taskType TaskType) (string, er
 		return "", err
 	}
 	return string(normalized), nil
+}
+
+func normalizeTaskArgsDType(argsMap map[string]interface{}) error {
+	raw, _ := argsMap["dtype"].(string)
+	dtype, err := ParseConcreteTaskDType(raw)
+	if err != nil {
+		return err
+	}
+	argsMap["dtype"] = dtype
+	return nil
 }
 
 func normalizeStringModelName(argsMap map[string]interface{}, key string) {

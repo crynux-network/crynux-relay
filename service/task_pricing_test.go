@@ -20,6 +20,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const testSDPricingTaskArgs = `{"base_model":"model","dtype":"float16","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`
+
+const testSDPricingTaskArgs6 = `{"base_model":"model","dtype":"float16","task_config":{"num_images_per_prompt":6,"image_width":512,"image_height":512,"steps":1}}`
+
+const testLLMPricingTaskArgs = `{"model":"qwen/qwen3","dtype":"bfloat16","messages":[{"role":"user","content":"hello"}],"tools":[],"template_args":{},"generation_config":{"max_new_tokens":512}}`
+
 func initTaskPricingTestStore(t *testing.T) {
 	t.Helper()
 	initServiceTestConfig(t)
@@ -54,6 +60,8 @@ func calibrateTestSDSample(t *testing.T, taskID string, units uint64, seconds fl
 		TaskIDCommitment: taskID,
 		TaskType:         models.TaskTypeSD,
 		Status:           models.TaskValidated,
+		DType:            "float16",
+		TaskArgs:         testSDPricingTaskArgs,
 		SDUnits:          &units,
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(time.Duration(seconds * float64(time.Second))), Valid: true},
@@ -78,6 +86,8 @@ func calibrateTestLLMSample(t *testing.T, taskID string, inputBytes, completionT
 		TaskIDCommitment: taskID,
 		TaskType:         models.TaskTypeLLM,
 		Status:           models.TaskEndSuccess,
+		DType:            "bfloat16",
+		TaskArgs:         testLLMPricingTaskArgs,
 		LLMInputBytes:    &inputBytes,
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(time.Duration(seconds * float64(time.Second))), Valid: true},
@@ -272,7 +282,7 @@ func TestApplyTaskPricingComputesPriority(t *testing.T) {
 	}
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeSD,
-		TaskArgs: `{"task_config":{"num_images_per_prompt":6,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs: testSDPricingTaskArgs6,
 		MinVRAM:  16,
 		TaskFee:  models.BigInt{Int: *fee},
 	}
@@ -302,7 +312,7 @@ func TestApplyLLMTaskPricingUsesInputAndOutputWork(t *testing.T) {
 	fee := big.NewInt(1_000_000_000)
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeLLM,
-		TaskArgs: `{"messages":[{"role":"user","content":"hello"}],"tools":[],"template_args":{},"generation_config":{"max_new_tokens":512}}`,
+		TaskArgs: testLLMPricingTaskArgs,
 		MinVRAM:  16,
 		TaskFee:  models.BigInt{Int: *fee},
 	}
@@ -349,13 +359,13 @@ func TestComputeEstimatedNodeSecondsUsesStoredLLMMaxNewTokens(t *testing.T) {
 
 func TestCalibrateUploadedLLMTaskRequiresTerminalSuccessStatus(t *testing.T) {
 	initTaskPricingTestStore(t)
-	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
+	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, dtype: "bfloat16", requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:                 models.TaskTypeLLM,
 		GPUName:                  "A100",
 		GPUVram:                  40,
-		ExecutionDType:           models.AutoExecutionDType,
+		DType:           "bfloat16",
 		LLMConstantSeconds:       30,
 		LLMSecondsPerInputByte:   0.0001,
 		LLMSecondsPerOutputToken: 0.1,
@@ -368,6 +378,8 @@ func TestCalibrateUploadedLLMTaskRequiresTerminalSuccessStatus(t *testing.T) {
 		TaskIDCommitment: "llm-status-gate",
 		TaskType:         models.TaskTypeLLM,
 		Status:           models.TaskValidated,
+		DType:            "bfloat16",
+		TaskArgs:         testLLMPricingTaskArgs,
 		LLMInputBytes:    &input,
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(20 * time.Second), Valid: true},
@@ -436,7 +448,7 @@ func TestTaskPricingAggregationUsesSimpleGPUAverage(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeSD,
-		TaskArgs: `{"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs: testSDPricingTaskArgs,
 		MinVRAM:  32,
 	}
 	if err := ApplyTaskPricing(task); err != nil {
@@ -456,7 +468,7 @@ func TestRequiredGPUUsesExactParametersWithoutAggregateKey(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
 		TaskType:        models.TaskTypeSD,
-		TaskArgs:        `{"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs:        testSDPricingTaskArgs,
 		RequiredGPU:     "A",
 		RequiredGPUVRAM: 40,
 	}
@@ -653,13 +665,13 @@ func TestCalibrateUploadedLLMTaskDoesNotCommitWhenFitFails(t *testing.T) {
 		cfg.TaskPricing.CalibrationRegularization = originalRegularization
 	})
 
-	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
+	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, dtype: "bfloat16", requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:                 models.TaskTypeLLM,
 		GPUName:                  "A100",
 		GPUVram:                  40,
-		ExecutionDType:           models.AutoExecutionDType,
+		DType:           "bfloat16",
 		LLMConstantSeconds:       30,
 		LLMSecondsPerInputByte:   0.0001,
 		LLMSecondsPerOutputToken: 0.1,
@@ -786,8 +798,9 @@ func TestCalibrationFlushRetainsConcurrentUpdate(t *testing.T) {
 	units := uint64(512 * 512)
 	task := &models.InferenceTask{
 		TaskIDCommitment: "concurrent-flush", TaskType: models.TaskTypeSD, Status: models.TaskValidated,
-		ModelName: "model", RequestedDType: "auto", MinVRAM: 8, SDUnits: &units,
-		StartTime:      sql.NullTime{Time: start, Valid: true},
+		ModelName: "model", DType: "float16", MinVRAM: 8, SDUnits: &units,
+		TaskArgs:   `{"base_model":"model","dtype":"float16","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
+		StartTime:  sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime: sql.NullTime{Time: start.Add(60 * time.Second), Valid: true},
 	}
 	CaptureTaskExecutionGPUSnapshot(task.TaskIDCommitment, "A100", 40)
@@ -909,7 +922,7 @@ func TestTaskPricingAggregationAveragesSDOverhead(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
 		TaskType: models.TaskTypeSD,
-		TaskArgs: `{"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
+		TaskArgs: testSDPricingTaskArgs,
 		MinVRAM:  32,
 	}
 	if err := ApplyTaskPricing(task); err != nil {
@@ -940,13 +953,13 @@ func TestCalibrateValidatedSDTaskDoesNotCommitWhenFitFails(t *testing.T) {
 		cfg.TaskPricing.CalibrationRegularization = originalRegularization
 	})
 
-	key := gpuCalibrationKey{taskType: models.TaskTypeSD, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
+	key := gpuCalibrationKey{taskType: models.TaskTypeSD, name: "A100", vram: 40, dtype: "bfloat16", requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
 		TaskType:              models.TaskTypeSD,
 		GPUName:               "A100",
 		GPUVram:               40,
-		ExecutionDType:        models.AutoExecutionDType,
+		DType:        "bfloat16",
 		SDOverheadSeconds:     30,
 		SecondsPerSDPixelStep: 0.00003814697265625,
 		SDFormulaVersion:      sdFormulaVersion,
@@ -961,6 +974,8 @@ func TestCalibrateValidatedSDTaskDoesNotCommitWhenFitFails(t *testing.T) {
 		TaskIDCommitment: "sd-fit-fail",
 		TaskType:         models.TaskTypeSD,
 		Status:           models.TaskValidated,
+		DType:            "bfloat16",
+		TaskArgs:         `{"base_model":"model","dtype":"bfloat16","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
 		SDUnits:          &units,
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(20 * time.Second), Valid: true},
@@ -1023,10 +1038,10 @@ func TestCleanupTaskExecutionGPUSnapshotsExcludesQueueTimeout(t *testing.T) {
 
 func TestCalibrateUploadedLLMTaskSkipsResidualTruncateWhenPredictionNonPositive(t *testing.T) {
 	initTaskPricingTestStore(t)
-	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, executionDType: models.AutoExecutionDType, requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
+	key := gpuCalibrationKey{taskType: models.TaskTypeLLM, name: "A100", vram: 40, dtype: "bfloat16", requiredModelFilesHash: models.RequiredModelFilesHash(nil)}
 	globalTaskPricing.mu.Lock()
 	globalTaskPricing.records[key] = &cachedGPUCalibration{record: models.GPUExecutionCalibration{
-		TaskType: models.TaskTypeLLM, GPUName: "A100", GPUVram: 40, ExecutionDType: models.AutoExecutionDType,
+		TaskType: models.TaskTypeLLM, GPUName: "A100", GPUVram: 40, DType: "bfloat16",
 	}}
 	globalTaskPricing.mu.Unlock()
 
@@ -1036,6 +1051,8 @@ func TestCalibrateUploadedLLMTaskSkipsResidualTruncateWhenPredictionNonPositive(
 		TaskIDCommitment: "llm-zero-prediction",
 		TaskType:         models.TaskTypeLLM,
 		Status:           models.TaskEndSuccess,
+		DType:            "bfloat16",
+		TaskArgs:         testLLMPricingTaskArgs,
 		LLMInputBytes:    &input,
 		StartTime:        sql.NullTime{Time: start, Valid: true},
 		ScoreReadyTime:   sql.NullTime{Time: start.Add(120 * time.Second), Valid: true},
@@ -1067,8 +1084,8 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 	calibrate := func(id, model, dtype string, quantizationID byte, minVRAM uint64) {
 		task := &models.InferenceTask{
 			TaskIDCommitment: id, TaskType: models.TaskTypeSD, Status: models.TaskValidated,
-			ModelName: model, RequestedDType: "auto", ExecutionDType: dtype,
-			MinVRAM: minVRAM, SDUnits: &units,
+			ModelName: model, DType: dtype, MinVRAM: minVRAM, SDUnits: &units,
+			TaskArgs: fmt.Sprintf(`{"base_model":%q,"dtype":%q,"task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`, model, dtype),
 			QuantizationConfigHash: models.Hash32{quantizationID}.Bytes(),
 			StartTime:              sql.NullTime{Time: start, Valid: true},
 			ScoreReadyTime:         sql.NullTime{Time: start.Add(60 * time.Second), Valid: true},
@@ -1090,7 +1107,7 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 	}
 	key := gpuCalibrationKey{
 		taskType: models.TaskTypeSD, name: "A100", vram: 40, modelName: "model-a",
-		executionDType: "float16", requiredModelFilesHash: models.RequiredModelFilesHash(nil),
+		dtype: "float16", requiredModelFilesHash: models.RequiredModelFilesHash(nil),
 	}
 	record := globalTaskPricing.records[key].record
 	if record.MinVRAMRequirement != 8 || record.MaxVRAMRequirement != 16 || record.SDSuccessSamples != 2 {
@@ -1098,29 +1115,31 @@ func TestCalibrationSeparatesModelConfigAndUpdatesVRAMRange(t *testing.T) {
 	}
 }
 
-func TestAutoPricingAveragesReportedDTypes(t *testing.T) {
+func TestPricingUsesExactDTypeCalibration(t *testing.T) {
 	initTaskPricingTestStore(t)
 	globalTaskPricing.mu.Lock()
 	for _, item := range []struct {
 		dtype string
 		rate  float64
-	}{{"auto", 10}, {"bfloat16", 30}} {
+	}{{"float16", 10}, {"bfloat16", 30}} {
 		record := models.GPUExecutionCalibration{
 			TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "model",
-			ExecutionDType: item.dtype, MinVRAMRequirement: 8, MaxVRAMRequirement: 24,
+			DType: item.dtype, MinVRAMRequirement: 8, MaxVRAMRequirement: 24,
 			SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: item.rate / (512 * 512), SDSuccessSamples: 10,
 		}
 		globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
 	}
 	globalTaskPricing.mu.Unlock()
 	task := &models.InferenceTask{
-		TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"model","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`, MinVRAM: 16,
+		TaskType: models.TaskTypeSD,
+		TaskArgs: `{"base_model":"model","dtype":"bfloat16","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
+		MinVRAM:  16,
 	}
 	if err := ApplyTaskPricing(task); err != nil {
 		t.Fatalf("apply pricing: %v", err)
 	}
-	if math.Abs(task.EstimatedNodeSeconds-50) > 1e-9 {
-		t.Fatalf("estimated seconds = %v, want 50", task.EstimatedNodeSeconds)
+	if math.Abs(task.EstimatedNodeSeconds-60) > 1e-9 {
+		t.Fatalf("estimated seconds = %v, want 60", task.EstimatedNodeSeconds)
 	}
 }
 
@@ -1128,13 +1147,13 @@ func TestUnknownModelUsesNearestVRAMInterval(t *testing.T) {
 	initTaskPricingTestStore(t)
 	globalTaskPricing.mu.Lock()
 	for _, record := range []models.GPUExecutionCalibration{
-		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "small", ExecutionDType: "auto", MinVRAMRequirement: 8, MaxVRAMRequirement: 12, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 100.0 / (512 * 512), SDSuccessSamples: 10},
-		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "large", ExecutionDType: "auto", MinVRAMRequirement: 20, MaxVRAMRequirement: 24, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 20.0 / (512 * 512), SDSuccessSamples: 10},
+		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "small", DType: "float16", MinVRAMRequirement: 8, MaxVRAMRequirement: 12, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 100.0 / (512 * 512), SDSuccessSamples: 10},
+		{TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40, ModelName: "large", DType: "float16", MinVRAMRequirement: 20, MaxVRAMRequirement: 24, SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 20.0 / (512 * 512), SDSuccessSamples: 10},
 	} {
 		globalTaskPricing.records[keyFromRecord(record)] = &cachedGPUCalibration{record: record}
 	}
 	globalTaskPricing.mu.Unlock()
-	task := &models.InferenceTask{TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"unknown","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`, MinVRAM: 18}
+	task := &models.InferenceTask{TaskType: models.TaskTypeSD, TaskArgs: `{"base_model":"unknown","dtype":"float16","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`, MinVRAM: 18}
 	if err := ApplyTaskPricing(task); err != nil {
 		t.Fatalf("apply pricing: %v", err)
 	}
@@ -1149,7 +1168,7 @@ func TestUnknownModelTimeoutUsesMaximumAtEqualDistance(t *testing.T) {
 	for _, rate := range []float64{10, 100} {
 		record := models.GPUExecutionCalibration{
 			TaskType: models.TaskTypeSD, GPUName: "A100", GPUVram: 40,
-			ModelName: fmt.Sprintf("model-%v", rate), ExecutionDType: "auto",
+			ModelName: fmt.Sprintf("model-%v", rate), DType: "float16",
 			MinVRAMRequirement: 16, MaxVRAMRequirement: 16,
 			SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: rate / (512 * 512), SDSuccessSamples: 10,
 		}
@@ -1158,8 +1177,9 @@ func TestUnknownModelTimeoutUsesMaximumAtEqualDistance(t *testing.T) {
 	globalTaskPricing.mu.Unlock()
 	units := uint64(512 * 512)
 	task := &models.InferenceTask{
-		TaskType: models.TaskTypeSD, ModelName: "unknown", RequestedDType: "auto",
-		MinVRAM: 16, SDUnits: &units,
+		TaskType: models.TaskTypeSD, ModelName: "unknown", DType: "float16",
+		TaskArgs: `{"base_model":"unknown","dtype":"float16","task_config":{"num_images_per_prompt":1,"image_width":512,"image_height":512,"steps":1}}`,
+		MinVRAM:  16, SDUnits: &units,
 	}
 	description, err := DescribeExecutionTimeout(task, "A100", 40)
 	if err != nil {

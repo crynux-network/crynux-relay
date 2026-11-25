@@ -110,26 +110,26 @@ func assertTaskArgsJSON(t *testing.T, taskArgs string, taskType TaskType, wantAr
 }
 
 func TestNormalizeTaskArgsModelNamesLLM(t *testing.T) {
-	taskArgs := `{"model":"Qwen/Qwen2.5-7B","messages":[{"role":"user","content":"Hi"}],"generation_config":{"temperature":0.8},"seed":42}`
-	wantArgs := `{"model":"qwen/qwen2.5-7b","messages":[{"role":"user","content":"Hi"}],"generation_config":{"temperature":0.8},"seed":42}`
+	taskArgs := `{"model":"Qwen/Qwen2.5-7B","dtype":"float16","messages":[{"role":"user","content":"Hi"}],"generation_config":{"temperature":0.8},"seed":42}`
+	wantArgs := `{"model":"qwen/qwen2.5-7b","dtype":"float16","messages":[{"role":"user","content":"Hi"}],"generation_config":{"temperature":0.8},"seed":42}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeLLM, wantArgs)
 }
 
 func TestNormalizeTaskArgsModelNamesSD(t *testing.T) {
-	taskArgs := `{"base_model":{"name":"Crynux-Network/SDXL-Turbo"},"prompt":"a cat","lora":{"model":"Crynux-Network/MyLora"},"controlnet":{"model":"Lllyasviel/Sd-Controlnet-Canny"},"refiner":{"model":"StabilityAI/Stable-Diffusion-XL-Refiner-1.0"},"unet":"Crynux-Network/MyUNet","vae":"MadeByOllin/SDXL-VAE-FP16-Fix","textual_inversion":"SD-Concepts-Library/Cat-Toy","components":{"transformer":{"format":"gguf","repo":"Unsloth/Qwen-Image-2.1-GGUF","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
-	wantArgs := `{"base_model":{"name":"crynux-network/sdxl-turbo"},"prompt":"a cat","lora":{"model":"crynux-network/mylora"},"controlnet":{"model":"lllyasviel/sd-controlnet-canny"},"refiner":{"model":"stabilityai/stable-diffusion-xl-refiner-1.0"},"unet":"crynux-network/myunet","vae":"madebyollin/sdxl-vae-fp16-fix","textual_inversion":"sd-concepts-library/cat-toy","components":{"transformer":{"format":"gguf","repo":"unsloth/qwen-image-2.1-gguf","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
+	taskArgs := `{"base_model":{"name":"Crynux-Network/SDXL-Turbo"},"dtype":"float16","prompt":"a cat","lora":{"model":"Crynux-Network/MyLora"},"controlnet":{"model":"Lllyasviel/Sd-Controlnet-Canny"},"refiner":{"model":"StabilityAI/Stable-Diffusion-XL-Refiner-1.0"},"unet":"Crynux-Network/MyUNet","vae":"MadeByOllin/SDXL-VAE-FP16-Fix","textual_inversion":"SD-Concepts-Library/Cat-Toy","components":{"transformer":{"format":"gguf","repo":"Unsloth/Qwen-Image-2.1-GGUF","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
+	wantArgs := `{"base_model":{"name":"crynux-network/sdxl-turbo"},"dtype":"float16","prompt":"a cat","lora":{"model":"crynux-network/mylora"},"controlnet":{"model":"lllyasviel/sd-controlnet-canny"},"refiner":{"model":"stabilityai/stable-diffusion-xl-refiner-1.0"},"unet":"crynux-network/myunet","vae":"madebyollin/sdxl-vae-fp16-fix","textual_inversion":"sd-concepts-library/cat-toy","components":{"transformer":{"format":"gguf","repo":"unsloth/qwen-image-2.1-gguf","format_kwargs":{"filename":"qwen-image-2.1-Q4_K_M.gguf"}}},"task_config":{"num_images":1}}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeSD, wantArgs)
 }
 
 func TestNormalizeTaskArgsModelNamesSDStringBaseModel(t *testing.T) {
-	taskArgs := `{"base_model":"Crynux-Network/SDXL-Turbo","prompt":"a cat","task_config":{"num_images":1}}`
-	wantArgs := `{"base_model":"crynux-network/sdxl-turbo","prompt":"a cat","task_config":{"num_images":1}}`
+	taskArgs := `{"base_model":"Crynux-Network/SDXL-Turbo","dtype":"float16","prompt":"a cat","task_config":{"num_images":1}}`
+	wantArgs := `{"base_model":"crynux-network/sdxl-turbo","dtype":"float16","prompt":"a cat","task_config":{"num_images":1}}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeSD, wantArgs)
 }
 
 func TestNormalizeTaskArgsModelNamesSDURLLora(t *testing.T) {
-	taskArgs := `{"base_model":"Crynux-Network/SDXL-Turbo","prompt":"a cat","lora":{"model":"https://example.com/Models/MyLora.safetensors"},"task_config":{"num_images":1}}`
-	wantArgs := `{"base_model":"crynux-network/sdxl-turbo","prompt":"a cat","lora":{"model":"https://example.com/Models/MyLora.safetensors"},"task_config":{"num_images":1}}`
+	taskArgs := `{"base_model":"Crynux-Network/SDXL-Turbo","dtype":"float16","prompt":"a cat","lora":{"model":"https://example.com/Models/MyLora.safetensors"},"task_config":{"num_images":1}}`
+	wantArgs := `{"base_model":"crynux-network/sdxl-turbo","dtype":"float16","prompt":"a cat","lora":{"model":"https://example.com/Models/MyLora.safetensors"},"task_config":{"num_images":1}}`
 	assertTaskArgsJSON(t, taskArgs, TaskTypeSD, wantArgs)
 }
 
@@ -145,21 +145,33 @@ func TestExtractModelExecutionConfig(t *testing.T) {
 		taskType TaskType
 		args     string
 		want     ModelExecutionConfig
+		wantErr  bool
 	}{
 		{
-			name: "sd default dtype", taskType: TaskTypeSD,
-			args: `{"base_model":{"name":"Crynux/SDXL"}}`,
-			want: ModelExecutionConfig{ModelName: "crynux/sdxl", RequestedDType: AutoExecutionDType},
+			name: "sd missing dtype", taskType: TaskTypeSD,
+			args:    `{"base_model":{"name":"Crynux/SDXL"}}`,
+			wantErr: true,
 		},
 		{
 			name: "llm dtype", taskType: TaskTypeLLM,
 			args: `{"model":"Qwen/Qwen3","dtype":"BFloat16"}`,
-			want: ModelExecutionConfig{ModelName: "qwen/qwen3", RequestedDType: "bfloat16"},
+			want: ModelExecutionConfig{ModelName: "qwen/qwen3", DType: "bfloat16"},
+		},
+		{
+			name: "sdft empty dtype", taskType: TaskTypeSDFTLora,
+			args: `{"model":{"name":"Crynux-Network/Stable-Diffusion-v1-5"}}`,
+			want: ModelExecutionConfig{ModelName: "crynux-network/stable-diffusion-v1-5"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ExtractModelExecutionConfig(tt.args, tt.taskType)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("extract config: %v", err)
 			}

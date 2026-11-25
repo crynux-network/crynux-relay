@@ -8,7 +8,6 @@ import (
 	"crynux_relay/models"
 	"crynux_relay/service"
 	"errors"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gin-gonic/gin"
@@ -92,7 +91,7 @@ func SubmitScore(c *gin.Context, in *SubmitScoreInputWithSignature) (*response.R
 	}
 
 	task.Score = in.Score
-	task.ExecutionDType = strings.ToLower(strings.TrimSpace(in.ExecutionDType))
+	_ = in.ExecutionDType
 	for range 3 {
 		err = service.SetTaskStatusScoreReady(c.Request.Context(), config.GetDB(), task)
 		if err == nil {

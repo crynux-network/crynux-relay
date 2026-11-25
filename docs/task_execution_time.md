@@ -25,7 +25,7 @@ All three endpoints MUST accept:
 | Parameter | Required | Rules |
 |-----------|----------|-------|
 | `model` | yes | Non-empty. Relay MUST apply `NormalizeModelName`. |
-| `dtype` | no | When present and non-empty, Relay MUST store the lowercased value as `RequestedDType`. When absent or empty, `RequestedDType` MUST be `auto`. |
+| `dtype` | yes | Relay MUST accept `float16`, `bfloat16`, and `float32` case-insensitively and MUST match calibration records against the lowercased value. Missing, empty, `auto`, and any other value MUST return 400. |
 | `quantization_config` | no | The complete `quantization_config` as one JSON value. Relay MUST compute `QuantizationConfigHash` as the SHA-256 of its canonical JSON. When absent or empty, Relay MUST hash the canonical JSON `null`. A value that is not valid JSON MUST return 400. |
 | `min_vram` | exclusive | Positive integer GB. |
 | `gpu_name` | exclusive with `gpu_vram` | Non-empty GPU name. |
@@ -39,6 +39,7 @@ A request MUST use exactly one selection mode:
 Relay MUST return 400 when:
 
 - `model` is missing or empty.
+- `dtype` is missing, empty, or not one of `float16`, `bfloat16`, or `float32` (case-insensitive).
 - both modes are present.
 - neither mode is present.
 - only `gpu_name` or only `gpu_vram` is present.
@@ -53,7 +54,7 @@ Relay MUST return 400 when:
 
 Relay MUST select coefficients from the in-memory execution-parameter cache specified in [task_execution_parameters.md](./task_execution_parameters.md). `min_vram` selection MUST match SD, video, and LLM task creation when `RequiredGPU` is empty. `gpu_name` and `gpu_vram` selection MUST match SD, video, and LLM task creation when `RequiredGPU` and `RequiredGPUVRAM` are set. Relay MUST NOT implement a second selection path and MUST NOT use Timeout selection.
 
-An explicit `dtype` MUST select only records whose `ExecutionDType` equals that value. A requested dtype of `auto` MUST select `auto` records and records that store a reported actual execution dtype.
+Relay MUST select only calibration records whose `dtype` equals the request `dtype` after lowercasing.
 
 ### `min_vram` mode
 

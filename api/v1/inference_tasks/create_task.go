@@ -119,6 +119,9 @@ func CreateTask(c *gin.Context, in *TaskInputWithSignature) (*TaskResponse, erro
 
 	normalizedTaskArgs, err := models.NormalizeTaskArgsModelNames(in.TaskArgs, in.TaskType)
 	if err != nil {
+		if errors.Is(err, models.ErrInvalidTaskDType) {
+			return nil, response.NewValidationErrorResponse("task_args", err.Error())
+		}
 		return nil, response.NewExceptionResponse(err)
 	}
 	in.TaskArgs = normalizedTaskArgs

@@ -16,20 +16,18 @@ type NodeInMemoryModel struct {
 	CurrentModelCacheHash   []byte    `json:"current_model_cache_hash" gorm:"type:binary(32);not null"`
 	CurrentModelFileHashes  []byte    `json:"current_model_file_hashes" gorm:"type:longblob;not null"`
 	CurrentModelCacheConfig JSONText  `json:"current_model_cache_config" gorm:"type:longtext;not null"`
-	ExecutionDType          string    `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 // NewNodeInMemoryModel builds the in-memory model row of a node. The file
 // hashes are stored as a sorted concatenation of 32-byte hashes.
-func NewNodeInMemoryModel(nodeAddress string, cacheHash Hash32, fileHashes []Hash32, cacheConfig []byte, executionDType string) NodeInMemoryModel {
+func NewNodeInMemoryModel(nodeAddress string, cacheHash Hash32, fileHashes []Hash32, cacheConfig []byte) NodeInMemoryModel {
 	return NodeInMemoryModel{
 		NodeAddress:             nodeAddress,
 		CurrentModelCacheHash:   cacheHash.Bytes(),
 		CurrentModelFileHashes:  EncodeHashList(fileHashes),
 		CurrentModelCacheConfig: cacheConfig,
-		ExecutionDType:          executionDType,
 	}
 }
 
@@ -47,7 +45,6 @@ func SaveNodeInMemoryModel(ctx context.Context, db *gorm.DB, m *NodeInMemoryMode
 			"current_model_cache_hash",
 			"current_model_file_hashes",
 			"current_model_cache_config",
-			"execution_dtype",
 			"updated_at",
 		}),
 	}).Create(m).Error

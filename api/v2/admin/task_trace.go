@@ -260,8 +260,7 @@ func (b *taskTraceBuilder) addTaskCreated() {
 		"task_type":                b.task.TaskType,
 		"task_version":             b.task.TaskVersion,
 		"model_name":               b.task.ModelName,
-		"requested_dtype":          b.task.RequestedDType,
-		"execution_dtype":          b.task.ExecutionDType,
+		"dtype":                    b.task.DType,
 		"quantization_config_hash": hex.EncodeToString(b.task.QuantizationConfigHash),
 		"timeout":                  b.task.Timeout,
 		"min_vram":                 b.task.MinVRAM,
@@ -442,9 +441,9 @@ func (b *taskTraceBuilder) addTaskStarted() {
 			} else {
 				details["cold_start"] = description.ColdStart
 				details["calibration_model_name"] = description.ModelName
-				details["calibration_requested_dtype"] = description.RequestedDType
+				details["calibration_dtype"] = description.DType
 				details["calibration_quantization_config_hash"] = description.QuantizationConfigHash
-				details["calibration_selected_execution_dtype"] = description.SelectedExecutionDType
+				details["calibration_selected_dtype"] = description.SelectedDType
 				details["calibration_min_vram_requirement"] = description.MinVRAMRequirement
 				details["calibration_max_vram_requirement"] = description.MaxVRAMRequirement
 				details["calibration_fallback_used"] = description.FallbackUsed

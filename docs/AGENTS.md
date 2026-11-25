@@ -24,7 +24,7 @@
 | [model_distribution.md](./model_distribution.md) | Demand-driven model file set distribution controller, required models by VRAM, persisted download selections, timeout and replacement, and on-disk authority |
 | [model_whitelist.md](./model_whitelist.md) | Configurable normalized model-name allowlist for task creation, matching abort, node inventory reports, and loaded models |
 | [quantization_platform_support.md](./quantization_platform_support.md) | Linux-CUDA-only quantization detection, `RequireLinuxCuda`, platform suffix filtering for matching and model distribution, and the supported-load matrix |
-| [loaded_models.md](./loaded_models.md) | Successful model execution projection keyed by exact model files, cache hash and execution dtype, authoritative node model reports, node counts, and public v2 loaded models API |
+| [loaded_models.md](./loaded_models.md) | Successful model execution projection keyed by exact model files and cache hash with concrete dtype, authoritative node model reports, node counts, and public v2 loaded models API |
 | [all_nodes_data.md](./all_nodes_data.md) | Historical joined-node public snapshot, join upsert behavior, quit retention, and SyncNetwork refresh rules |
 | [deposit_withdraw_and_risk_control.md](./deposit_withdraw_and_risk_control.md) | Deposit and withdrawal lifecycle across Relay and Wallet, relay account ledger, and risk control checks |
 | [deposit-withdraw-only-networks.md](./deposit-withdraw-only-networks.md) | Deposit and withdrawal only network configuration, processing, BenefitAddress |

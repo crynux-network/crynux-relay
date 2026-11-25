@@ -15,7 +15,7 @@ func TestTaskTraceCreatedIncludesVideoUnits(t *testing.T) {
 		TaskVersion:      "3.8.0",
 		Status:           models.TaskQueued,
 		ModelName:        "wan-ai/wan2.2-t2v-a14b-diffusers",
-		RequestedDType:   "bfloat16",
+		DType:            "bfloat16",
 		MinVRAM:          24,
 		TaskSize:         1,
 		VideoUnits:       &videoUnits,

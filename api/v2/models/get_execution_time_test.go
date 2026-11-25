@@ -142,6 +142,14 @@ func TestGetSDExecutionTimeMissingModel(t *testing.T) {
 	requireValidationError(t, err, "model")
 }
 
+func TestGetSDExecutionTimeMissingDtype(t *testing.T) {
+	_, err := GetSDExecutionTime(testExecutionTimeContext(), &GetSDExecutionTimeInput{
+		Model:   "stabilityai/stable-diffusion-xl-base-1.0",
+		MinVRAM: uint64Ptr(24),
+	})
+	requireValidationError(t, err, "dtype")
+}
+
 func TestGetSDExecutionTimeBothSelectionModes(t *testing.T) {
 	_, err := GetSDExecutionTime(testExecutionTimeContext(), &GetSDExecutionTimeInput{
 		Model:   "stabilityai/stable-diffusion-xl-base-1.0",
@@ -173,6 +181,7 @@ func TestGetSDExecutionTimeSuccess(t *testing.T) {
 	resp, err := GetSDExecutionTime(testExecutionTimeContext(), &GetSDExecutionTimeInput{
 		Model:   "stabilityai/stable-diffusion-xl-base-1.0",
 		MinVRAM: uint64Ptr(24),
+		Dtype:   strPtr("float16"),
 	})
 	if err != nil {
 		t.Fatalf("GetSDExecutionTime failed: %v", err)
@@ -194,7 +203,7 @@ func TestGetSDExecutionTimeReturnsFittedOverhead(t *testing.T) {
 		GPUName:                "A100",
 		GPUVram:                40,
 		ModelName:              model,
-		ExecutionDType:         "auto",
+		DType:                  "float16",
 		RequiredModelFilesHash: make([]byte, 32),
 		QuantizationConfigHash: make([]byte, 32),
 		MinVRAMRequirement:     8,
@@ -214,6 +223,7 @@ func TestGetSDExecutionTimeReturnsFittedOverhead(t *testing.T) {
 	resp, err := GetSDExecutionTime(testExecutionTimeContext(), &GetSDExecutionTimeInput{
 		Model:   model,
 		MinVRAM: uint64Ptr(24),
+		Dtype:   strPtr("float16"),
 	})
 	if err != nil {
 		t.Fatalf("GetSDExecutionTime failed: %v", err)
@@ -231,6 +241,7 @@ func TestGetLLMExecutionTimeSuccess(t *testing.T) {
 	resp, err := GetLLMExecutionTime(testExecutionTimeContext(), &GetLLMExecutionTimeInput{
 		Model:   "qwen/qwen3.6-7b",
 		MinVRAM: uint64Ptr(24),
+		Dtype:   strPtr("bfloat16"),
 	})
 	if err != nil {
 		t.Fatalf("GetLLMExecutionTime failed: %v", err)

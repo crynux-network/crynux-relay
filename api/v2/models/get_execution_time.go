@@ -189,9 +189,17 @@ func parseExecutionTimeQuery(in executionTimeRequest) (service.TaskExecutionTime
 		}
 	}
 
-	query := service.TaskExecutionTimeQuery{ModelName: in.Model, QuantizationConfigHash: quantizationConfigHash}
-	if in.Dtype != nil && strings.TrimSpace(*in.Dtype) != "" {
-		query.RequestedDType = *in.Dtype
+	if in.Dtype == nil {
+		return service.TaskExecutionTimeQuery{}, response.NewValidationErrorResponse("dtype", "required")
+	}
+	dtype, err := dbmodels.ParseConcreteTaskDType(*in.Dtype)
+	if err != nil {
+		return service.TaskExecutionTimeQuery{}, response.NewValidationErrorResponse("dtype", err.Error())
+	}
+	query := service.TaskExecutionTimeQuery{
+		ModelName:              in.Model,
+		DType:                  dtype,
+		QuantizationConfigHash: quantizationConfigHash,
 	}
 	if hasMinVRAM {
 		query.MinVRAM = *in.MinVRAM

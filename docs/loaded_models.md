@@ -30,17 +30,17 @@ Each `loaded_models` row MUST contain:
 
 - `required_model_files_hash`: the SHA-256 of the sorted concatenation of the task's `ExecutionModelFileHashes`, which identifies the exact model file set that was executed.
 - `model_cache_hash`: the task's `RequestedModelCacheHash`.
-- `model_cache_config`: the canonical JSON text of the task's requested model cache config, which is the exact byte sequence that `model_cache_hash` is computed from (for example, `task_kind: "video"`, `input_mode`, `dtype`, `base_model`, `components`, `loras`, and `quantization_config` for video tasks). Relay MUST store it in a non-null `longtext` column and MUST take it from `DeriveTaskModelRequirements(...).RequestedModelCacheConfig`, exposed as `InferenceTask.RequestedModelCacheConfig()`, and MUST NOT assemble it from individual components. The stored text MUST keep the canonical encoding with sorted object keys and no insignificant whitespace.
-- `execution_dtype`: the dtype the execution reported, which is the task's `ExecutionDType`.
+- `model_cache_config`: the canonical JSON text of the task's requested model cache config, which is the exact byte sequence that `model_cache_hash` is computed from (for example, `task_kind: "video"`, `input_mode`, `dtype`, `base_model`, `components`, `loras`, and `quantization_config` for video tasks). The cache config `dtype` MUST be a concrete value (`float16`, `bfloat16`, or `float32`). Relay MUST store it in a non-null `longtext` column and MUST take it from `DeriveTaskModelRequirements(...).RequestedModelCacheConfig`, exposed as `InferenceTask.RequestedModelCacheConfig()`, and MUST NOT assemble it from individual components. The stored text MUST keep the canonical encoding with sorted object keys and no insignificant whitespace. The SHA-256 of the stored text MUST equal `model_cache_hash`.
+- `dtype`: the task's concrete dtype from TaskArgs at creation (`float16`, `bfloat16`, or `float32`, stored lowercased).
 - `required_model_file_hashes`: the sorted concatenation of the exact member hashes.
 - `quantization_config`: the canonical JSON of the complete `quantization_config` of the task's TaskArgs; a task without a quantization configuration stores the canonical JSON `null`.
 - `model_id`: the normalized model name of the task, which is the LLM model repository or the SD/video base model name.
 - `model_type`: the model category, `sd`, `llm`, or `video`.
 - `min_vram`: the smallest `nodes.gpu_vram` value among nodes that have successfully executed a task with that row identity.
 
-`(required_model_files_hash, model_cache_hash, execution_dtype)` MUST be unique. `model_type` MUST be derived from the task type: `llm` for `TaskTypeLLM` tasks, `video` for `TaskTypeVideo` tasks, and `sd` for `TaskTypeSD` and `TaskTypeSDFTLora` tasks. `min_vram` MUST be stored in GB, matching the `nodes.gpu_vram` unit recorded at node join.
+`(required_model_files_hash, model_cache_hash)` MUST be unique. `model_type` MUST be derived from the task type: `llm` for `TaskTypeLLM` tasks, `video` for `TaskTypeVideo` tasks, and `sd` for `TaskTypeSD` and `TaskTypeSDFTLora` tasks. `min_vram` MUST be stored in GB, matching the `nodes.gpu_vram` unit recorded at node join.
 
-A row identity is defined only by the exact model files, the model cache hash, and the execution dtype.
+A row identity is defined only by the exact model files and the model cache hash.
 
 Relay SHALL keep an in-memory pending update cache for successful task executions that have not yet been flushed to `loaded_models`.
 
@@ -68,12 +68,15 @@ If a flush fails, Relay MUST merge the failed pending values back into the in-me
 
 ## Public View Aggregation
 
-The public loaded model view is identified by `(model_cache_hash, execution_dtype)`. Relay MUST aggregate `loaded_models` rows into views by that identity:
+The public loaded model view is identified by its public fields: `model_id`, `model_type`, `dtype`, `quantization_config`, and for SD tasks `components` and `lora`, and for video tasks `components` and `loras`. Relay MUST derive those public fields from each member row's stored `model_cache_config` and `quantization_config`. Task matching and scheduling continue to use `RequestedModelCacheHash`, which for video tasks includes `input_mode`.
 
-- Rows with different `model_cache_hash` values MUST NOT be merged, so different complete cache configurations, including different base models, components, LoRA, quantization, or dtype, always produce different views.
-- Rows with the same `model_cache_hash` and `execution_dtype` and different `required_model_files_hash` values, which differ only in model revisions, MUST be merged into one view.
+Relay MUST aggregate `loaded_models` rows into views as follows:
+
+- Rows with different `required_model_files_hash` values that share the same public identity MUST be merged into one view when they differ only in model file revisions.
+- For video tasks, rows whose `model_cache_hash` values differ only by `input_mode` in `model_cache_config` MUST be merged into one view when all other public identity fields match.
+- Rows whose public identity fields differ MUST NOT be merged.
 - A view's `min_vram` MUST be the minimum `min_vram` across its member rows.
-- A view's `model_id`, `model_type`, `quantization_config`, and `model_cache_config` MUST be taken from its first member row in `model_id`, `execution_dtype`, row id order that has a complete `model_cache_config`. A later member row whose `model_id`, `model_type`, or `quantization_config` differs from the representative MUST be skipped and logged as an error.
+- A view's representative `model_id`, `model_type`, `dtype`, `quantization_config`, and task-type-specific public fields MUST be taken from its first member row in `model_id`, `dtype`, row id order that has a complete `model_cache_config`. A later member row whose public identity fields differ from the representative MUST be skipped and logged as an error.
 
 A row has a complete `model_cache_config` only when the value is non-empty valid JSON and its SHA-256 equals the row's `model_cache_hash`. Relay MUST NOT return a view from a row without a complete `model_cache_config`.
 
@@ -88,7 +91,7 @@ Task start MUST NOT create or modify `node_models` rows and MUST NOT modify `nod
 For each public view, Relay SHALL derive two node counts. A node covers a member row when its files contain every exact member hash of the row's `required_model_file_hashes`.
 
 - On-disk node count: the number of distinct node addresses whose on-disk model files cover any member row of the view.
-- In-memory node count: the number of distinct node addresses whose in-memory model has the view's `execution_dtype` and `model_cache_hash`, and whose in-memory model files cover any member row of the view.
+- In-memory node count: the number of distinct node addresses whose `current_model_cache_hash` equals the `model_cache_hash` of any member row of the view and whose in-memory model files cover any member row of the view.
 
 A node that covers several member rows MUST be counted once per view. Relay MUST load the node on-disk inventory and in-memory models in bulk and MUST NOT run per-row database queries or SQL pattern matching. Because `node_models` and `node_in_memory_models` rows are deleted when a node quits, the counts cover only currently joined nodes, regardless of node status. A view with no matching nodes MUST report both counts as `0` and its rows MUST remain in `loaded_models`.
 
@@ -113,10 +116,8 @@ The response body MUST use the standard Relay v2 response envelope:
     {
       "model_id": "qwen/qwen3.6-7b",
       "model_type": "llm",
-      "execution_dtype": "bfloat16",
+      "dtype": "bfloat16",
       "quantization_config": null,
-      "model_cache_hash": "14862e64b901624a0f284d73b316ce1bfd53b6972e7f16e324d76fd9cde3e1e9",
-      "model_cache_config": {"dtype":"bfloat16","model":{"format":"","format_kwargs":{},"repository":"qwen/qwen3.6-7b","source_type":"huggingface"},"quantization_config":null,"task_kind":"llm"},
       "min_vram": 24,
       "in_memory_node_count": 1,
       "on_disk_node_count": 3
@@ -125,6 +126,12 @@ The response body MUST use the standard Relay v2 response envelope:
 }
 ```
 
-The endpoint MUST read only persisted `loaded_models` rows. Pending cache entries MUST become visible through the endpoint after the background flusher writes them to the database. The response `data` array MUST contain one element per public view that has a complete `model_cache_config`, ordered by `model_id` ascending, then `execution_dtype` ascending, then `model_cache_hash` ascending by its lowercase hexadecimal value.
+Every response element MUST include `model_id`, `model_type`, `dtype`, `quantization_config`, `min_vram`, `in_memory_node_count`, and `on_disk_node_count`. The response MUST NOT include `model_cache_hash` or `model_cache_config`.
 
-`model_cache_hash` MUST be the lowercase hexadecimal encoding of the view's 32-byte model cache hash. `model_cache_config` MUST be the stored canonical JSON value that the hash is computed from. `quantization_config` MUST be the stored canonical JSON value. `min_vram` MUST be the view's minimum VRAM across its member rows. `in_memory_node_count` and `on_disk_node_count` MUST be filled from the cached node count aggregation of the same view.
+For `model_type` `sd`, each element MUST also include `components` and `lora`. `components` MUST map each component usage name to an object with `format`, `repo`, and `format_kwargs`, or MUST be `{}` when the task has no components. `lora` MUST be an object with `model`, `weight_file_name`, and `weight`, or `null` when the task has no LoRA.
+
+For `model_type` `video`, each element MUST also include `components` and `loras`. `components` MUST follow the same shape as for SD. `loras` MUST be an array of objects with `model`, `weight_file_name`, `weight`, and `target`, or MUST be `[]` when the task has no LoRA entries.
+
+The endpoint MUST read only persisted `loaded_models` rows. Pending cache entries MUST become visible through the endpoint after the background flusher writes them to the database. The response `data` array MUST contain one element per public view that has a complete `model_cache_config`, ordered by `model_id` ascending, then `dtype` ascending.
+
+`dtype` MUST be the view's concrete stored dtype. `quantization_config` MUST be the stored canonical JSON value. `min_vram` MUST be the view's minimum VRAM across its member rows. `in_memory_node_count` and `on_disk_node_count` MUST be filled from the cached node count aggregation of the same view.

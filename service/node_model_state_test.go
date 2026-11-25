@@ -189,16 +189,15 @@ func TestSetNodeInMemoryModelReplacesAndClears(t *testing.T) {
 	db, node := newModelStateTestNode(t)
 	file := testModelFile(t, "org/model", "rev-1")
 	report := &NodeInMemoryModelReport{
-		CacheHash:      models.Hash32{9},
-		Files:          []models.ModelFile{file},
-		CacheConfig:    []byte(`{"dtype":"auto"}`),
-		ExecutionDType: "bfloat16",
+		CacheHash:   models.Hash32{9},
+		Files:       []models.ModelFile{file},
+		CacheConfig: []byte(`{"dtype":"bfloat16"}`),
 	}
 	if err := SetNodeInMemoryModel(t.Context(), db, node.Address, report); err != nil {
 		t.Fatalf("set in-memory model: %v", err)
 	}
 	stored, err := models.GetNodeInMemoryModel(t.Context(), db, node.Address)
-	if err != nil || stored == nil || stored.ExecutionDType != "bfloat16" {
+	if err != nil || stored == nil {
 		t.Fatalf("unexpected in-memory model: %+v, %v", stored, err)
 	}
 	_, inMemory, err := NodeModelFileEntries(t.Context(), db, node.Address)
@@ -220,7 +219,7 @@ func TestClearNodeModelStateRemovesInventoryMemoryAndSelections(t *testing.T) {
 	file := testModelFile(t, "org/model", "rev-1")
 	seedNodeModelFiles(t, db, node.Address, file)
 	hash := testModelFileHash(t, "org/model", "rev-1")
-	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{1}, []models.Hash32{hash}, []byte(`{}`), "auto")
+	memory := models.NewNodeInMemoryModel(node.Address, models.Hash32{1}, []models.Hash32{hash}, []byte(`{"dtype":"float16"}`))
 	if err := db.Create(&memory).Error; err != nil {
 		t.Fatalf("create in-memory model: %v", err)
 	}

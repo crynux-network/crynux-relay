@@ -6,6 +6,7 @@ import (
 	"crynux_relay/models"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -24,13 +25,21 @@ var loadedModelViewCache = &loadedModelViewCacheStore{}
 type loadedModelKey struct {
 	RequiredModelFilesHash models.Hash32
 	ModelCacheHash         models.Hash32
-	ExecutionDType         string
+}
+
+// LoadedModelPublicFields are the TaskArgs-shaped fields exposed by the public
+// loaded-models view.
+type LoadedModelPublicFields struct {
+	Components map[string]any
+	Lora       any
+	Loras      []any
 }
 
 // LoadedModelView is a loaded model together with the number of nodes that
 // hold its model files on disk and in memory.
 type LoadedModelView struct {
 	Model             models.LoadedModel
+	Public            LoadedModelPublicFields
 	OnDiskNodeCount   int64
 	InMemoryNodeCount int64
 }
@@ -75,14 +84,15 @@ func invalidateLoadedModelViewCache() {
 
 // loadedModelGroupKey is the identity of a public loaded model view.
 type loadedModelGroupKey struct {
-	ModelCacheHash models.Hash32
-	ExecutionDType string
+	Identity string
 }
 
-// loadedModelGroup collects the exact-file rows that share one cache identity.
+// loadedModelGroup collects the exact-file rows that share one public identity.
 type loadedModelGroup struct {
-	view    LoadedModelView
-	members [][]models.Hash32
+	view              LoadedModelView
+	members           [][]models.Hash32
+	memberCacheHashes map[models.Hash32]struct{}
+	sortKey           []byte
 }
 
 // loadedModelCacheConfigComplete reports whether the row carries the canonical
@@ -92,8 +102,121 @@ func loadedModelCacheConfigComplete(loadedModel *models.LoadedModel, cacheHash m
 	return len(config) > 0 && json.Valid(config) && sha256.Sum256(config) == [32]byte(cacheHash)
 }
 
-// groupLoadedModels aggregates the exact-file rows by model cache hash and
-// execution dtype. Rows without a complete cache config are skipped.
+type loadedModelCacheConfig struct {
+	TaskKind           string         `json:"task_kind"`
+	DType              string         `json:"dtype"`
+	InputMode          string         `json:"input_mode"`
+	QuantizationConfig any            `json:"quantization_config"`
+	Model              map[string]any `json:"model"`
+	BaseModel          map[string]any `json:"base_model"`
+	Components         map[string]any `json:"components"`
+	Lora               any            `json:"lora"`
+	Loras              []any          `json:"loras"`
+}
+
+func parseLoadedModelCacheConfig(raw []byte) (*loadedModelCacheConfig, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var config loadedModelCacheConfig
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+	dtype, err := models.ParseConcreteTaskDType(config.DType)
+	if err != nil {
+		return nil, err
+	}
+	config.DType = dtype
+	return &config, nil
+}
+
+func taskArgsComponent(raw any) (map[string]any, error) {
+	object, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("component is not an object")
+	}
+	format, _ := object["format"].(string)
+	repo, _ := object["repository"].(string)
+	if repo == "" {
+		repo, _ = object["repo"].(string)
+	}
+	formatKwargs, _ := object["format_kwargs"].(map[string]any)
+	if formatKwargs == nil {
+		formatKwargs = map[string]any{}
+	}
+	return map[string]any{
+		"format":        format,
+		"repo":          models.NormalizeModelName(repo),
+		"format_kwargs": formatKwargs,
+	}, nil
+}
+
+func publicFieldsFromCacheConfig(modelType models.LoadedModelType, config *loadedModelCacheConfig) (LoadedModelPublicFields, error) {
+	fields := LoadedModelPublicFields{}
+	switch modelType {
+	case models.LoadedModelTypeLLM:
+		return fields, nil
+	case models.LoadedModelTypeSD:
+		components := make(map[string]any, len(config.Components))
+		for name, raw := range config.Components {
+			component, err := taskArgsComponent(raw)
+			if err != nil {
+				return LoadedModelPublicFields{}, err
+			}
+			components[name] = component
+		}
+		fields.Components = components
+		if config.Lora == nil {
+			fields.Lora = nil
+		} else {
+			fields.Lora = config.Lora
+		}
+		return fields, nil
+	case models.LoadedModelTypeVideo:
+		components := make(map[string]any, len(config.Components))
+		for name, raw := range config.Components {
+			component, err := taskArgsComponent(raw)
+			if err != nil {
+				return LoadedModelPublicFields{}, err
+			}
+			components[name] = component
+		}
+		fields.Components = components
+		if config.Loras == nil {
+			fields.Loras = []any{}
+		} else {
+			fields.Loras = config.Loras
+		}
+		return fields, nil
+	default:
+		return LoadedModelPublicFields{}, fmt.Errorf("unsupported model type %q", modelType)
+	}
+}
+
+func publicLoadedModelIdentity(model *models.LoadedModel, fields LoadedModelPublicFields) (string, []byte, error) {
+	identity := map[string]any{
+		"model_id":            model.ModelID,
+		"model_type":          model.ModelType,
+		"dtype":               model.DType,
+		"quantization_config": json.RawMessage(model.QuantizationConfig),
+	}
+	switch model.ModelType {
+	case models.LoadedModelTypeSD:
+		identity["components"] = fields.Components
+		identity["lora"] = fields.Lora
+	case models.LoadedModelTypeVideo:
+		identity["components"] = fields.Components
+		identity["loras"] = fields.Loras
+	}
+	canonical, err := models.CanonicalJSON(identity)
+	if err != nil {
+		return "", nil, err
+	}
+	return string(canonical), canonical, nil
+}
+
+// groupLoadedModels aggregates the exact-file rows by the public model identity.
+// Video rows that differ only by input_mode are merged. Rows without a complete
+// concrete-dtype cache config are skipped.
 func groupLoadedModels(loadedModels []models.LoadedModel) ([]*loadedModelGroup, error) {
 	groups := make(map[loadedModelGroupKey]*loadedModelGroup)
 	for _, loadedModel := range loadedModels {
@@ -114,26 +237,54 @@ func groupLoadedModels(loadedModels []models.LoadedModel) ([]*loadedModelGroup, 
 			log.Warnf("LoadedModelViews: skip loaded model %d of %s: model cache config is incomplete", loadedModel.ID, loadedModel.ModelID)
 			continue
 		}
+		config, err := parseLoadedModelCacheConfig([]byte(loadedModel.ModelCacheConfig))
+		if err != nil {
+			log.Warnf("LoadedModelViews: skip loaded model %d of %s: %v", loadedModel.ID, loadedModel.ModelID, err)
+			continue
+		}
+		if loadedModel.DType != config.DType {
+			log.Warnf("LoadedModelViews: skip loaded model %d of %s: dtype mismatch", loadedModel.ID, loadedModel.ModelID)
+			continue
+		}
+		public, err := publicFieldsFromCacheConfig(loadedModel.ModelType, config)
+		if err != nil {
+			log.Warnf("LoadedModelViews: skip loaded model %d of %s: %v", loadedModel.ID, loadedModel.ModelID, err)
+			continue
+		}
 		members, err := loadedModel.MemberHashes()
 		if err != nil {
 			return nil, err
 		}
+		identity, sortKey, err := publicLoadedModelIdentity(&loadedModel, public)
+		if err != nil {
+			return nil, err
+		}
 
-		key := loadedModelGroupKey{ModelCacheHash: cacheHash, ExecutionDType: loadedModel.ExecutionDType}
+		key := loadedModelGroupKey{Identity: identity}
 		group, ok := groups[key]
 		if !ok {
-			groups[key] = &loadedModelGroup{view: LoadedModelView{Model: loadedModel}, members: [][]models.Hash32{members}}
+			groups[key] = &loadedModelGroup{
+				view: LoadedModelView{
+					Model:  loadedModel,
+					Public: public,
+				},
+				members:           [][]models.Hash32{members},
+				memberCacheHashes: map[models.Hash32]struct{}{cacheHash: {}},
+				sortKey:           sortKey,
+			}
 			continue
 		}
 		representative := &group.view.Model
 		if representative.ModelID != loadedModel.ModelID || representative.ModelType != loadedModel.ModelType ||
+			representative.DType != loadedModel.DType ||
 			!bytes.Equal(representative.QuantizationConfig, loadedModel.QuantizationConfig) {
-			log.Errorf("LoadedModelViews: skip loaded model %d of %s: conflicts with model %s of the same model cache hash %s",
-				loadedModel.ID, loadedModel.ModelID, representative.ModelID, cacheHash.Hex())
+			log.Errorf("LoadedModelViews: skip loaded model %d of %s: conflicts with model %s of the same public identity",
+				loadedModel.ID, loadedModel.ModelID, representative.ModelID)
 			continue
 		}
 		representative.MinVRAM = min(representative.MinVRAM, loadedModel.MinVRAM)
 		group.members = append(group.members, members)
+		group.memberCacheHashes[cacheHash] = struct{}{}
 	}
 
 	sorted := make([]*loadedModelGroup, 0, len(groups))
@@ -145,10 +296,13 @@ func groupLoadedModels(loadedModels []models.LoadedModel) ([]*loadedModelGroup, 
 		if a.ModelID != b.ModelID {
 			return a.ModelID < b.ModelID
 		}
-		if a.ExecutionDType != b.ExecutionDType {
-			return a.ExecutionDType < b.ExecutionDType
+		if a.ModelType != b.ModelType {
+			return a.ModelType < b.ModelType
 		}
-		return bytes.Compare(a.ModelCacheHash, b.ModelCacheHash) < 0
+		if a.DType != b.DType {
+			return a.DType < b.DType
+		}
+		return bytes.Compare(sorted[i].sortKey, sorted[j].sortKey) < 0
 	})
 	return sorted, nil
 }
@@ -206,17 +360,13 @@ func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView,
 	views := make([]LoadedModelView, 0, len(groups))
 	for _, group := range groups {
 		view := group.view
-		cacheHash, err := models.Hash32FromBytes(view.Model.ModelCacheHash)
-		if err != nil {
-			return nil, err
-		}
 		for _, hashes := range onDisk {
 			if coversAnyMember(hashes, group.members) {
 				view.OnDiskNodeCount++
 			}
 		}
 		for address, files := range inMemory {
-			if state.inMemory[address].ExecutionDType != view.Model.ExecutionDType || memoryCacheHashes[address] != cacheHash {
+			if _, ok := group.memberCacheHashes[memoryCacheHashes[address]]; !ok {
 				continue
 			}
 			if coversAnyMember(files, group.members) {
@@ -231,6 +381,7 @@ func buildLoadedModelViews(ctx context.Context, db *gorm.DB) ([]LoadedModelView,
 type pendingLoadedModel struct {
 	ModelID                 string
 	ModelType               models.LoadedModelType
+	DType                   string
 	RequiredModelFileHashes []models.Hash32
 	QuantizationConfig      []byte
 	ModelCacheConfig        []byte
@@ -259,6 +410,9 @@ func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
 		if !ok {
 			return
 		}
+	}
+	if _, err := models.ParseConcreteTaskDType(task.DType); err != nil {
+		return
 	}
 	executionHashes, err := task.ExecutionModelFileHashList()
 	if err != nil {
@@ -290,11 +444,11 @@ func updateLoadedModels(task *models.InferenceTask, node *models.Node) {
 	key := loadedModelKey{
 		RequiredModelFilesHash: models.RequiredModelFilesHash(executionHashes),
 		ModelCacheHash:         cacheHash,
-		ExecutionDType:         task.ExecutionDType,
 	}
 	loadedModelCache.record(key, pendingLoadedModel{
 		ModelID:                 task.ModelName,
 		ModelType:               models.LoadedModelTypeFromTaskType(task.TaskType),
+		DType:                   task.DType,
 		RequiredModelFileHashes: executionHashes,
 		QuantizationConfig:      quantizationConfig,
 		ModelCacheConfig:        cacheConfig,
@@ -327,7 +481,7 @@ func flushLoadedModelCache(ctx context.Context, db *gorm.DB) {
 		loadedModels = append(loadedModels, models.LoadedModel{
 			RequiredModelFilesHash:  key.RequiredModelFilesHash.Bytes(),
 			ModelCacheHash:          key.ModelCacheHash.Bytes(),
-			ExecutionDType:          key.ExecutionDType,
+			DType:                   pendingModel.DType,
 			RequiredModelFileHashes: models.EncodeHashList(pendingModel.RequiredModelFileHashes),
 			QuantizationConfig:      pendingModel.QuantizationConfig,
 			ModelID:                 pendingModel.ModelID,
