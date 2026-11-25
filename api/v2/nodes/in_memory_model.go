@@ -22,7 +22,7 @@ type InMemoryModel struct {
 	ModelCacheHash   string                  `json:"model_cache_hash" description:"hex SHA-256 of the canonical model cache config" validate:"required"`
 	ModelCacheConfig json.RawMessage         `json:"model_cache_config" description:"model cache config that the hash is computed from" validate:"required"`
 	ModelFiles       []models.ModelFileEntry `json:"model_files" description:"exact model files of the in-memory model" validate:"required"`
-	ExecutionDType   string                  `json:"execution_dtype" description:"dtype the model is loaded with" validate:"required"`
+	ExecutionDType   string                  `json:"execution_dtype,omitempty" description:"ignored; retained for node signature compatibility"`
 }
 
 type NodeInMemoryModelInput struct {
@@ -103,9 +103,8 @@ func buildInMemoryModelReport(model *InMemoryModel) (*service.NodeInMemoryModelR
 		return nil, err
 	}
 	return &service.NodeInMemoryModelReport{
-		CacheHash:      cacheHash,
-		Files:          files,
-		CacheConfig:    canonicalConfig,
-		ExecutionDType: model.ExecutionDType,
+		CacheHash:   cacheHash,
+		Files:       files,
+		CacheConfig: canonicalConfig,
 	}, nil
 }

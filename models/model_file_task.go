@@ -92,8 +92,12 @@ func DeriveTaskModelRequirements(taskArgs string, taskType TaskType) (*TaskModel
 		return nil, fmt.Errorf("invalid task args: %w", err)
 	}
 
+	dtype, err := ParseConcreteTaskDType(args.DType)
+	if err != nil {
+		return nil, err
+	}
 	cacheKey := map[string]any{
-		"dtype": normalizeTaskDType(args.DType),
+		"dtype": dtype,
 	}
 	var entries []ModelFileEntry
 	switch taskType {
@@ -306,13 +310,6 @@ func DistributionKey(exact, source []Hash32) Hash32 {
 	members = append(members, exact...)
 	members = append(members, source...)
 	return RequiredModelFilesHash(members)
-}
-
-func normalizeTaskDType(dtype string) string {
-	if dtype == "" {
-		return AutoExecutionDType
-	}
-	return strings.ToLower(dtype)
 }
 
 func optionalString(s *string) string {

@@ -92,7 +92,7 @@ func seedNodeMemory(t *testing.T, db *gorm.DB, address string, files ...models.M
 		}
 		hashes = append(hashes, hash)
 	}
-	memory := models.NewNodeInMemoryModel(address, models.Hash32{1}, hashes, []byte(`{}`), "auto")
+	memory := models.NewNodeInMemoryModel(address, models.Hash32{1}, hashes, []byte(`{"dtype":"float16"}`))
 	if err := models.SaveNodeInMemoryModel(context.Background(), db, &memory); err != nil {
 		t.Fatalf("save in-memory model: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestPrepareTaskModelRequirementsAcceptsAnyFormattedVersion(t *testing.T) {
 
 	requirements, err := PrepareTaskModelRequirements(
 		context.Background(), db, models.TaskTypeLLM,
-		`{"version":"9.1.0","model":"org/model","revision":"`+testCommitA+`"}`)
+		`{"version":"9.1.0","model":"org/model","dtype":"float16","revision":"`+testCommitA+`"}`)
 	if err != nil {
 		t.Fatalf("expected preparation to pass: %v", err)
 	}

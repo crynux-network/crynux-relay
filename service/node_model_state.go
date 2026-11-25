@@ -241,10 +241,9 @@ func AddNodeModelFile(ctx context.Context, db *gorm.DB, address string, file mod
 
 // NodeInMemoryModelReport is the model a node currently holds in memory.
 type NodeInMemoryModelReport struct {
-	CacheHash      models.Hash32
-	Files          []models.ModelFile
-	CacheConfig    []byte
-	ExecutionDType string
+	CacheHash   models.Hash32
+	Files       []models.ModelFile
+	CacheConfig []byte
 }
 
 // SetNodeInMemoryModel replaces the in-memory model of a node. A nil report
@@ -274,7 +273,7 @@ func SetNodeInMemoryModel(ctx context.Context, db *gorm.DB, address string, repo
 			if err != nil {
 				return err
 			}
-			row := models.NewNodeInMemoryModel(address, report.CacheHash, hashes, report.CacheConfig, report.ExecutionDType)
+			row := models.NewNodeInMemoryModel(address, report.CacheHash, hashes, report.CacheConfig)
 			return models.SaveNodeInMemoryModel(ctx, tx, &row)
 		})
 	})

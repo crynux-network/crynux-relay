@@ -14,7 +14,7 @@ type GPUExecutionCalibration struct {
 	GPUName                  string   `gorm:"size:191;not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:2"`
 	GPUVram                  uint64   `gorm:"not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:3"`
 	ModelName                string   `gorm:"size:191;not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:4"`
-	ExecutionDType           string   `gorm:"column:execution_dtype;size:64;not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:5"`
+	DType                    string   `gorm:"column:dtype;size:64;not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:5"`
 	RequiredModelFilesHash   []byte   `gorm:"column:required_model_files_hash;type:binary(32);not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:6"`
 	QuantizationConfigHash   []byte   `gorm:"column:quantization_config_hash;type:binary(32);not null;uniqueIndex:idx_gpu_execution_calibration_config,priority:7"`
 	MinVRAMRequirement       uint64   `gorm:"column:min_vram_requirement;not null"`

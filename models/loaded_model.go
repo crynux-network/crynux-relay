@@ -28,8 +28,8 @@ func LoadedModelTypeFromTaskType(taskType TaskType) LoadedModelType {
 }
 
 // LoadedModel is the successful-execution projection of one loaded model. A row
-// is identified by the exact model file set, the requested model cache hash and
-// the execution dtype of the successful execution.
+// is identified by the exact model file set and the requested model cache hash.
+// DType is the concrete TaskArgs dtype stored for the public loaded-models view.
 type LoadedModel struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	CreatedAt time.Time `json:"created_at"`
@@ -38,7 +38,7 @@ type LoadedModel struct {
 	RequiredModelFilesHash []byte `json:"-" gorm:"column:required_model_files_hash;type:binary(32);not null;uniqueIndex:idx_loaded_models_identity,priority:1"`
 	// ModelCacheHash identifies the in-memory model cache entry of the loaded model.
 	ModelCacheHash []byte `json:"-" gorm:"column:model_cache_hash;type:binary(32);not null;uniqueIndex:idx_loaded_models_identity,priority:2"`
-	ExecutionDType string `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;uniqueIndex:idx_loaded_models_identity,priority:3"`
+	DType          string `json:"dtype" gorm:"column:dtype;size:64;not null"`
 	// RequiredModelFileHashes is the sorted concatenation of the exact member hashes.
 	RequiredModelFileHashes []byte   `json:"-" gorm:"type:longblob;not null"`
 	QuantizationConfig      JSONText `json:"quantization_config" gorm:"type:json;not null"`
@@ -58,7 +58,7 @@ func ListLoadedModels(ctx context.Context, db *gorm.DB) ([]LoadedModel, error) {
 	defer cancel()
 
 	var loadedModels []LoadedModel
-	if err := db.WithContext(dbCtx).Model(&LoadedModel{}).Order("model_id ASC, execution_dtype ASC, id ASC").Find(&loadedModels).Error; err != nil {
+	if err := db.WithContext(dbCtx).Model(&LoadedModel{}).Order("model_id ASC, dtype ASC, id ASC").Find(&loadedModels).Error; err != nil {
 		return nil, err
 	}
 	return loadedModels, nil
@@ -80,7 +80,7 @@ func UpsertLoadedModelMinVRAMs(ctx context.Context, db *gorm.DB, loadedModels []
 	}
 
 	return db.WithContext(dbCtx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "required_model_files_hash"}, {Name: "model_cache_hash"}, {Name: "execution_dtype"}},
+		Columns: []clause.Column{{Name: "required_model_files_hash"}, {Name: "model_cache_hash"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"min_vram":   minVRAMExpr,
 			"updated_at": updatedAtExpr,

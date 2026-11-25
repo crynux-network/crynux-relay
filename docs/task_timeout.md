@@ -21,7 +21,7 @@ Queue priority affects dispatch order only. It MUST NOT alter the resolved queue
 
 Creators MUST NOT supply the execution Timeout for normal SD, LLM, or video tasks. Relay MUST ignore a creator-supplied value for these task types.
 
-After Relay selects the node and exact GPU variant, Relay MUST calculate normal-task `Timeout` from the frozen model execution configuration and in-memory records defined in [task_execution_parameters.md](./task_execution_parameters.md). Requested `auto` MUST compare complete predictions from `auto` and reported actual dtype records. Unknown-model fallback MUST use the nearest task `MinVRAM` interval, prefer exact-GPU records over other GPU names with the same VRAM, and use the maximum complete prediction among equal-distance records.
+After Relay selects the node and exact GPU variant, Relay MUST calculate normal-task `Timeout` from the frozen model execution configuration, including the task's concrete `dtype`, and in-memory records defined in [task_execution_parameters.md](./task_execution_parameters.md). Unknown-model fallback MUST use the nearest task `MinVRAM` interval, prefer exact-GPU records over other GPU names with the same VRAM, and use the maximum complete prediction among equal-distance records.
 
 For SD:
 

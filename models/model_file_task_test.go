@@ -48,7 +48,7 @@ func mustDerive(t *testing.T, args string, taskType TaskType) *TaskModelRequirem
 const bnbConfig = `{"quant_method":"bitsandbytes","components_to_quantize":["transformer"],"quant_kwargs":{"load_in_4bit":true}}`
 
 func TestLLMRequirementsHaveSingleMember(t *testing.T) {
-	exact := mustDerive(t, llmTaskArgs("org/llm", "sha1", "auto", ""), TaskTypeLLM)
+	exact := mustDerive(t, llmTaskArgs("org/llm", "sha1", "float16", ""), TaskTypeLLM)
 	if len(exact.Entries) != 1 || len(exact.RequiredModelFileHashes) != 1 || len(exact.RequiredModelFileSourceHashes) != 0 {
 		t.Fatalf("unexpected exact requirements: %+v", exact)
 	}
@@ -61,7 +61,7 @@ func TestLLMRequirementsHaveSingleMember(t *testing.T) {
 		t.Fatalf("unexpected exact hash: %v, %v", exact.RequiredModelFileHashes, err)
 	}
 
-	floating := mustDerive(t, llmTaskArgs("org/llm", "", "auto", ""), TaskTypeLLM)
+	floating := mustDerive(t, llmTaskArgs("org/llm", "", "float16", ""), TaskTypeLLM)
 	if len(floating.RequiredModelFileHashes) != 0 || len(floating.RequiredModelFileSourceHashes) != 1 {
 		t.Fatalf("unexpected floating requirements: %+v", floating)
 	}
@@ -121,15 +121,15 @@ func TestImageRequirementsIncludeBaseAndComponentsButNotLora(t *testing.T) {
 }
 
 func TestImageRequirementsWithoutComponentsHaveOnlyBase(t *testing.T) {
-	requirements := mustDerive(t, imageTaskArgs("org/pipeline", "", "auto", "", "", ""), TaskTypeSD)
+	requirements := mustDerive(t, imageTaskArgs("org/pipeline", "", "float16", "", "", ""), TaskTypeSD)
 	if len(requirements.Entries) != 1 || len(requirements.RequiredModelFileSourceHashes) != 1 || len(requirements.RequiredModelFileHashes) != 0 {
 		t.Fatalf("unexpected requirements: %+v", requirements)
 	}
 }
 
 func TestQuantizationConfigHashTracksOnlyQuantizationConfig(t *testing.T) {
-	base := mustDerive(t, llmTaskArgs("org/llm", "", "auto", bnbConfig), TaskTypeLLM)
-	changedConfig := mustDerive(t, llmTaskArgs("org/llm", "", "auto",
+	base := mustDerive(t, llmTaskArgs("org/llm", "", "float16", bnbConfig), TaskTypeLLM)
+	changedConfig := mustDerive(t, llmTaskArgs("org/llm", "", "float16",
 		`{"quant_method":"bitsandbytes","components_to_quantize":["transformer"],"quant_kwargs":{"load_in_4bit":false}}`), TaskTypeLLM)
 	if base.QuantizationConfigHash == changedConfig.QuantizationConfigHash {
 		t.Fatal("quantization_config change must alter quantization_config_hash")
@@ -143,7 +143,7 @@ func TestQuantizationConfigHashTracksOnlyQuantizationConfig(t *testing.T) {
 		t.Fatal("model and dtype change must not alter quantization_config_hash")
 	}
 
-	imageA := mustDerive(t, imageTaskArgs("org/p", "", "auto", "", "", bnbConfig), TaskTypeSD)
+	imageA := mustDerive(t, imageTaskArgs("org/p", "", "float16", "", "", bnbConfig), TaskTypeSD)
 	imageB := mustDerive(t, imageTaskArgs("org/p2", "", "bfloat16", `{"model":"org/lora"}`, "", bnbConfig), TaskTypeSD)
 	if imageA.QuantizationConfigHash != imageB.QuantizationConfigHash {
 		t.Fatal("model, dtype and LoRA change must not alter quantization_config_hash")
@@ -151,16 +151,16 @@ func TestQuantizationConfigHashTracksOnlyQuantizationConfig(t *testing.T) {
 }
 
 func TestQuantizationConfigHashIgnoresKeyOrderAndNullHasFixedValue(t *testing.T) {
-	a := mustDerive(t, llmTaskArgs("org/llm", "", "auto",
+	a := mustDerive(t, llmTaskArgs("org/llm", "", "float16",
 		`{"quant_method":"bitsandbytes","components_to_quantize":["a"],"quant_kwargs":{"x":1,"y":2}}`), TaskTypeLLM)
-	b := mustDerive(t, llmTaskArgs("org/llm", "", "auto",
+	b := mustDerive(t, llmTaskArgs("org/llm", "", "float16",
 		`{"quant_kwargs":{"y":2,"x":1},"components_to_quantize":["a"],"quant_method":"bitsandbytes"}`), TaskTypeLLM)
 	if a.QuantizationConfigHash != b.QuantizationConfigHash {
 		t.Fatal("quantization_config key order must not alter its hash")
 	}
 
-	absent := mustDerive(t, llmTaskArgs("org/llm", "", "auto", ""), TaskTypeLLM)
-	null := mustDerive(t, llmTaskArgs("org/llm", "", "auto", "null"), TaskTypeLLM)
+	absent := mustDerive(t, llmTaskArgs("org/llm", "", "float16", ""), TaskTypeLLM)
+	null := mustDerive(t, llmTaskArgs("org/llm", "", "float16", "null"), TaskTypeLLM)
 	if absent.QuantizationConfigHash != null.QuantizationConfigHash {
 		t.Fatal("absent and null quantization_config must hash the same")
 	}
@@ -174,37 +174,37 @@ func TestQuantizationConfigHashIgnoresKeyOrderAndNullHasFixedValue(t *testing.T)
 }
 
 func TestRequestedModelCacheHashIgnoresRevisionAndTracksCacheFields(t *testing.T) {
-	base := mustDerive(t, llmTaskArgs("org/llm", "", "auto", ""), TaskTypeLLM)
-	pinned := mustDerive(t, llmTaskArgs("org/llm", "sha1", "auto", ""), TaskTypeLLM)
+	base := mustDerive(t, llmTaskArgs("org/llm", "", "float16", ""), TaskTypeLLM)
+	pinned := mustDerive(t, llmTaskArgs("org/llm", "sha1", "float16", ""), TaskTypeLLM)
 	if base.RequestedModelCacheHash != pinned.RequestedModelCacheHash {
 		t.Fatal("revision must not participate in requested_model_cache_hash")
 	}
-	if base.RequestedModelCacheHash == mustDerive(t, llmTaskArgs("org/llm", "", "float16", ""), TaskTypeLLM).RequestedModelCacheHash {
+	if base.RequestedModelCacheHash == mustDerive(t, llmTaskArgs("org/llm", "", "bfloat16", ""), TaskTypeLLM).RequestedModelCacheHash {
 		t.Fatal("dtype must alter requested_model_cache_hash")
 	}
-	if base.RequestedModelCacheHash == mustDerive(t, llmTaskArgs("org/other", "", "auto", ""), TaskTypeLLM).RequestedModelCacheHash {
+	if base.RequestedModelCacheHash == mustDerive(t, llmTaskArgs("org/other", "", "float16", ""), TaskTypeLLM).RequestedModelCacheHash {
 		t.Fatal("model must alter requested_model_cache_hash")
 	}
 
-	imageBase := mustDerive(t, imageTaskArgs("org/p", "", "auto", "", "", ""), TaskTypeSD)
-	withLora := mustDerive(t, imageTaskArgs("org/p", "", "auto", `{"model":"org/lora"}`, "", ""), TaskTypeSD)
+	imageBase := mustDerive(t, imageTaskArgs("org/p", "", "float16", "", "", ""), TaskTypeSD)
+	withLora := mustDerive(t, imageTaskArgs("org/p", "", "float16", `{"model":"org/lora"}`, "", ""), TaskTypeSD)
 	if imageBase.RequestedModelCacheHash == withLora.RequestedModelCacheHash {
 		t.Fatal("LoRA must alter requested_model_cache_hash")
 	}
 	if len(withLora.Entries) != len(imageBase.Entries) {
 		t.Fatal("LoRA must not alter required model files")
 	}
-	explicitDefault := mustDerive(t, imageTaskArgs("org/p", "", "auto", `{"model":"org/lora","weight_file_name":"","weight":100}`, "", ""), TaskTypeSD)
+	explicitDefault := mustDerive(t, imageTaskArgs("org/p", "", "float16", `{"model":"org/lora","weight_file_name":"","weight":100}`, "", ""), TaskTypeSD)
 	if withLora.RequestedModelCacheHash != explicitDefault.RequestedModelCacheHash {
 		t.Fatal("LoRA defaults must hash like explicit default values")
 	}
 
-	withComponent := mustDerive(t, imageTaskArgs("org/p", "", "auto", "",
+	withComponent := mustDerive(t, imageTaskArgs("org/p", "", "float16", "",
 		`{"transformer":{"format":"gguf","repo":"org/q","format_kwargs":{"filename":"a.gguf"}}}`, ""), TaskTypeSD)
 	if imageBase.RequestedModelCacheHash == withComponent.RequestedModelCacheHash {
 		t.Fatal("components must alter requested_model_cache_hash")
 	}
-	otherUsage := mustDerive(t, imageTaskArgs("org/p", "", "auto", "",
+	otherUsage := mustDerive(t, imageTaskArgs("org/p", "", "float16", "",
 		`{"text_encoder":{"format":"gguf","repo":"org/q","format_kwargs":{"filename":"a.gguf"}}}`, ""), TaskTypeSD)
 	if withComponent.RequestedModelCacheHash == otherUsage.RequestedModelCacheHash {
 		t.Fatal("component usage name must alter requested_model_cache_hash")
@@ -230,7 +230,7 @@ func TestDeriveTaskModelRequirementsRejectsInvalidArgs(t *testing.T) {
 }
 
 func TestRequirementsEncodeToHashLists(t *testing.T) {
-	requirements := mustDerive(t, imageTaskArgs("org/p", "sha", "auto", "",
+	requirements := mustDerive(t, imageTaskArgs("org/p", "sha", "float16", "",
 		`{"t":{"format":"gguf","repo":"org/q","format_kwargs":{"filename":"a.gguf"}}}`, ""), TaskTypeSD)
 	decoded, err := DecodeHashList(EncodeHashList(requirements.RequiredModelFileHashes))
 	if err != nil || len(decoded) != 1 {
@@ -246,7 +246,7 @@ func TestRequirementsEncodeToHashLists(t *testing.T) {
 }
 
 func TestRequestedModelCacheConfigHashesToCacheHash(t *testing.T) {
-	task := &InferenceTask{TaskType: TaskTypeLLM, TaskArgs: llmTaskArgs("org/llm", "", "auto", "")}
+	task := &InferenceTask{TaskType: TaskTypeLLM, TaskArgs: llmTaskArgs("org/llm", "", "float16", "")}
 	config, err := task.RequestedModelCacheConfig()
 	if err != nil {
 		t.Fatal(err)

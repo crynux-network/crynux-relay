@@ -17,19 +17,19 @@ func TestGetSDExecutionTimeCoefficientsMinVRAMMatchesPricing(t *testing.T) {
 	model := "stabilityai/stable-diffusion-xl-base-1.0"
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "A", GPUVram: 24,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType,
+		ModelName: model, DType: "bfloat16",
 		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.1, SDSuccessSamples: 1,
 	})
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "B", GPUVram: 48,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType,
+		ModelName: model, DType: "bfloat16",
 		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.3, SDSuccessSamples: 1,
 	})
 
-	query := TaskExecutionTimeQuery{ModelName: model, MinVRAM: 24}
+	query := TaskExecutionTimeQuery{ModelName: model, DType: "bfloat16", MinVRAM: 24}
 	got := GetSDExecutionTimeCoefficients(query)
 	want := getTaskPricingParameters(&models.InferenceTask{
-		TaskType: models.TaskTypeSD, ModelName: model, RequestedDType: models.AutoExecutionDType, MinVRAM: 24,
+		TaskType: models.TaskTypeSD, ModelName: model, DType: "bfloat16", MinVRAM: 24,
 	})
 	if got.SecondsPerSDPixelStep != want.sdRate {
 		t.Fatalf("expected sd rate %g, got %g", want.sdRate, got.SecondsPerSDPixelStep)
@@ -45,19 +45,19 @@ func TestGetSDExecutionTimeCoefficientsGPUMatchesPricing(t *testing.T) {
 	gpuName := "NVIDIA GeForce RTX 4090"
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: gpuName, GPUVram: 24,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType,
+		ModelName: model, DType: "bfloat16",
 		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.2, SDSuccessSamples: 1,
 	})
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "Other", GPUVram: 24,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType,
+		ModelName: model, DType: "bfloat16",
 		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.8, SDSuccessSamples: 1,
 	})
 
-	query := TaskExecutionTimeQuery{ModelName: model, GPUName: gpuName, GPUVRAM: 24}
+	query := TaskExecutionTimeQuery{ModelName: model, DType: "bfloat16", GPUName: gpuName, GPUVRAM: 24}
 	got := GetSDExecutionTimeCoefficients(query)
 	want := getTaskPricingParameters(&models.InferenceTask{
-		TaskType: models.TaskTypeSD, ModelName: model, RequestedDType: models.AutoExecutionDType,
+		TaskType: models.TaskTypeSD, ModelName: model, DType: "bfloat16",
 		RequiredGPU: gpuName, RequiredGPUVRAM: 24,
 	})
 	if got.SecondsPerSDPixelStep != want.sdRate {
@@ -72,12 +72,12 @@ func TestGetExecutionTimeCoefficientsUnknownModelUsesInitial(t *testing.T) {
 	initTaskPricingTestStore(t)
 	initial := initialExecutionParameters()
 
-	sd := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: "unknown/sd", MinVRAM: 24})
+	sd := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: "unknown/sd", DType: "float16", MinVRAM: 24})
 	if sd.OverheadSeconds != initial.sdOverhead || sd.SecondsPerSDPixelStep != initial.sdRate {
 		t.Fatalf("unexpected unknown SD coefficients: %+v", sd)
 	}
 
-	llm := GetLLMExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: "unknown/llm", MinVRAM: 24})
+	llm := GetLLMExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: "unknown/llm", DType: "float16", MinVRAM: 24})
 	if llm.ConstantSeconds != initial.llm.constantSeconds ||
 		llm.SecondsPerInputToken != initial.llm.secondsPerInputByte*llmInputBytesPerPublicToken ||
 		llm.SecondsPerOutputToken != initial.llm.secondsPerOutputToken ||
@@ -93,15 +93,15 @@ func TestGetLLMExecutionTimeCoefficientsConvertsInputByteToToken(t *testing.T) {
 	model := "qwen/qwen3.6-7b"
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeLLM, GPUName: "A", GPUVram: 24,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType,
+		ModelName: model, DType: "bfloat16",
 		LLMConstantSeconds: 11, LLMSecondsPerInputByte: 0.0002, LLMSecondsPerOutputToken: 0.3,
 		LLMModelSwitchSeconds: 40, LLMSecondsPerImage: 7, LLMSecondsPerMegapixel: 9,
 		LLMSuccessSamples: 1,
 	})
 
-	got := GetLLMExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: model, MinVRAM: 24})
+	got := GetLLMExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: model, DType: "bfloat16", MinVRAM: 24})
 	want := getTaskPricingParameters(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, ModelName: model, RequestedDType: models.AutoExecutionDType, MinVRAM: 24,
+		TaskType: models.TaskTypeLLM, ModelName: model, DType: "bfloat16", MinVRAM: 24,
 	})
 	if got.ConstantSeconds != want.llm.constantSeconds ||
 		got.SecondsPerOutputToken != want.llm.secondsPerOutputToken ||
@@ -120,25 +120,25 @@ func TestGetSDExecutionTimeCoefficientsExplicitDTypeMatchesOnlyThatRecord(t *tes
 	model := "stabilityai/stable-diffusion-xl-base-1.0"
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "A", GPUVram: 24,
-		ModelName: model, ExecutionDType: "float16",
+		ModelName: model, DType: "float16",
 		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.1, SDSuccessSamples: 1,
 	})
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeSD, GPUName: "A", GPUVram: 24,
-		ModelName: model, ExecutionDType: "bfloat16",
+		ModelName: model, DType: "bfloat16",
 		SDOverheadSeconds: 30, SDFormulaVersion: sdFormulaVersion, SecondsPerSDPixelStep: 0.5, SDSuccessSamples: 1,
 	})
 
 	explicit := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{
-		ModelName: model, RequestedDType: "BFLOAT16", MinVRAM: 24,
+		ModelName: model, DType: "bfloat16", MinVRAM: 24,
 	})
 	if math.Abs(explicit.SecondsPerSDPixelStep-0.5) > 1e-12 {
-		t.Fatalf("expected explicit dtype rate 0.5, got %g", explicit.SecondsPerSDPixelStep)
+		t.Fatalf("expected bfloat16 rate 0.5, got %g", explicit.SecondsPerSDPixelStep)
 	}
 
-	auto := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: model, MinVRAM: 24})
-	if math.Abs(auto.SecondsPerSDPixelStep-0.3) > 1e-12 {
-		t.Fatalf("expected auto dtype average 0.3, got %g", auto.SecondsPerSDPixelStep)
+	other := GetSDExecutionTimeCoefficients(TaskExecutionTimeQuery{ModelName: model, DType: "float16", MinVRAM: 24})
+	if math.Abs(other.SecondsPerSDPixelStep-0.1) > 1e-12 {
+		t.Fatalf("expected float16 rate 0.1, got %g", other.SecondsPerSDPixelStep)
 	}
 }
 
@@ -149,18 +149,18 @@ func TestGetLLMExecutionTimeCoefficientsGPUMatchesPricing(t *testing.T) {
 	quantizationHash := models.Hash32{4}
 	putTestCalibration(models.GPUExecutionCalibration{
 		TaskType: models.TaskTypeLLM, GPUName: gpuName, GPUVram: 24,
-		ModelName: model, ExecutionDType: models.AutoExecutionDType, QuantizationConfigHash: quantizationHash.Bytes(),
+		ModelName: model, DType: "bfloat16", QuantizationConfigHash: quantizationHash.Bytes(),
 		LLMConstantSeconds: 12, LLMSecondsPerInputByte: 0.0003, LLMSecondsPerOutputToken: 0.2,
 		LLMModelSwitchSeconds: 50, LLMSecondsPerImage: 8, LLMSecondsPerMegapixel: 6,
 		LLMSuccessSamples: 1,
 	})
 
 	query := TaskExecutionTimeQuery{
-		ModelName: model, GPUName: gpuName, GPUVRAM: 24, RequestedDType: "auto", QuantizationConfigHash: quantizationHash,
+		ModelName: model, GPUName: gpuName, GPUVRAM: 24, DType: "bfloat16", QuantizationConfigHash: quantizationHash,
 	}
 	got := GetLLMExecutionTimeCoefficients(query)
 	want := getTaskPricingParameters(&models.InferenceTask{
-		TaskType: models.TaskTypeLLM, ModelName: model, RequestedDType: models.AutoExecutionDType,
+		TaskType: models.TaskTypeLLM, ModelName: model, DType: "bfloat16",
 		QuantizationConfigHash: quantizationHash.Bytes(), RequiredGPU: gpuName, RequiredGPUVRAM: 24,
 	})
 	if got.SecondsPerInputToken != want.llm.secondsPerInputByte*llmInputBytesPerPublicToken {

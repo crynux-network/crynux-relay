@@ -54,7 +54,7 @@ func TestInitNodeIndexRebuildsNonQuitNodes(t *testing.T) {
 	seedNodeModelFiles(t, db, "0xavailable", file)
 	fileHash := testModelFileHash(t, "model-a", "rev-a")
 	cacheHash := models.Hash32{4}
-	memory := models.NewNodeInMemoryModel("0xavailable", cacheHash, []models.Hash32{fileHash}, []byte(`{}`), "auto")
+	memory := models.NewNodeInMemoryModel("0xavailable", cacheHash, []models.Hash32{fileHash}, []byte(`{"dtype":"float16"}`))
 	if err := db.Create(&memory).Error; err != nil {
 		t.Fatalf("failed to create in-memory model: %v", err)
 	}

@@ -21,7 +21,7 @@ type gpuCalibrationKey struct {
 	name           string
 	vram           uint64
 	modelName      string
-	executionDType string
+	dtype string
 	// requiredModelFilesHash and quantizationConfigHash identify the exact
 	// model files and the quantization configuration of the calibrated execution.
 	requiredModelFilesHash models.Hash32
@@ -32,7 +32,7 @@ type taskPricingKey struct {
 	taskType               models.TaskType
 	vramDemand             uint64
 	modelName              string
-	requestedDType         string
+	dtype                   string
 	quantizationConfigHash models.Hash32
 }
 
@@ -159,7 +159,7 @@ func keyFromRecord(record models.GPUExecutionCalibration) gpuCalibrationKey {
 	return gpuCalibrationKey{
 		taskType: record.TaskType, name: record.GPUName, vram: record.GPUVram,
 		modelName:              record.ModelName,
-		executionDType:         record.ExecutionDType,
+		dtype:                  record.DType,
 		requiredModelFilesHash: hash32FromColumn(record.RequiredModelFilesHash),
 		quantizationConfigHash: hash32FromColumn(record.QuantizationConfigHash),
 	}
@@ -171,16 +171,6 @@ func hash32FromColumn(column []byte) models.Hash32 {
 	return hash
 }
 
-func executionDTypeForSample(task *models.InferenceTask) string {
-	if task.ExecutionDType != "" {
-		return task.ExecutionDType
-	}
-	if task.RequestedDType != "" {
-		return task.RequestedDType
-	}
-	return models.AutoExecutionDType
-}
-
 func taskCalibrationKey(task *models.InferenceTask, gpuName string, gpuVram uint64) (gpuCalibrationKey, error) {
 	executionHashes, err := task.ExecutionModelFileHashList()
 	if err != nil {
@@ -189,7 +179,7 @@ func taskCalibrationKey(task *models.InferenceTask, gpuName string, gpuVram uint
 	return gpuCalibrationKey{
 		taskType: task.TaskType, name: gpuName, vram: gpuVram,
 		modelName:              task.ModelName,
-		executionDType:         executionDTypeForSample(task),
+		dtype:                  task.DType,
 		requiredModelFilesHash: models.RequiredModelFilesHash(executionHashes),
 		quantizationConfigHash: hash32FromColumn(task.QuantizationConfigHash),
 	}, nil
@@ -264,15 +254,9 @@ func calibrationHasSamples(record *models.GPUExecutionCalibration, taskType mode
 }
 
 func recordMatchesTaskConfig(record *models.GPUExecutionCalibration, task *models.InferenceTask) bool {
-	if record.TaskType != task.TaskType || record.ModelName != task.ModelName ||
-		hash32FromColumn(record.QuantizationConfigHash) != hash32FromColumn(task.QuantizationConfigHash) {
-		return false
-	}
-	requested := task.RequestedDType
-	if requested == "" {
-		requested = models.AutoExecutionDType
-	}
-	return requested == models.AutoExecutionDType || record.ExecutionDType == requested
+	return record.TaskType == task.TaskType && record.ModelName == task.ModelName &&
+		hash32FromColumn(record.QuantizationConfigHash) == hash32FromColumn(task.QuantizationConfigHash) &&
+		record.DType == task.DType
 }
 
 func vramIntervalDistance(record *models.GPUExecutionCalibration, minVRAM uint64) uint64 {
@@ -394,7 +378,7 @@ func createExactCalibrationLocked(key gpuCalibrationKey) *cachedGPUCalibration {
 		GPUName:                  key.name,
 		GPUVram:                  key.vram,
 		ModelName:                key.modelName,
-		ExecutionDType:           key.executionDType,
+		DType:                    key.dtype,
 		RequiredModelFilesHash:   key.requiredModelFilesHash.Bytes(),
 		QuantizationConfigHash:   key.quantizationConfigHash.Bytes(),
 		SDOverheadSeconds:        initial.sdOverhead,
@@ -432,7 +416,7 @@ func getTaskPricingParameters(task *models.InferenceTask) executionParameters {
 	}
 	key := taskPricingKey{
 		taskType: task.TaskType, vramDemand: task.MinVRAM, modelName: task.ModelName,
-		requestedDType:         task.RequestedDType,
+		dtype:                  task.DType,
 		quantizationConfigHash: hash32FromColumn(task.QuantizationConfigHash),
 	}
 	if parameters, ok := globalTaskPricing.aggregates[key]; ok {
@@ -494,7 +478,7 @@ func recomputeAggregatesLocked(taskType models.TaskType, changedGPUVram uint64) 
 		if key.taskType == taskType && key.vramDemand <= changedGPUVram {
 			task := &models.InferenceTask{
 				TaskType: key.taskType, MinVRAM: key.vramDemand, ModelName: key.modelName,
-				RequestedDType:         key.requestedDType,
+				DType:                  key.dtype,
 				QuantizationConfigHash: key.quantizationConfigHash.Bytes(),
 			}
 			globalTaskPricing.aggregates[key] = meanParameters(candidateCalibrationsLocked(task, "", 0, true), taskType)
@@ -789,9 +773,9 @@ func ComputeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVram
 type ExecutionTimeoutDescription struct {
 	ColdStart                  bool
 	ModelName                  string
-	RequestedDType             string
+	DType                      string
 	QuantizationConfigHash     string
-	SelectedExecutionDType     string
+	SelectedDType              string
 	MinVRAMRequirement         uint64
 	MaxVRAMRequirement         uint64
 	FallbackUsed               bool
@@ -816,7 +800,7 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 	cfg := config.GetConfig().TaskPricing
 	description := ExecutionTimeoutDescription{
 		ModelName:                  task.ModelName,
-		RequestedDType:             task.RequestedDType,
+		DType:                      task.DType,
 		QuantizationConfigHash:     hash32FromColumn(task.QuantizationConfigHash).Hex(),
 		TimeoutMultiplier:          cfg.TimeoutMultiplier,
 		MinExecutionTimeoutSeconds: cfg.MinExecutionTimeoutSeconds,
@@ -858,7 +842,7 @@ func DescribeExecutionTimeout(task *models.InferenceTask, gpuName string, gpuVra
 		if (allCandidatesReady && !selectedReadyCandidate) || candidate >= prediction {
 			prediction = candidate
 			selectedParameters = candidateParameters
-			description.SelectedExecutionDType = cached.record.ExecutionDType
+			description.SelectedDType = cached.record.DType
 			description.MinVRAMRequirement = cached.record.MinVRAMRequirement
 			description.MaxVRAMRequirement = cached.record.MaxVRAMRequirement
 		}
@@ -930,7 +914,7 @@ func FlushTaskPricingCalibration(ctx context.Context, db *gorm.DB) error {
 	err := db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "task_type"}, {Name: "gpu_name"}, {Name: "gpu_vram"}, {Name: "model_name"},
-			{Name: "execution_dtype"},
+			{Name: "dtype"},
 			{Name: "required_model_files_hash"}, {Name: "quantization_config_hash"},
 		},
 		UpdateAll: true,
@@ -992,7 +976,7 @@ func publishTaskPricingMetricsLocked() {
 	metrics.ResetTaskPricingCalibrationMetrics()
 	for key, parameters := range globalTaskPricing.aggregates {
 		metrics.SetTaskPricingCalibration(
-			metrics.TaskTypeLabel(key.taskType), key.modelName, key.requestedDType,
+			metrics.TaskTypeLabel(key.taskType), key.modelName, key.dtype,
 			key.quantizationConfigHash.Hex(), key.vramDemand,
 			parameters.sdOverhead, parameters.sdRate,
 			parameters.videoOverhead, parameters.videoRate,
@@ -1011,7 +995,7 @@ func publishTaskPricingMetricsLocked() {
 			key.name,
 			key.vram,
 			key.modelName,
-			key.executionDType,
+			key.dtype,
 			key.quantizationConfigHash.Hex(),
 			cached.record.MinVRAMRequirement,
 			cached.record.MaxVRAMRequirement,

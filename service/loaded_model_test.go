@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crynux_relay/models"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 	"time"
@@ -12,7 +13,11 @@ import (
 )
 
 func llmLoadedModelArgs(repository, quantization string) string {
-	return fmt.Sprintf(`{"version":"3.7.0","model":%q,"dtype":"auto","quantization_config":%s,"messages":[{"role":"user","content":"hi"}]}`, repository, quantization)
+	return llmLoadedModelArgsDType(repository, quantization, "float16")
+}
+
+func llmLoadedModelArgsDType(repository, quantization, dtype string) string {
+	return fmt.Sprintf(`{"version":"3.7.0","model":%q,"dtype":%q,"quantization_config":%s,"messages":[{"role":"user","content":"hi"}]}`, repository, dtype, quantization)
 }
 
 func imageLoadedModelArgs(componentRepository string) string {
@@ -25,12 +30,19 @@ func newLoadedModelTask(t *testing.T, taskArgs string, taskType models.TaskType,
 	if err != nil {
 		t.Fatalf("failed to derive model requirements: %v", err)
 	}
+	execConfig, err := models.ExtractModelExecutionConfig(taskArgs, taskType)
+	if err != nil {
+		t.Fatalf("failed to extract model execution config: %v", err)
+	}
 	task := &models.InferenceTask{
 		TaskType:                 taskType,
 		TaskArgs:                 taskArgs,
 		ModelName:                modelName,
-		ExecutionDType:           dtype,
+		DType:                    execConfig.DType,
 		ExecutionModelFileHashes: models.EncodeHashList(files),
+	}
+	if dtype != "" && task.DType != dtype {
+		t.Fatalf("task args dtype %q does not match helper dtype %q", task.DType, dtype)
 	}
 	task.SetModelRequirements(requirements)
 	return task
@@ -53,7 +65,7 @@ func newLoadedModelRow(t *testing.T, task *models.InferenceTask, minVRAM uint64)
 	return models.LoadedModel{
 		RequiredModelFilesHash:  models.RequiredModelFilesHash(files).Bytes(),
 		ModelCacheHash:          task.RequestedModelCacheHash,
-		ExecutionDType:          task.ExecutionDType,
+		DType:                   task.DType,
 		RequiredModelFileHashes: models.EncodeHashList(files),
 		QuantizationConfig:      quantization,
 		ModelCacheConfig:        config,
@@ -86,7 +98,6 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	task := newLoadedModelTask(t, args, models.TaskTypeLLM, "qwen/qwen3.6-7b", "float16", hash1)
 	updateLoadedModels(task, &models.Node{GPUVram: 24})
 	updateLoadedModels(task, &models.Node{GPUVram: 16})
-	updateLoadedModels(newLoadedModelTask(t, args, models.TaskTypeLLM, "qwen/qwen3.6-7b", "bfloat16", hash1), &models.Node{GPUVram: 16})
 	updateLoadedModels(newLoadedModelTask(t, args, models.TaskTypeLLM, "qwen/qwen3.6-7b", "float16", hash2), &models.Node{GPUVram: 32})
 	updateLoadedModels(&models.InferenceTask{TaskType: models.TaskTypeLLM}, &models.Node{GPUVram: 8})
 
@@ -95,8 +106,8 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	updateLoadedModels(mismatched, &models.Node{GPUVram: 4})
 
 	pending := loadedModelCache.take()
-	if len(pending) != 3 {
-		t.Fatalf("expected 3 pending loaded models, got %d", len(pending))
+	if len(pending) != 2 {
+		t.Fatalf("expected 2 pending loaded models, got %d", len(pending))
 	}
 	cacheHash, err := task.RequestedModelCacheHash32()
 	if err != nil {
@@ -105,7 +116,6 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	key := loadedModelKey{
 		RequiredModelFilesHash: models.RequiredModelFilesHash([]models.Hash32{hash1}),
 		ModelCacheHash:         cacheHash,
-		ExecutionDType:         "float16",
 	}
 	if got := pending[key]; got.MinVRAM != 16 || got.ModelID != "qwen/qwen3.6-7b" || got.ModelType != models.LoadedModelTypeLLM {
 		t.Fatalf("unexpected pending entry: %+v", got)
@@ -126,8 +136,8 @@ func TestLoadedModelCacheMergeAndFlush(t *testing.T) {
 	if err := db.Find(&dbLoadedModels).Error; err != nil {
 		t.Fatalf("failed to query db loaded models after flush: %v", err)
 	}
-	if len(dbLoadedModels) != 3 {
-		t.Fatalf("expected 3 db loaded models after flush, got %d", len(dbLoadedModels))
+	if len(dbLoadedModels) != 2 {
+		t.Fatalf("expected 2 db loaded models after flush, got %d", len(dbLoadedModels))
 	}
 	wantConfig, err := task.RequestedModelCacheConfig()
 	if err != nil {
@@ -190,11 +200,11 @@ func TestLoadedModelViewCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode cache hash: %v", err)
 	}
-	memory := models.NewNodeInMemoryModel("0x1", cacheHash, []models.Hash32{hashA}, []byte(`{}`), "float16")
+	memory := models.NewNodeInMemoryModel("0x1", cacheHash, []models.Hash32{hashA}, []byte(`{"dtype":"float16"}`))
 	if err := db.Create(&memory).Error; err != nil {
 		t.Fatalf("failed to create in-memory model: %v", err)
 	}
-	otherDType := models.NewNodeInMemoryModel("0x2", cacheHash, []models.Hash32{hashA}, []byte(`{}`), "bfloat16")
+	otherDType := models.NewNodeInMemoryModel("0x2", cacheHash, []models.Hash32{hashA}, []byte(`{"dtype":"bfloat16"}`))
 	if err := db.Create(&otherDType).Error; err != nil {
 		t.Fatalf("failed to create in-memory model: %v", err)
 	}
@@ -205,7 +215,7 @@ func TestLoadedModelViewCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get loaded model views: %v", err)
 	}
-	if len(views) != 1 || views[0].OnDiskNodeCount != 2 || views[0].InMemoryNodeCount != 1 {
+	if len(views) != 1 || views[0].OnDiskNodeCount != 2 || views[0].InMemoryNodeCount != 2 {
 		t.Fatalf("unexpected views: %+v", views)
 	}
 
@@ -254,13 +264,11 @@ func TestBuildLoadedModelViewsAggregatesByCacheIdentity(t *testing.T) {
 		newLoadedModelRow(t, taskB, 16),
 		newLoadedModelRow(t, taskOther, 32),
 	}
-	incomplete := newLoadedModelRow(t, taskA, 8)
-	incomplete.ExecutionDType = "bfloat16"
-	incomplete.ModelCacheConfig = models.JSONText("not json")
-	mismatched := newLoadedModelRow(t, taskA, 8)
-	mismatched.ExecutionDType = "float32"
-	mismatched.ModelCacheConfig = models.JSONText(`{"other":true}`)
-	rows = append(rows, incomplete, mismatched)
+	skipped := newLoadedModelRow(t, taskB, 8)
+	skipped.ModelCacheConfig = models.JSONText("not json")
+	skippedHash := sha256.Sum256([]byte("not json"))
+	skipped.ModelCacheHash = skippedHash[:]
+	rows = append(rows, skipped)
 	if err := db.Create(&rows).Error; err != nil {
 		t.Fatalf("failed to create loaded models: %v", err)
 	}
@@ -270,8 +278,8 @@ func TestBuildLoadedModelViewsAggregatesByCacheIdentity(t *testing.T) {
 		t.Fatalf("failed to decode cache hash: %v", err)
 	}
 	memories := []models.NodeInMemoryModel{
-		models.NewNodeInMemoryModel("0x1", cacheHash, []models.Hash32{hashA}, []byte(`{}`), "float16"),
-		models.NewNodeInMemoryModel("0x3", cacheHash, []models.Hash32{hashA, hashB}, []byte(`{}`), "float16"),
+		models.NewNodeInMemoryModel("0x1", cacheHash, []models.Hash32{hashA}, []byte(`{"dtype":"float16"}`)),
+		models.NewNodeInMemoryModel("0x3", cacheHash, []models.Hash32{hashA, hashB}, []byte(`{"dtype":"float16"}`)),
 	}
 	if err := db.Create(&memories).Error; err != nil {
 		t.Fatalf("failed to create in-memory models: %v", err)

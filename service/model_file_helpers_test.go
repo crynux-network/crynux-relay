@@ -74,7 +74,7 @@ func seedNodeModelFiles(t testing.TB, db *gorm.DB, address string, files ...mode
 }
 
 func llmTaskArgs(model, revision string) string {
-	args := `{"version":"3.7.0","model":"` + model + `","dtype":"auto"`
+	args := `{"version":"3.7.0","model":"` + model + `","dtype":"float16"`
 	if revision != "" {
 		args += `,"revision":"` + revision + `"`
 	}

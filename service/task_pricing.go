@@ -34,9 +34,9 @@ const (
 )
 
 type TaskExecutionTimeQuery struct {
-	TaskType       models.TaskType
-	ModelName      string
-	RequestedDType string
+	TaskType models.TaskType
+	ModelName string
+	DType     string
 	// QuantizationConfigHash is the hash of the complete quantization_config.
 	QuantizationConfigHash models.Hash32
 	MinVRAM                uint64
@@ -392,7 +392,7 @@ func FreezeTaskModelExecutionConfig(task *models.InferenceTask) error {
 		return fmt.Errorf("%w: extract model execution config: %w", ErrInvalidTaskArgs, err)
 	}
 	task.ModelName = config.ModelName
-	task.RequestedDType = config.RequestedDType
+	task.DType = config.DType
 	return nil
 }
 
@@ -482,14 +482,10 @@ func ApplyTaskPricing(task *models.InferenceTask) error {
 }
 
 func executionTimeLookupTask(query TaskExecutionTimeQuery) *models.InferenceTask {
-	requestedDType := strings.ToLower(query.RequestedDType)
-	if requestedDType == "" {
-		requestedDType = models.AutoExecutionDType
-	}
 	task := &models.InferenceTask{
 		TaskType:               query.TaskType,
 		ModelName:              models.NormalizeModelName(query.ModelName),
-		RequestedDType:         requestedDType,
+		DType:                  query.DType,
 		QuantizationConfigHash: query.QuantizationConfigHash.Bytes(),
 	}
 	if query.GPUName != "" {

@@ -239,7 +239,7 @@ func TestCreateTaskAndBatchRejectUnsupportedRequiredGPUPlatform(t *testing.T) {
 	// 1. Video task pinning Darwin RequiredGPU is rejected immediately with validation_error on required_gpu (no Hub call).
 	videoInput := TaskInput{
 		TaskIDCommitment: "0x1111111111111111111111111111111111111111111111111111111111111111",
-		TaskArgs:         `{"version":"3.8.0","base_model":{"name":"Wan-AI/Wan2.2-T2V-A14B-Diffusers"},"prompt":"rain","task_config":{"num_frames":81,"steps":4}}`,
+		TaskArgs:         `{"version":"3.8.0","base_model":{"name":"Wan-AI/Wan2.2-T2V-A14B-Diffusers"},"dtype":"bfloat16","prompt":"rain","task_config":{"num_frames":81,"steps":4}}`,
 		TaskType:         models.TaskTypeVideo,
 		Nonce:            "0x01",
 		MinVram:          &minVRAM,
@@ -263,7 +263,7 @@ func TestCreateTaskAndBatchRejectUnsupportedRequiredGPUPlatform(t *testing.T) {
 	sdWinVRAM := uint64(24)
 	sdNunchakuInput := TaskInput{
 		TaskIDCommitment: "0x2222222222222222222222222222222222222222222222222222222222222222",
-		TaskArgs:         `{"version":"3.8.0","base_model":{"name":"org/nunchaku-sd"},"prompt":"cat","task_config":{"num_images":1,"steps":4}}`,
+		TaskArgs:         `{"version":"3.8.0","base_model":{"name":"org/nunchaku-sd"},"dtype":"float16","prompt":"cat","task_config":{"num_images":1,"steps":4}}`,
 		TaskType:         models.TaskTypeSD,
 		Nonce:            "0x02",
 		MinVram:          &minVRAM,

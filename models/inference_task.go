@@ -137,9 +137,8 @@ type InferenceTask struct {
 	Status           TaskStatus `json:"status"`
 	TaskType         TaskType   `json:"task_type" gorm:"index"`
 	TaskVersion      string     `json:"task_version"`
-	ModelName        string     `json:"model_name" gorm:"size:512;not null;default:''"`
-	RequestedDType   string     `json:"requested_dtype" gorm:"column:requested_dtype;size:64;not null;default:'auto'"`
-	ExecutionDType   string     `json:"execution_dtype" gorm:"column:execution_dtype;size:64;not null;default:''"`
+	ModelName string `json:"model_name" gorm:"size:512;not null;default:''"`
+	DType     string `json:"dtype" gorm:"column:dtype;size:64;not null;default:''"`
 	// RequiredModelFileHashes and RequiredModelFileSourceHashes are sorted
 	// concatenations of 32-byte hashes of the exact and revision-less model files.
 	RequiredModelFileHashes       []byte `json:"-" gorm:"type:longblob;not null"`

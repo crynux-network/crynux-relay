@@ -262,7 +262,6 @@ func SetTaskStatusScoreReady(ctx context.Context, db *gorm.DB, originTask *model
 		err = task.Update(ctx, tx, map[string]interface{}{
 			"status":           models.TaskScoreReady,
 			"score":            task.Score,
-			"execution_dtype":  task.ExecutionDType,
 			"score_ready_time": sql.NullTime{Time: scoreReadyTime, Valid: true},
 			"deadline_at":      deadlineAt,
 		})
