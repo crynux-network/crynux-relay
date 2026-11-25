@@ -113,6 +113,13 @@ func applyTaskModelRequirements(t testing.TB, db *gorm.DB, task *models.Inferenc
 	if err := models.UpsertModelFiles(t.Context(), db, files); err != nil {
 		t.Fatalf("failed to upsert model files: %v", err)
 	}
+	if task.TaskVersion == "" {
+		version, err := models.ParseTaskArgsVersion(task.TaskArgs)
+		if err != nil {
+			t.Fatalf("failed to parse task args version: %v", err)
+		}
+		task.TaskVersion = version
+	}
 }
 
 // registerTaskModelColumnDefaults stores empty model requirement columns for

@@ -16,15 +16,16 @@ import (
 )
 
 // modelDemandKey identifies one distribution unit: a required model file set
-// together with the VRAM demand, the LLM and video Darwin exclusion, and RequireLinuxCuda
-// of the tasks requiring it. Tasks with different VRAM demands form separate
-// demand groups because a node only counts toward coverage of the groups it
-// can execute.
+// together with the VRAM demand, the LLM and video Darwin exclusion,
+// RequireLinuxCuda, and task major version of the tasks requiring it. Tasks
+// with different VRAM demands or majors form separate demand groups because a
+// node only counts toward coverage of the groups it can execute.
 type modelDemandKey struct {
 	setKey           models.Hash32
 	minVRAM          uint64
 	excludeDarwin    bool
 	requireLinuxCuda bool
+	majorVersion     uint64
 }
 
 // taskVRAMDemand is the VRAM amount a task requires from a node: the exact
@@ -38,45 +39,66 @@ func taskVRAMDemand(task *models.InferenceTask) uint64 {
 
 // modelDemandKeyOf returns the demand group of a task and its required model
 // file hashes. ok is false when the task requires no model files.
-func modelDemandKeyOf(task *models.InferenceTask) (key modelDemandKey, exact, source []models.Hash32, ok bool, err error) {
+func modelDemandKeyOf(task *models.InferenceTask) (key modelDemandKey, exact, source []models.Hash32, version [3]uint64, ok bool, err error) {
 	exact, err = task.RequiredModelFileHashList()
 	if err != nil {
-		return key, nil, nil, false, err
+		return key, nil, nil, version, false, err
 	}
 	source, err = task.RequiredModelFileSourceHashList()
 	if err != nil {
-		return key, nil, nil, false, err
+		return key, nil, nil, version, false, err
 	}
 	if len(exact) == 0 && len(source) == 0 {
-		return key, nil, nil, false, nil
+		return key, nil, nil, version, false, nil
 	}
+	version = task.VersionNumbers()
 	key = modelDemandKey{
 		setKey:           models.DistributionKey(exact, source),
 		minVRAM:          taskVRAMDemand(task),
 		excludeDarwin:    isTaskDarwinExcluded(task.TaskType),
 		requireLinuxCuda: task.RequireLinuxCuda,
+		majorVersion:     version[0],
 	}
-	return key, exact, source, true, nil
+	return key, exact, source, version, true, nil
 }
 
-// nodeSatisfiesDemand reports whether a node's VRAM covers the demand
-// group's requirement, the node is not a Darwin node when Darwin exclusion
-// applies (LLM and video demand), and the node is a Linux CUDA platform when
-// RequireLinuxCuda is set.
-func nodeSatisfiesDemand(gpuName string, gpuVram uint64, key modelDemandKey) bool {
+// raiseVersionFloor returns the stricter of two same-major task versions.
+func raiseVersionFloor(current, candidate [3]uint64) [3]uint64 {
+	if candidate[1] > current[1] || (candidate[1] == current[1] && candidate[2] > current[2]) {
+		return candidate
+	}
+	return current
+}
+
+// nodeVersionCompatibleWithFloor reports whether a node runner version can
+// execute tasks that require versionFloor (same major, minor.patch >= floor).
+func nodeVersionCompatibleWithFloor(nodeMajor, nodeMinor, nodePatch uint64, versionFloor [3]uint64) bool {
+	return nodeMajor == versionFloor[0] &&
+		(nodeMinor > versionFloor[1] || (nodeMinor == versionFloor[1] && nodePatch >= versionFloor[2]))
+}
+
+// nodeSatisfiesDemand reports whether a node covers the demand group's VRAM
+// and platform constraints and can run tasks at the group's version floor.
+func nodeSatisfiesDemand(gpuName string, gpuVram, nodeMajor, nodeMinor, nodePatch uint64, key modelDemandKey, versionFloor [3]uint64) bool {
 	if gpuVram < key.minVRAM {
 		return false
 	}
-	return isGPUPlatformSupported(key.excludeDarwin, key.requireLinuxCuda, gpuName)
+	if !isGPUPlatformSupported(key.excludeDarwin, key.requireLinuxCuda, gpuName) {
+		return false
+	}
+	return nodeVersionCompatibleWithFloor(nodeMajor, nodeMinor, nodePatch, versionFloor)
 }
 
 // modelDemand aggregates the demand facts of one demand group over the
 // current demand window: queued tasks, window arrivals, measured execution
 // durations and the pricing estimates used as the cold-start fallback.
+// versionFloor is the strictest task version among demanding tasks in the
+// group (same major, highest minor.patch).
 type modelDemand struct {
 	key                 modelDemandKey
 	exact               []models.Hash32
 	source              []models.Hash32
+	versionFloor        [3]uint64
 	representativeTask  uint
 	queuedCount         int
 	arrivalCount        int
@@ -182,19 +204,22 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 		target := computeTargetNodeCount(demand, cfg.DemandWindowSeconds, cfg.SafetyFactor, cfg.MinNodes, cfg.MaxNodes)
 
 		// Coverage and pending capacity count only nodes that satisfy the
-		// demand group's VRAM requirement; a copy on a node that cannot
-		// execute the demanding tasks does not serve them.
+		// demand group's VRAM, platform, and version-floor requirements; a
+		// copy on a node that cannot execute the demanding tasks does not
+		// serve them.
 		holding := holdingNodes[demand.key]
 		qualifiedHoldingCount := 0
 		for address := range holding {
-			if node, ok := nodeHardwareByAddress[address]; ok && nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
+			if node, ok := nodeHardwareByAddress[address]; ok &&
+				nodeSatisfiesDemand(node.GPUName, node.GPUVram, node.MajorVersion, node.MinorVersion, node.PatchVersion, demand.key, demand.versionFloor) {
 				qualifiedHoldingCount++
 			}
 		}
 		qualifiedPendingCount := 0
 		if state != nil {
 			for address := range state.pendingNodes {
-				if node, ok := nodeHardwareByAddress[address]; ok && nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
+				if node, ok := nodeHardwareByAddress[address]; ok &&
+					nodeSatisfiesDemand(node.GPUName, node.GPUVram, node.MajorVersion, node.MinorVersion, node.PatchVersion, demand.key, demand.versionFloor) {
 					qualifiedPendingCount++
 				}
 			}
@@ -207,7 +232,7 @@ func runModelDistributionRound(ctx context.Context, db *gorm.DB) error {
 
 		qualifiedCandidates := make([]models.Node, 0, len(candidateNodes))
 		for _, node := range candidateNodes {
-			if nodeSatisfiesDemand(node.GPUName, node.GPUVram, demand.key) {
+			if nodeSatisfiesDemand(node.GPUName, node.GPUVram, node.MajorVersion, node.MinorVersion, node.PatchVersion, demand.key, demand.versionFloor) {
 				qualifiedCandidates = append(qualifiedCandidates, node)
 			}
 		}
@@ -343,9 +368,10 @@ func nodeFileSetsByAddress(rows []models.NodeModelFileRow) (map[string]*nodeFile
 }
 
 // collectModelDemands measures demand per demand group (required model file
-// set plus task VRAM demand) from tasks that are currently queued or were
-// created within the demand window, plus execution durations of tasks
-// completed within the window.
+// set, VRAM demand, platform flags, and task major) from tasks that are
+// currently queued or were created within the demand window, raises each
+// group's version floor to the strictest demanding task version, and adds
+// execution durations of tasks completed within the window.
 func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time) (map[modelDemandKey]*modelDemand, error) {
 	demands := make(map[modelDemandKey]*modelDemand)
 
@@ -355,7 +381,7 @@ func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time
 	}
 	for i := range demandTasks {
 		task := &demandTasks[i]
-		key, exact, source, ok, err := modelDemandKeyOf(task)
+		key, exact, source, version, ok, err := modelDemandKeyOf(task)
 		if err != nil {
 			return nil, fmt.Errorf("task %d required model files: %w", task.ID, err)
 		}
@@ -364,8 +390,16 @@ func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time
 		}
 		demand, ok := demands[key]
 		if !ok {
-			demand = &modelDemand{key: key, exact: exact, source: source, representativeTask: task.ID}
+			demand = &modelDemand{
+				key:                key,
+				exact:              exact,
+				source:             source,
+				versionFloor:       version,
+				representativeTask: task.ID,
+			}
 			demands[key] = demand
+		} else {
+			demand.versionFloor = raiseVersionFloor(demand.versionFloor, version)
 		}
 		if task.Status == models.TaskQueued {
 			demand.queuedCount++
@@ -393,7 +427,7 @@ func collectModelDemands(ctx context.Context, db *gorm.DB, windowStart time.Time
 		if executionSeconds <= 0 {
 			continue
 		}
-		key, _, _, ok, err := modelDemandKeyOf(task)
+		key, _, _, _, ok, err := modelDemandKeyOf(task)
 		if err != nil {
 			return nil, fmt.Errorf("task %d required model files: %w", task.ID, err)
 		}
@@ -416,7 +450,7 @@ func getDemandTasks(ctx context.Context, db *gorm.DB, windowStart time.Time) ([]
 
 	var tasks []models.InferenceTask
 	if err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
-		Select("id, status, task_type, required_model_file_hashes, required_model_file_source_hashes, create_time, estimated_node_seconds, min_v_ram, required_gpu, required_gpuv_ram").
+		Select("id, status, task_type, task_version, required_model_file_hashes, required_model_file_source_hashes, create_time, estimated_node_seconds, min_v_ram, required_gpu, required_gpuv_ram, require_linux_cuda").
 		Where("status = ? OR create_time >= ?", models.TaskQueued, windowStart).
 		Find(&tasks).Error; err != nil {
 		return nil, err
@@ -430,7 +464,7 @@ func getCompletedTasksInWindow(ctx context.Context, db *gorm.DB, windowStart tim
 
 	var tasks []models.InferenceTask
 	if err := db.WithContext(dbCtx).Model(&models.InferenceTask{}).
-		Select("id, task_type, required_model_file_hashes, required_model_file_source_hashes, start_time, score_ready_time, min_v_ram, required_gpu, required_gpuv_ram").
+		Select("id, task_type, task_version, required_model_file_hashes, required_model_file_source_hashes, start_time, score_ready_time, min_v_ram, required_gpu, required_gpuv_ram, require_linux_cuda").
 		Where("score_ready_time >= ?", windowStart).
 		Where("start_time IS NOT NULL").
 		Find(&tasks).Error; err != nil {

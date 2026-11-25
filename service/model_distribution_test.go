@@ -30,13 +30,16 @@ func initModelDistributionTest(t *testing.T) {
 
 func newDistributionTestNode(address string) models.Node {
 	return models.Node{
-		Address:     address,
-		Status:      models.NodeStatusAvailable,
-		GPUName:     "NVIDIA GeForce RTX 4090",
-		GPUVram:     24,
-		QOSScore:    float64(TASK_SCORE_REWARDS[0]),
-		HealthBase:  1.0,
-		StakeAmount: models.BigInt{Int: *big.NewInt(100)},
+		Address:      address,
+		Status:       models.NodeStatusAvailable,
+		GPUName:      "NVIDIA GeForce RTX 4090",
+		GPUVram:      24,
+		MajorVersion: 3,
+		MinorVersion: 8,
+		PatchVersion: 0,
+		QOSScore:     float64(TASK_SCORE_REWARDS[0]),
+		HealthBase:   1.0,
+		StakeAmount:  models.BigInt{Int: *big.NewInt(100)},
 	}
 }
 
@@ -364,6 +367,7 @@ func TestRunModelDistributionRoundEmitsFrozenCommitRevision(t *testing.T) {
 		t.Fatalf("resolve revisions: %v", err)
 	}
 	task.SetModelRequirements(requirements)
+	task.TaskVersion = "3.7.0"
 	files, err := requirements.ModelFiles()
 	if err != nil {
 		t.Fatalf("build model files: %v", err)
@@ -422,6 +426,7 @@ func TestRunModelDistributionRoundKeepsHistoricalSourceEmptyRevision(t *testing.
 		t.Fatalf("derive requirements: %v", err)
 	}
 	task.SetModelRequirements(requirements)
+	task.TaskVersion = "3.7.0"
 	if len(requirements.RequiredModelFileSourceHashes) == 0 || len(requirements.RequiredModelFileHashes) != 0 {
 		t.Fatalf("expected historical source-only requirements, got exact=%v source=%v",
 			requirements.RequiredModelFileHashes, requirements.RequiredModelFileSourceHashes)
@@ -451,28 +456,99 @@ func TestRunModelDistributionRoundKeepsHistoricalSourceEmptyRevision(t *testing.
 }
 
 func TestNodeSatisfiesDemand(t *testing.T) {
-	llmDemand := modelDemandKey{minVRAM: 100, excludeDarwin: true}
-	linuxOnly := modelDemandKey{minVRAM: 24, requireLinuxCuda: true}
-	if nodeSatisfiesDemand("NVIDIA RTX PRO 6000 Blackwell Server Edition+docker", 96, llmDemand) {
+	floor370 := [3]uint64{3, 7, 0}
+	llmDemand := modelDemandKey{minVRAM: 100, excludeDarwin: true, majorVersion: 3}
+	linuxOnly := modelDemandKey{minVRAM: 24, requireLinuxCuda: true, majorVersion: 3}
+	if nodeSatisfiesDemand("NVIDIA RTX PRO 6000 Blackwell Server Edition+docker", 96, 3, 8, 0, llmDemand, floor370) {
 		t.Fatal("expected a node below min VRAM to be disqualified")
 	}
-	if !nodeSatisfiesDemand("4x NVIDIA GeForce RTX 5090+docker", 128, llmDemand) {
+	if !nodeSatisfiesDemand("4x NVIDIA GeForce RTX 5090+docker", 128, 3, 8, 0, llmDemand, floor370) {
 		t.Fatal("expected a node meeting min VRAM to qualify")
 	}
-	if nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, llmDemand) {
+	if nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, 3, 8, 0, llmDemand, floor370) {
 		t.Fatal("expected a Darwin node to be disqualified for LLM demand")
 	}
-	if !nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, modelDemandKey{minVRAM: 100}) {
+	if !nodeSatisfiesDemand("Apple M2 Ultra+Darwin", 192, 3, 8, 0, modelDemandKey{minVRAM: 100, majorVersion: 3}, floor370) {
 		t.Fatal("expected a Darwin node to qualify without the LLM exclusion")
 	}
-	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+Linux", 24, linuxOnly) {
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+Linux", 24, 3, 8, 0, linuxOnly, floor370) {
 		t.Fatal("expected Linux node to satisfy RequireLinuxCuda demand")
 	}
-	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, linuxOnly) {
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 3, 8, 0, linuxOnly, floor370) {
 		t.Fatal("expected docker node to satisfy RequireLinuxCuda demand")
 	}
-	if nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+Windows", 24, linuxOnly) {
+	if nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+Windows", 24, 3, 8, 0, linuxOnly, floor370) {
 		t.Fatal("expected Windows node to fail RequireLinuxCuda demand")
+	}
+
+	floor380 := [3]uint64{3, 8, 0}
+	key := modelDemandKey{minVRAM: 24, majorVersion: 3}
+	if nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 3, 7, 1, key, floor380) {
+		t.Fatal("expected 3.7.1 node to fail floor 3.8.0")
+	}
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 3, 8, 0, key, floor380) {
+		t.Fatal("expected 3.8.0 node to satisfy floor 3.8.0")
+	}
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 3, 8, 1, key, floor380) {
+		t.Fatal("expected 3.8.1 node to satisfy floor 3.8.0")
+	}
+	if nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 3, 6, 0, key, floor370) {
+		t.Fatal("expected 3.6.0 node to fail floor 3.7.0")
+	}
+	if nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 4, 0, 0, key, floor370) {
+		t.Fatal("expected 4.0.0 node to fail floor 3.7.0")
+	}
+	if !nodeSatisfiesDemand("NVIDIA GeForce RTX 4090+docker", 24, 3, 8, 0, key, floor370) {
+		t.Fatal("expected 3.8.0 node to satisfy floor 3.7.0")
+	}
+}
+
+func TestRaiseVersionFloor(t *testing.T) {
+	floor := raiseVersionFloor([3]uint64{3, 7, 0}, [3]uint64{3, 8, 0})
+	if floor != [3]uint64{3, 8, 0} {
+		t.Fatalf("expected floor 3.8.0, got %v", floor)
+	}
+	floor = raiseVersionFloor([3]uint64{3, 8, 0}, [3]uint64{3, 7, 1})
+	if floor != [3]uint64{3, 8, 0} {
+		t.Fatalf("expected floor to stay 3.8.0, got %v", floor)
+	}
+}
+
+func TestModelDemandKeySplitsByMajorVersion(t *testing.T) {
+	task37 := &models.InferenceTask{
+		TaskType:    models.TaskTypeSD,
+		TaskArgs:    imageTaskArgs("model-a", "rev-a"),
+		TaskVersion: "3.7.0",
+		MinVRAM:     24,
+	}
+	setTaskModelRequirements(t, task37)
+	key37, _, _, version37, ok, err := modelDemandKeyOf(task37)
+	if err != nil || !ok {
+		t.Fatalf("modelDemandKeyOf 3.7.0: ok=%v err=%v", ok, err)
+	}
+	if key37.majorVersion != 3 || version37 != [3]uint64{3, 7, 0} {
+		t.Fatalf("unexpected 3.7 key/version: key=%+v version=%v", key37, version37)
+	}
+
+	task40 := &models.InferenceTask{
+		TaskType:    models.TaskTypeSD,
+		TaskArgs:    `{"version":"4.0.0","base_model":{"name":"model-a","revision":"rev-a"},"dtype":"float16","prompt":"a cat"}`,
+		TaskVersion: "4.0.0",
+		MinVRAM:     24,
+	}
+	setTaskModelRequirements(t, task40)
+	key40, _, _, version40, ok, err := modelDemandKeyOf(task40)
+	if err != nil || !ok {
+		t.Fatalf("modelDemandKeyOf 4.0.0: ok=%v err=%v", ok, err)
+	}
+	if key40.majorVersion != 4 || version40 != [3]uint64{4, 0, 0} {
+		t.Fatalf("unexpected 4.0 key/version: key=%+v version=%v", key40, version40)
+	}
+	if key37.setKey != key40.setKey {
+		t.Fatal("expected same model set key for same files")
+	}
+	if key37 == key40 {
+		t.Fatal("expected different demand keys for different majors")
 	}
 }
 
