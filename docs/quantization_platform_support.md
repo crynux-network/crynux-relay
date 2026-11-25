@@ -51,4 +51,4 @@ When task creation supplies a non-empty `required_gpu` whose normalized GPU name
 
 Matching MUST drop every node that fails the task's platform rules (`Darwin` and missing `+` suffix for `LLM` and `Video` tasks, and non-Linux-CUDA platforms when `RequireLinuxCuda` is true), including when `RequiredGPU` is set.
 
-Model distribution demand groups MUST include the flag. Only Linux CUDA nodes MAY count toward coverage or be selected as download targets for a demand group with the flag set.
+Model distribution demand groups MUST include the flag. Only Linux CUDA nodes MAY count toward coverage or be selected as download targets for a demand group with the flag set. Model distribution demand groups MUST also include the task major version and a version floor equal to the strictest demanding task version in the group. Only nodes whose runner version is compatible with that floor under [task_version.md](./task_version.md) MAY count toward coverage or be selected as download targets.

@@ -8,7 +8,8 @@ At a high level, task version defines the minimum compatible runtime for executi
 
 ## Scope
 
-- Task version matching is implemented for node selection and task start validation.
+- Task version matching is implemented for node selection, task start validation, and model distribution demand qualification.
+- Model distribution uses the same compatibility rule against each demand group's version floor, as specified in [model_distribution.md](./model_distribution.md). The floor is the strictest task version among demanding tasks that share one demand group. Relay MUST NOT split demand groups by exact task version string within the same major.
 - The `node version` recorded by relay SHALL represent the node runner version.
 - Runner version is tracked as runtime count data and is not used in task dispatch through worker count APIs.
 
@@ -100,6 +101,14 @@ If version is not compatible, task start fails with:
 
 This prevents race conditions where node version may have changed after initial selection.
 
+### Step 3: Model Distribution Coverage And Download Targets
+
+When the model distribution controller measures coverage and selects download targets in `service/model_distribution.go`, Relay MUST apply the same compatibility rule to the demand group's version floor:
+
+- `nodeSatisfiesDemand` rejects nodes whose runner version is not compatible with the floor
+- Compatible nodes MAY count toward holding coverage, pending selection capacity, and the download candidate pool
+- Nodes that hold the model files but fail the floor MUST NOT count toward that demand group's coverage
+
 ## Runner Version Reporting and Update Propagation
 
 In this codebase, the same runner version value reaches relay through two different reporting paths.
@@ -179,6 +188,7 @@ Given a task version `A.B.C`:
 - `service/select_nodes.go`
 - `service/start_task.go`
 - `service/task_status.go`
+- `service/model_distribution.go`
 - `api/v1/inference_tasks/create_task.go`
 - `api/v2/nodes/join.go`
 - `api/v2/nodes/capabilities.go`
